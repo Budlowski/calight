@@ -6,6 +6,7 @@ namespace App\Tests\Unit;
 
 use App\Domain\Calculation\PriceCalculator;
 use App\Domain\Offer\OfferCalculator;
+use App\Domain\Offer\OfferValidationException;
 use App\Tests\TestCase;
 
 final class OfferCalculatorTest extends TestCase
@@ -34,9 +35,35 @@ final class OfferCalculatorTest extends TestCase
         $this->assertSame('3.00',$normal['calculation']['priceDeviation']);
         $this->assertSame('45.00',$normal['calculation']['positionTotal']);
         $this->assertSame('30.00',$sub['calculation']['subtotal']);
+        $this->assertSame('280.00',$sub['calculation']['calculatedSubtotal']);
         $this->assertSame('75.00',$result['nodes'][0]['calculation']['subtotal']);
+        $this->assertSame('325.00',$result['nodes'][0]['calculation']['calculatedSubtotal']);
         $this->assertSame('75.00',$result['calculation']['netTotal']);
         $this->assertSame(null,$result['nodes'][1]['calculation']);
+    }
+
+    public function testNestedTitleTypesTextNodesAndAdjustments():void
+    {
+        $position=static fn(string $id,string $price):array=>['id'=>$id,'type'=>'position','positionType'=>'normal','shortText'=>$id,'longText'=>'','quantity'=>'1.000','unit'=>'Stk.','manualUnitPrice'=>$price,'components'=>[]];
+        $base=['nodes'=>[
+            ['id'=>'normal','type'=>'title','titleType'=>'normal','name'=>'Normal','description'=>'','children'=>[
+                $position('included','100.00'),
+                ['id'=>'alternative','type'=>'title','titleType'=>'alternative','name'=>'Alternative','description'=>'','children'=>[$position('excluded-nested','40.00')]],
+                ['id'=>'hint','type'=>'text','title'=>'Hinweis','text'=>'Ohne Preis'],
+            ]],
+            ['id'=>'bedarf','type'=>'title','titleType'=>'bedarf','name'=>'Bedarf','description'=>'','children'=>[$position('excluded','25.00')]],
+        ]];
+        $calculator=new OfferCalculator(new PriceCalculator());
+        $discount=$calculator->calculate($base+['offerAdjustment'=>['type'=>'discount','mode'=>'percentage','value'=>'5.00','label'=>null]]);
+        $this->assertSame('165.00',$discount['calculation']['calculatedTotal']);
+        $this->assertSame('100.00',$discount['calculation']['subtotalNet']);
+        $this->assertSame('-5.00',$discount['calculation']['adjustmentSigned']);
+        $this->assertSame('95.00',$discount['calculation']['netTotal']);
+        $this->assertSame('40.00',$discount['nodes'][0]['children'][1]['calculation']['subtotal']);
+        $this->assertSame('0.00',$discount['nodes'][0]['children'][1]['calculation']['includedSubtotal']);
+        $absolute=$calculator->calculate($base+['offerAdjustment'=>['type'=>'surcharge','mode'=>'absolute','value'=>'12.34','label'=>'Fracht']]);
+        $this->assertSame('112.34',$absolute['calculation']['netTotal']);
+        $this->assertThrows(OfferValidationException::class,fn()=>$calculator->calculate($base+['offerAdjustment'=>['type'=>'discount','mode'=>'absolute','value'=>'100.01','label'=>null]]));
     }
 
     public function testRoundsOnlyAtDefinedSalesPricePoints(): void

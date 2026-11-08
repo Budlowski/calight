@@ -19,6 +19,11 @@ use App\Support\Uuid;
 
 final class OfferExchangeTest extends TestCase
 {
+    public function testExtendedOfferJsonRoundtrip():void
+    {
+        $root=dirname(__DIR__,2);$tmp=sys_get_temp_dir().'/offer-extended-'.bin2hex(random_bytes(8));mkdir($tmp,0770,true);
+        try{$pdo=ConnectionFactory::create($tmp.'/db.sqlite');(new Migrator($pdo,$root.'/migrations'))->migrate();$projects=new ProjectRepository($pdo);$service=new OfferService($pdo,$projects,new OfferRepository($pdo),new OfferJsonStore($tmp.'/offers',new OfferValidator()),new OfferCalculator(new PriceCalculator()));$project=$projects->create('Erweitert','Kunde','Ort');$id=$service->createDraft($project,'Erweitert');$loaded=$service->loadDraft($id);$document=$loaded['offer'];$document['offerAdjustment']=['type'=>'surcharge','mode'=>'absolute','value'=>'15.00','label'=>'Fracht'];$document['nodes']=[['id'=>Uuid::v4(),'type'=>'title','titleType'=>'alternative','name'=>'Variante','description'=>'','children'=>[['id'=>Uuid::v4(),'type'=>'text','title'=>'Vorbemerkung','text'=>'Freier Text'],['id'=>Uuid::v4(),'type'=>'position','positionType'=>'normal','shortText'=>'Arbeit','longText'=>'','quantity'=>'1.000','unit'=>'Stk.','manualUnitPrice'=>'20.00','components'=>[]]]]];$service->saveDraft($id,$document,$loaded['etag']);$export=$service->loadDraft($id)['offer'];$copy=$service->importNew($project,$export);$imported=$service->loadDraft($copy)['offer'];$this->assertSame('alternative',$imported['nodes'][0]['titleType']);$this->assertSame('text',$imported['nodes'][0]['children'][0]['type']);$this->assertSame('Fracht',$imported['offerAdjustment']['label']);$this->assertSame('15.00',$imported['calculation']['netTotal']);}finally{$this->remove($tmp);}
+    }
     public function testImportRoundTripRecalculatesAndProtectsDocumentIdentity():void
     {
         $root=dirname(__DIR__,2);$tmp=sys_get_temp_dir().'/exchange-'.bin2hex(random_bytes(6));mkdir($tmp,0770,true);

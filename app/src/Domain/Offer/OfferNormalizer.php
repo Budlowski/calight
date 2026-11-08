@@ -23,6 +23,10 @@ final class OfferNormalizer
                     ->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z');
             }
         }
+        if(isset($offer['offerAdjustment'])&&is_array($offer['offerAdjustment'])){
+            $mode=(string)($offer['offerAdjustment']['mode']??'percentage');
+            if(array_key_exists('value',$offer['offerAdjustment'])&&$offer['offerAdjustment']['value']!=='')$offer['offerAdjustment']['value']=$this->decimal($offer['offerAdjustment']['value'],$mode==='absolute'?Decimal::MONEY_SCALE:Decimal::PERCENT_SCALE,'Angebotsanpassung');
+        }
         if (isset($offer['nodes']) && is_array($offer['nodes'])) $offer['nodes'] = $this->nodes($offer['nodes'], $fillMissingIds);
         return $offer;
     }
@@ -38,6 +42,7 @@ final class OfferNormalizer
                 $node['children'] = $this->nodes(is_array($node['children'] ?? null) ? $node['children'] : [], $fillMissingIds);
                 continue;
             }
+            if (($node['type'] ?? null) === 'text') continue;
             if (isset($node['quantity'])) $node['quantity'] = $this->decimal($node['quantity'], Decimal::QUANTITY_SCALE, 'Menge');
             if (array_key_exists('manualUnitPrice', $node) && $node['manualUnitPrice'] !== null && $node['manualUnitPrice'] !== '') {
                 $node['manualUnitPrice'] = $this->decimal($node['manualUnitPrice'], Decimal::MONEY_SCALE, 'Manueller Verkaufspreis');

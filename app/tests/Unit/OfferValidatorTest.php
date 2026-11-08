@@ -61,6 +61,15 @@ final class OfferValidatorTest extends TestCase
         $this->assertThrows(OfferValidationException::class,fn()=>(new OfferValidator())->validate($offer));
     }
 
+    public function testAcceptsTitleTypesTextNodesAndOfferAdjustment():void
+    {
+        $offer=$this->offer();$offer['offerAdjustment']=['type'=>'discount','mode'=>'percentage','value'=>'5.00','label'=>'Treuerabatt'];
+        $offer['nodes']=[['id'=>Uuid::v4(),'type'=>'title','titleType'=>'bedarf','name'=>'Option','description'=>'','children'=>[['id'=>Uuid::v4(),'type'=>'text','title'=>'Hinweis','text'=>'Nur bei Beauftragung.']]]];
+        (new OfferValidator())->validate($offer);$this->assertTrue(true);
+        $offer['offerAdjustment']['value']='101.00';
+        $this->assertThrows(OfferValidationException::class,fn()=>(new OfferValidator())->validate($offer));
+    }
+
     /** @return array<string,mixed> */
     private function offer(): array
     {

@@ -15,7 +15,7 @@ final class OfferValidator
     {
         $errors = [];
         $seenIds = [];
-        $this->rejectUnknown($offer,['schemaVersion','id','projectId','offerNumber','revision','status','title','createdAt','updatedAt','documentTerms','nodes','calculation'],'offer',$errors);
+        $this->rejectUnknown($offer,['schemaVersion','id','projectId','offerNumber','revision','status','title','createdAt','updatedAt','documentTerms','offerAdjustment','nodes','calculation'],'offer',$errors);
 
         if (($offer['schemaVersion'] ?? null) !== 1) {
             $errors[] = 'schemaVersion muss 1 sein.';
@@ -39,6 +39,7 @@ final class OfferValidator
             }
         }
         if (array_key_exists('documentTerms',$offer)) $this->validateDocumentTerms($offer['documentTerms'],$errors);
+        if (array_key_exists('offerAdjustment',$offer)) $this->validateAdjustment($offer['offerAdjustment'],$errors);
 
         if ($errors !== []) {
             throw new OfferValidationException($errors);
@@ -80,7 +81,8 @@ final class OfferValidator
 
         $type = $node['type'] ?? null;
         if ($type === 'title') {
-            $this->rejectUnknown($node,['id','type','name','description','children','calculation'],$path,$errors);
+            $this->rejectUnknown($node,['id','type','titleType','name','description','children','calculation'],$path,$errors);
+            if (!in_array($node['titleType'] ?? 'normal', ['normal','bedarf','alternative'], true)) $errors[]=$path.'.titleType ist ungueltig.';
             if (!is_string($node['name'] ?? null) || trim($node['name']) === '') {
                 $errors[] = $path . '.name darf nicht leer sein.';
             }
@@ -94,8 +96,15 @@ final class OfferValidator
             return;
         }
 
+        if ($type === 'text') {
+            $this->rejectUnknown($node,['id','type','title','text','calculation'],$path,$errors);
+            if(array_key_exists('title',$node)&&!is_string($node['title']))$errors[]=$path.'.title muss Text sein.';
+            if(!is_string($node['text']??null)||trim((string)$node['text'])==='')$errors[]=$path.'.text darf nicht leer sein.';
+            return;
+        }
+
         if ($type !== 'position') {
-            $errors[] = $path . '.type muss title oder position sein.';
+            $errors[] = $path . '.type muss title, position oder text sein.';
             return;
         }
         $this->rejectUnknown($node,['id','type','positionType','shortText','longText','quantity','unit','manualUnitPrice','components','sourceServiceId','sourceServiceNumber','calculation'],$path,$errors);
@@ -130,6 +139,24 @@ final class OfferValidator
         foreach ($node['components'] as $index => $component) {
             $this->validateComponent($component, sprintf('%s.components[%d]', $path, $index), $seenIds, $errors);
         }
+    }
+
+    /** @param mixed $adjustment @param list<string> $errors */
+    private function validateAdjustment(mixed $adjustment,array &$errors):void
+    {
+        if(!is_array($adjustment)){$errors[]='offerAdjustment muss ein Objekt sein.';return;}
+        $this->rejectUnknown($adjustment,['type','mode','value','label'],'offerAdjustment',$errors);
+        $type=$adjustment['type']??'none';$mode=$adjustment['mode']??'percentage';
+        if(!in_array($type,['none','discount','surcharge'],true))$errors[]='offerAdjustment.type ist ungueltig.';
+        if(!in_array($mode,['percentage','absolute'],true))$errors[]='offerAdjustment.mode ist ungueltig.';
+        if(array_key_exists('label',$adjustment)&&$adjustment['label']!==null&&!is_string($adjustment['label']))$errors[]='offerAdjustment.label muss Text oder null sein.';
+        if($type==='none')return;
+        try{
+            $scale=$mode==='percentage'?Decimal::PERCENT_SCALE:Decimal::MONEY_SCALE;
+            $value=Decimal::parse((string)($adjustment['value']??''),$scale,'offerAdjustment.value');
+            if($value->isNegative())$errors[]='offerAdjustment.value darf nicht negativ sein.';
+            if($type==='discount'&&$mode==='percentage'&&$value->isGreaterThan('100'))$errors[]='Ein prozentualer Rabatt darf höchstens 100 % betragen.';
+        }catch(InvalidArgumentException $exception){$errors[]=$exception->getMessage();}
     }
 
     /**

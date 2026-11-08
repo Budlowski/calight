@@ -25,12 +25,12 @@
             <a href="/customers" data-icon="users">Kunden</a>
             <a href="/projects" data-icon="folder-kanban">Projekte</a>
             <a href="/offers" data-icon="file-text">Angebote</a>
-            <a href="/settings" data-icon="settings">Einstellungen</a>
-            <a href="#" aria-disabled="true" data-icon="ruler">Aufmaß</a>
             <a href="#" aria-disabled="true" data-icon="package">Materialbedarf</a>
             <a href="#" aria-disabled="true" data-icon="badge-euro">Kosten</a>
             <a href="#" aria-disabled="true" data-icon="clock-3">Zeiten</a>
+            <a href="#" aria-disabled="true" data-icon="ruler">Aufmaß</a>
             <a href="#" aria-disabled="true" data-icon="chart-no-axes-column-increasing">Nachkalkulation</a>
+            <a href="/settings" class="sidebar-settings" data-icon="settings">Einstellungen</a>
         </nav>
         <main class="content <?= $escape($contentClass ?? '') ?>">
 <?php else: ?>

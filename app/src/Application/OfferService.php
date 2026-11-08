@@ -43,6 +43,7 @@ final readonly class OfferService
             'revision' => 0,
             'status' => 'draft',
             'title' => $title,
+            'offerAdjustment' => ['type'=>'none','mode'=>'percentage','value'=>'0.00','label'=>null],
             'createdAt' => Clock::now(),
             'updatedAt' => Clock::now(),
             'nodes' => [],

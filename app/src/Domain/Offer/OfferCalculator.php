@@ -11,30 +11,49 @@ use Brick\Math\RoundingMode;
 
 final readonly class OfferCalculator
 {
-    public function __construct(private PriceCalculator $calculator)
-    {
-    }
+    public function __construct(private PriceCalculator $calculator) {}
 
     /** @param array<string,mixed> $offer @return array<string,mixed> */
     public function calculate(array $offer): array
     {
-        $net=BigDecimal::zero();
-        $offer['nodes']=$this->calculateNodes($offer['nodes']??[],$net);
-        $offer['calculation']=['netTotal'=>Decimal::money($net)];
+        $totals=['calculated'=>BigDecimal::zero(),'included'=>BigDecimal::zero()];
+        $offer['nodes']=$this->calculateNodes($offer['nodes']??[],$totals);
+        $subtotal=$totals['included'];
+        $adjustment=$this->calculateAdjustment($offer['offerAdjustment']??null,$subtotal);
+        $net=$subtotal->plus($adjustment['signed']);
+        if($net->isNegative())throw new OfferValidationException(['Der Rabatt darf die reguläre Netto-Zwischensumme nicht überschreiten.']);
+        $offer['calculation']=[
+            'calculatedTotal'=>Decimal::money($totals['calculated']),
+            'subtotalNet'=>Decimal::money($subtotal),
+            'adjustmentAmount'=>Decimal::money($adjustment['amount']),
+            'adjustmentSigned'=>Decimal::money($adjustment['signed']),
+            'netTotal'=>Decimal::money($net),
+        ];
         return $offer;
     }
 
-    /** @param list<array<string,mixed>> $nodes @return list<array<string,mixed>> */
-    private function calculateNodes(array $nodes, BigDecimal &$normalTotal): array
+    /**
+     * @param list<array<string,mixed>> $nodes
+     * @param array{calculated:BigDecimal,included:BigDecimal} $totals
+     * @return list<array<string,mixed>>
+     */
+    private function calculateNodes(array $nodes,array &$totals):array
     {
         foreach($nodes as &$node){
             if(($node['type']??null)==='title'){
-                $subtotal=BigDecimal::zero();
-                $node['children']=$this->calculateNodes($node['children']??[],$subtotal);
-                $node['calculation']=['subtotal'=>Decimal::money($subtotal)];
-                $normalTotal=$normalTotal->plus($subtotal);
+                $childTotals=['calculated'=>BigDecimal::zero(),'included'=>BigDecimal::zero()];
+                $node['children']=$this->calculateNodes($node['children']??[],$childTotals);
+                $included=($node['titleType']??'normal')==='normal'?$childTotals['included']:BigDecimal::zero();
+                $node['calculation']=[
+                    'calculatedSubtotal'=>Decimal::money($childTotals['calculated']),
+                    'subtotal'=>Decimal::money($childTotals['included']),
+                    'includedSubtotal'=>Decimal::money($included),
+                ];
+                $totals['calculated']=$totals['calculated']->plus($childTotals['calculated']);
+                $totals['included']=$totals['included']->plus($included);
                 continue;
             }
+            if(($node['type']??null)==='text'){$node['calculation']=null;continue;}
             $components=[];
             foreach(($node['components']??[]) as $component){$components[]=[
                 'type'=>(string)($component['calculationType']??''),'quantity'=>(string)($component['quantity']??''),
@@ -53,9 +72,23 @@ final readonly class OfferCalculator
                 'effectiveUnitPrice'=>$unit['effectiveUnitPrice'],'priceDeviation'=>$unit['priceDeviation'],
                 'positionTotal'=>$position['positionTotal'],'componentSalesPrices'=>$componentSales,
             ];
-            if(($node['positionType']??'normal')==='normal')$normalTotal=$normalTotal->plus(BigDecimal::of($position['positionTotal']));
+            $positionTotal=BigDecimal::of($position['positionTotal']);
+            $totals['calculated']=$totals['calculated']->plus($positionTotal);
+            if(($node['positionType']??'normal')==='normal')$totals['included']=$totals['included']->plus($positionTotal);
         }
         unset($node);
         return $nodes;
+    }
+
+    /** @return array{amount:BigDecimal,signed:BigDecimal} */
+    private function calculateAdjustment(mixed $input,BigDecimal $subtotal):array
+    {
+        if(!is_array($input)||($input['type']??'none')==='none')return['amount'=>BigDecimal::zero(),'signed'=>BigDecimal::zero()];
+        $type=(string)$input['type'];$mode=(string)($input['mode']??'percentage');
+        $value=$mode==='percentage'
+            ?Decimal::parse((string)($input['value']??'0'),Decimal::PERCENT_SCALE,'Angebotsanpassung')->multipliedBy($subtotal)->dividedBy('100',Decimal::MONEY_SCALE,RoundingMode::HalfUp)
+            :Decimal::parse((string)($input['value']??'0'),Decimal::MONEY_SCALE,'Angebotsanpassung');
+        $amount=$value->abs();$signed=$type==='discount'?$amount->negated():$amount;
+        return['amount'=>$amount,'signed'=>$signed];
     }
 }

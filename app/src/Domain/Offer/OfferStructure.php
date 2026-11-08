@@ -26,9 +26,11 @@ final class OfferStructure
                 $titleCounter++; $path=[...$titlePath,$titleCounter]; $number=implode('.',$path);
                 $result[]=['id'=>(string)($node['id']??''),'type'=>'title','number'=>$number,'depth'=>$depth];
                 $this->walk(is_array($node['children']??null)?$node['children']:[],$path,$depth+1,$result);
-            }else{
+            }elseif(($node['type']??null)==='position'){
                 $positionCounter++; $suffix=str_pad((string)$positionCounter,2,'0',STR_PAD_LEFT);
                 $result[]=['id'=>(string)($node['id']??''),'type'=>'position','number'=>$titlePath===[]?$suffix:implode('.',$titlePath).'.'.$suffix,'depth'=>$depth];
+            }else{
+                $result[]=['id'=>(string)($node['id']??''),'type'=>'text','number'=>'','depth'=>$depth];
             }
         }
     }
