@@ -86,6 +86,34 @@ final class OfferValidatorTest extends TestCase
         $this->assertThrows(OfferValidationException::class,fn()=>(new OfferValidator())->validate($offer));
     }
 
+    public function testRejectsNegativeManualPriceAndMalformedReferences(): void
+    {
+        $offer = $this->offer();
+        $offer['nodes'] = [[
+            'id' => Uuid::v4(),
+            'type' => 'position',
+            'positionType' => 'normal',
+            'shortText' => 'Fehlerhafte Position',
+            'longText' => '',
+            'quantity' => '1.000',
+            'unit' => 'Stk.',
+            'manualUnitPrice' => '-1.00',
+            'sourceServiceId' => 'keine-uuid',
+            'components' => [[
+                'id' => Uuid::v4(),
+                'name' => 'Material',
+                'calculationType' => 'material',
+                'unit' => 'Stk.',
+                'quantity' => '1.000',
+                'costPrice' => '1.0000',
+                'markupPercent' => '0.00',
+                'masterDataId' => 'keine-uuid',
+                'priceMode' => 'master',
+            ]],
+        ]];
+        $this->assertThrows(OfferValidationException::class, fn () => (new OfferValidator())->validate($offer));
+    }
+
     public function testAcceptsTitleTypesTextNodesAndOfferAdjustment():void
     {
         $offer=$this->offer();$offer['offerAdjustment']=['type'=>'discount','mode'=>'percentage','value'=>'5.00','label'=>'Treuerabatt'];

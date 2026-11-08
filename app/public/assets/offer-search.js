@@ -1,5 +1,16 @@
 (()=>{
   'use strict';
+  function numbering(nodes,prefix=[]){
+    const numbers=new Map();let title=0,position=0;
+    for(const node of Array.isArray(nodes)?nodes:[]){
+      if(node.type==='title'){
+        const path=[...prefix,++title];numbers.set(node.id,path.join('.'));
+        for(const[id,number]of numbering(node.children,path))numbers.set(id,number);
+      }else if(node.type==='position')numbers.set(node.id,(prefix.length?prefix.join('.')+'.':'')+String(++position).padStart(2,'0'));
+      else numbers.set(node.id,'');
+    }
+    return numbers;
+  }
   function find(nodes,numbers,query){
     const needle=String(query??'').trim().toLocaleLowerCase('de-DE');
     if(!needle)return[];
@@ -20,5 +31,5 @@
     walk(Array.isArray(nodes)?nodes:[]);
     return hits;
   }
-  globalThis.CalightOfferSearch={find};
+  globalThis.CalightOfferSearch={find,numbering};
 })();

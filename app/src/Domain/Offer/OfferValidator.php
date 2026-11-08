@@ -6,6 +6,8 @@ namespace App\Domain\Offer;
 
 use App\Domain\Calculation\Decimal;
 use App\Support\Uuid;
+use DateTimeImmutable;
+use Exception;
 use InvalidArgumentException;
 
 final class OfferValidator
@@ -30,6 +32,19 @@ final class OfferValidator
         }
         if (!is_string($offer['title'] ?? null) || trim($offer['title']) === '') {
             $errors[] = 'Die Angebotsbezeichnung darf nicht leer sein.';
+        } elseif (mb_strlen($offer['title']) > 200) {
+            $errors[] = 'Die Angebotsbezeichnung darf höchstens 200 Zeichen lang sein.';
+        }
+        if (($offer['offerNumber'] ?? null) !== null && !is_string($offer['offerNumber'])) {
+            $errors[] = 'offerNumber muss Text oder null sein.';
+        }
+        if (!is_int($offer['revision'] ?? null) || $offer['revision'] < 0) {
+            $errors[] = 'revision muss eine nichtnegative Ganzzahl sein.';
+        }
+        foreach (['createdAt', 'updatedAt'] as $field) {
+            if (!$this->isTimestamp($offer[$field] ?? null)) {
+                $errors[] = $field . ' muss ein gültiger ISO-8601-Zeitstempel sein.';
+            }
         }
         if (!is_array($offer['nodes'] ?? null) || !array_is_list($offer['nodes'])) {
             $errors[] = 'nodes muss eine Liste sein.';
@@ -86,6 +101,9 @@ final class OfferValidator
             if (!is_string($node['name'] ?? null) || trim($node['name']) === '') {
                 $errors[] = $path . '.name darf nicht leer sein.';
             }
+            if (!is_string($node['description'] ?? null)) {
+                $errors[] = $path . '.description muss Text sein.';
+            }
             if (!is_array($node['children'] ?? null) || !array_is_list($node['children'])) {
                 $errors[] = $path . '.children muss eine Liste sein.';
                 return;
@@ -116,6 +134,16 @@ final class OfferValidator
             if (!is_string($node[$field] ?? null) || trim($node[$field]) === '') {
                 $errors[] = $path . '.' . $field . ' darf nicht leer sein.';
             }
+        }
+        if (!is_string($node['longText'] ?? null)) {
+            $errors[] = $path . '.longText muss Text sein.';
+        }
+        if (($node['sourceServiceId'] ?? null) !== null
+            && (!is_string($node['sourceServiceId']) || !Uuid::isValid($node['sourceServiceId']))) {
+            $errors[] = $path . '.sourceServiceId muss eine gültige UUID oder null sein.';
+        }
+        if (($node['sourceServiceNumber'] ?? null) !== null && !is_string($node['sourceServiceNumber'])) {
+            $errors[] = $path . '.sourceServiceNumber muss Text oder null sein.';
         }
         if (array_key_exists('trailingText', $node) && $node['trailingText'] !== null) {
             $trailing = $node['trailingText'];
@@ -148,7 +176,10 @@ final class OfferValidator
         }
         if (($node['manualUnitPrice'] ?? null) !== null) {
             try {
-                Decimal::parse((string) $node['manualUnitPrice'], Decimal::MONEY_SCALE, $path . '.manualUnitPrice');
+                $manualPrice = Decimal::parse((string) $node['manualUnitPrice'], Decimal::MONEY_SCALE, $path . '.manualUnitPrice');
+                if ($manualPrice->isNegative()) {
+                    $errors[] = $path . '.manualUnitPrice darf nicht negativ sein.';
+                }
             } catch (InvalidArgumentException $exception) {
                 $errors[] = $exception->getMessage();
             }
@@ -205,6 +236,13 @@ final class OfferValidator
         if (!is_string($component['unit'] ?? null) || trim($component['unit']) === '') {
             $errors[] = $path . '.unit darf nicht leer sein.';
         }
+        if (($component['masterDataId'] ?? null) !== null
+            && (!is_string($component['masterDataId']) || !Uuid::isValid($component['masterDataId']))) {
+            $errors[] = $path . '.masterDataId muss eine gültige UUID oder null sein.';
+        }
+        if (($component['sourceArticleNumber'] ?? null) !== null && !is_string($component['sourceArticleNumber'])) {
+            $errors[] = $path . '.sourceArticleNumber muss Text oder null sein.';
+        }
         foreach ([
             'quantity' => Decimal::QUANTITY_SCALE,
             'costPrice' => Decimal::COST_SCALE,
@@ -229,5 +267,19 @@ final class OfferValidator
     private function rejectUnknown(array $value,array $allowed,string $path,array &$errors):void
     {
         foreach(array_diff(array_keys($value),$allowed) as $field)$errors[]=$path.'.'.$field.' ist kein zulässiges Feld.';
+    }
+
+    private function isTimestamp(mixed $value): bool
+    {
+        if (!is_string($value)
+            || !preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/D', $value)) {
+            return false;
+        }
+        try {
+            new DateTimeImmutable($value);
+            return true;
+        } catch (Exception) {
+            return false;
+        }
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit;
 
 use App\Domain\Offer\OfferNormalizer;
+use App\Domain\Offer\OfferValidationException;
 use App\Support\Uuid;
 use App\Tests\TestCase;
 
@@ -28,6 +29,10 @@ final class OfferNormalizerTest extends TestCase
         $this->assertSame('0.200',$position['components'][0]['quantity']);$this->assertSame('5.0000',$position['components'][0]['costPrice']);$this->assertSame('20.00',$position['components'][0]['markupPercent']);
         $this->assertSame('5.00',$result['offerAdjustment']['value']);
         $this->assertTrue(!isset($position['calculation'])&&!isset($text['calculation'])&&!isset($position['components'][0]['salesPrice'])&&!isset($result['calculation']));
+        $this->assertSame('normal',$result['nodes'][0]['titleType']);
+        $this->assertSame('manual',$position['components'][0]['priceMode']);
+        $this->assertSame('ALT-1',$position['components'][0]['sourceArticleNumber']);
+        $this->assertTrue(!isset($position['components'][0]['priceLocked'])&&!isset($position['components'][0]['masterDataSnapshot']));
         $this->assertSame('2026-11-08T11:00:00Z',$result['createdAt']);
     }
 
@@ -49,12 +54,24 @@ final class OfferNormalizerTest extends TestCase
         $this->assertSame('Importierter Text', $result['nodes'][1]['trailingText']['name']);
     }
 
+    public function testInvalidTimestampAndDecimalBecomeValidationErrors(): void
+    {
+        $normalizer = new OfferNormalizer();
+        $this->assertThrows(OfferValidationException::class, fn () => $normalizer->normalize([
+            'createdAt' => 'kein Datum',
+            'nodes' => [],
+        ]));
+        $this->assertThrows(OfferValidationException::class, fn () => $normalizer->normalize([
+            'nodes' => [['type' => 'position', 'quantity' => '1,5', 'components' => []]],
+        ]));
+    }
+
     /** @return array<string,mixed> */
     private function title(string $id):array
     {
         return ['id'=>$id,'type'=>'title','children'=>[
             ['type'=>'position','quantity'=>'1.2','manualUnitPrice'=>'12.5','calculation'=>['positionTotal'=>'999.00'],'components'=>[
-                ['name'=>'M','quantity'=>'0.2','costPrice'=>'5','markupPercent'=>'20','salesPrice'=>'999.00'],
+                ['name'=>'M','quantity'=>'0.2','costPrice'=>'5','markupPercent'=>'20','masterDataId'=>null,'priceLocked'=>false,'masterDataSnapshot'=>['articleNumber'=>'ALT-1'],'salesPrice'=>'999.00'],
             ]],
             ['type'=>'text','title'=>'Hinweis','text'=>'Text','calculation'=>['subtotal'=>'999.00']],
         ]];

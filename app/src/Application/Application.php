@@ -185,14 +185,7 @@ final readonly class Application
 
         $this->router->add('PUT', '/api/offers/{id}', fn (Request $request, array $parameters): Response => $this->protected(function () use ($request, $parameters): Response {
             $this->requireCsrf($request, $request->headers['x-csrf-token'] ?? null);
-            try {
-                $offer = json_decode($request->body, true, flags: JSON_THROW_ON_ERROR);
-            } catch (JsonException) {
-                return Response::json(['error' => 'Ungueltiges JSON.'], 400);
-            }
-            if (!is_array($offer)) {
-                return Response::json(['error' => 'Der Anfrageinhalt muss ein JSON-Objekt sein.'], 400);
-            }
+            $offer = $this->jsonBody($request);
             $etag = trim((string) ($request->headers['if-match'] ?? ''), '"');
             if ($etag === '') {
                 return Response::json(['error' => 'If-Match-Header fehlt.'], 428);

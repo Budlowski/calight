@@ -12,4 +12,14 @@ assert(CalightOfferSearch.find(nodes,numbers,'1.01')[0]?.id==='p1','Positionsnum
 assert(CalightOfferSearch.find(nodes,numbers,'UNTERPUTZ')[0]?.id==='p1','Langtextsuche ignoriert Großschreibung nicht.');
 assert(CalightOfferSearch.find(nodes,numbers,'bauseitige')[0]?.id==='txt','Textposition wurde nicht gefunden.');
 assert(CalightOfferSearch.find(nodes,numbers,'nicht vorhanden').length===0,'Unerwarteter Suchtreffer.');
+const generated=CalightOfferSearch.numbering([{id:'root',type:'title',children:[
+  {id:'root-text',type:'text'},
+  {id:'root-position',type:'position'},
+  {id:'child',type:'title',children:[{id:'child-position',type:'position'}]},
+  {id:'root-position-2',type:'position'},
+]}]);
+assert(generated.get('root')==='1','Haupttitel wurde falsch nummeriert.');
+assert(generated.get('root-text')==='','Textposition darf keine Nummer erhalten.');
+assert(generated.get('root-position')==='1.01'&&generated.get('root-position-2')==='1.02','Text oder Untertitel beeinflusst den Positionszähler.');
+assert(generated.get('child')==='1.1'&&generated.get('child-position')==='1.1.01','Untertitel wurde falsch nummeriert.');
 console.log('offer search tests passed');

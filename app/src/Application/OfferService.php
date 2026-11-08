@@ -148,34 +148,81 @@ final readonly class OfferService
     }
 
     /** @return array<string,mixed> */
-    public function previewImport(string $offerId,array $imported,string $expectedEtag):array
+    public function previewImport(string $offerId, array $imported, string $expectedEtag): array
     {
-        $current=$this->loadDraft($offerId);if(!hash_equals($current['etag'],$expectedEtag))throw new OfferConflictException('Der Entwurf wurde zwischenzeitlich geändert. Bitte neu laden.');
-        $prepared=$this->prepareImport($imported,(string)$current['offer']['projectId'],$offerId,(string)$current['offer']['createdAt']);$calculated=$this->calculator->calculate($prepared);
-        return ['offer'=>$calculated,'changes'=>['title'=>['old'=>$current['offer']['title'],'new'=>$prepared['title']],'nodes'=>['old'=>$this->countNodes($current['offer']['nodes']),'new'=>$this->countNodes($prepared['nodes'])],'netTotal'=>['old'=>$current['offer']['calculation']['netTotal']??'0.00','new'=>$calculated['calculation']['netTotal']??'0.00']]];
+        $current = $this->loadDraft($offerId);
+        if (!hash_equals($current['etag'], $expectedEtag)) {
+            throw new OfferConflictException('Der Entwurf wurde zwischenzeitlich geändert. Bitte neu laden.');
+        }
+        $prepared = $this->prepareImport(
+            $imported,
+            (string) $current['offer']['projectId'],
+            $offerId,
+            (string) $current['offer']['createdAt'],
+        );
+        $calculated = $this->calculator->calculate($prepared);
+        return [
+            'offer' => $calculated,
+            'changes' => [
+                'title' => ['old' => $current['offer']['title'], 'new' => $prepared['title']],
+                'nodes' => [
+                    'old' => $this->countNodes($current['offer']['nodes']),
+                    'new' => $this->countNodes($prepared['nodes']),
+                ],
+                'netTotal' => [
+                    'old' => $current['offer']['calculation']['netTotal'] ?? '0.00',
+                    'new' => $calculated['calculation']['netTotal'] ?? '0.00',
+                ],
+            ],
+        ];
     }
 
     /** @param array<string,mixed> $imported */
-    public function importExisting(string $offerId,array $imported,string $expectedEtag):string
+    public function importExisting(string $offerId, array $imported, string $expectedEtag): string
     {
-        $preview=$this->previewImport($offerId,$imported,$expectedEtag);return $this->saveDraft($offerId,$preview['offer'],$expectedEtag);
+        $preview = $this->previewImport($offerId, $imported, $expectedEtag);
+        return $this->saveDraft($offerId, $preview['offer'], $expectedEtag);
     }
 
     /** @param array<string,mixed> $imported */
-    public function importNew(string $projectId,array $imported):string
+    public function importNew(string $projectId, array $imported): string
     {
-        $id=Uuid::v4();$prepared=$this->prepareImport($imported,$projectId,$id,Clock::now());
-        if($this->projects->find($projectId)===null)throw new RuntimeException('Projekt wurde nicht gefunden.');
-        $etag=$this->store->saveDraft($projectId,$id,$prepared,null);
-        $this->offers->create($id,$projectId,$this->store->relativeDraftPath($projectId,$id),$etag);return $id;
+        if ($this->projects->find($projectId) === null) {
+            throw new RuntimeException('Projekt wurde nicht gefunden.');
+        }
+        $id = Uuid::v4();
+        $prepared = $this->prepareImport($imported, $projectId, $id, Clock::now());
+        $etag = $this->store->saveDraft($projectId, $id, $prepared, null);
+        $this->offers->create($id, $projectId, $this->store->relativeDraftPath($projectId, $id), $etag);
+        return $id;
     }
 
     /** @param array<string,mixed> $offer @return array<string,mixed> */
-    private function prepareImport(array $offer,string $projectId,string $offerId,string $createdAt):array
+    private function prepareImport(array $offer, string $projectId, string $offerId, string $createdAt): array
     {
-        $offer['schemaVersion']=1;$offer['id']=$offerId;$offer['projectId']=$projectId;$offer['offerNumber']=null;$offer['revision']=0;$offer['status']='draft';$offer['createdAt']=$createdAt;$offer['updatedAt']=Clock::now();
-        $offer=(new OfferNormalizer())->normalize($offer,true);$validator=new OfferValidator();$validator->validate($offer);
-        $this->calculator->calculate($offer);return $offer;
+        $offer['schemaVersion'] = 1;
+        $offer['id'] = $offerId;
+        $offer['projectId'] = $projectId;
+        $offer['offerNumber'] = null;
+        $offer['revision'] = 0;
+        $offer['status'] = 'draft';
+        $offer['createdAt'] = $createdAt;
+        $offer['updatedAt'] = Clock::now();
+        $offer = (new OfferNormalizer())->normalize($offer, true);
+        (new OfferValidator())->validate($offer);
+        $this->calculator->calculate($offer);
+        return $offer;
     }
-    /** @param list<array<string,mixed>> $nodes */ private function countNodes(array $nodes):int{$count=count($nodes);foreach($nodes as $node)if(($node['type']??'')==='title')$count+=$this->countNodes($node['children']);return $count;}
+
+    /** @param list<array<string,mixed>> $nodes */
+    private function countNodes(array $nodes): int
+    {
+        $count = count($nodes);
+        foreach ($nodes as $node) {
+            if (($node['type'] ?? '') === 'title') {
+                $count += $this->countNodes($node['children']);
+            }
+        }
+        return $count;
+    }
 }
