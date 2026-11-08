@@ -29,7 +29,12 @@ final readonly class DocumentSettingsService
         if(!in_array($current['taxMode']??'standard',['standard','exempt'],true))throw new InvalidArgumentException('Die steuerliche Behandlung ist ungültig.');
         if(!in_array($current['logoPosition']??'right',['left','right'],true))throw new InvalidArgumentException('Die Logoposition ist ungültig.');
         if(!in_array($current['addressMode']??'standard',['standard','window'],true))throw new InvalidArgumentException('Das Anschriftenformat ist ungültig.');
-        foreach(['logoWidth'=>[40,180],'baseFontSize'=>[7,11],'marginLeft'=>[28,80],'marginRight'=>[28,80],'marginTop'=>[28,90],'marginBottom'=>[70,120]] as $key=>[$min,$max]){
+        if(!in_array($current['validityMode']??'duration',['duration','date'],true))throw new InvalidArgumentException('Die Art der Angebotsgültigkeit ist ungültig.');
+        if(($current['validityMode']??'duration')==='date'&&!preg_match('/^\d{4}-\d{2}-\d{2}$/',(string)($current['validityDate']??'')))throw new InvalidArgumentException('Das Gültigkeitsdatum ist ungültig.');
+        $days=filter_var($current['validityDays']??null,FILTER_VALIDATE_INT);
+        if($days===false||$days<1||$days>3650)throw new InvalidArgumentException('Die Gültigkeitsdauer muss zwischen 1 und 3650 Tagen liegen.');
+        $current['validityDays']=$days;
+        foreach(['logoWidth'=>[40,180],'logoHeight'=>[20,120],'baseFontSize'=>[7,11],'marginLeft'=>[28,80],'marginRight'=>[28,80],'marginTop'=>[28,90],'marginBottom'=>[70,120]] as $key=>[$min,$max]){
             $value=filter_var($current[$key]??null,FILTER_VALIDATE_FLOAT);
             if($value===false||$value<$min||$value>$max)throw new InvalidArgumentException($key.' liegt außerhalb des zulässigen Bereichs.');
             $current[$key]=(float)$value;

@@ -15,7 +15,7 @@ final class OfferValidator
     {
         $errors = [];
         $seenIds = [];
-        $this->rejectUnknown($offer,['schemaVersion','id','projectId','offerNumber','revision','status','title','createdAt','updatedAt','nodes','calculation'],'offer',$errors);
+        $this->rejectUnknown($offer,['schemaVersion','id','projectId','offerNumber','revision','status','title','createdAt','updatedAt','documentTerms','nodes','calculation'],'offer',$errors);
 
         if (($offer['schemaVersion'] ?? null) !== 1) {
             $errors[] = 'schemaVersion muss 1 sein.';
@@ -38,10 +38,23 @@ final class OfferValidator
                 $this->validateNode($node, sprintf('nodes[%d]', $index), $seenIds, $errors);
             }
         }
+        if (array_key_exists('documentTerms',$offer)) $this->validateDocumentTerms($offer['documentTerms'],$errors);
 
         if ($errors !== []) {
             throw new OfferValidationException($errors);
         }
+    }
+
+    /** @param mixed $terms @param list<string> $errors */
+    private function validateDocumentTerms(mixed $terms,array &$errors):void
+    {
+        if(!is_array($terms)){$errors[]='documentTerms muss ein Objekt sein.';return;}
+        $this->rejectUnknown($terms,['introText','closingText','paymentTerms','additionalTerms','validityMode','validityDays','validityDate'],'documentTerms',$errors);
+        foreach(['introText','closingText','paymentTerms','additionalTerms','validityDate'] as $field)if(array_key_exists($field,$terms)&&$terms[$field]!==null&&!is_string($terms[$field]))$errors[]='documentTerms.'.$field.' muss Text oder null sein.';
+        if(!in_array($terms['validityMode']??'default',['default','duration','date'],true))$errors[]='documentTerms.validityMode ist ungültig.';
+        if(array_key_exists('validityDays',$terms)&&$terms['validityDays']!==null&&(!is_int($terms['validityDays'])||$terms['validityDays']<1||$terms['validityDays']>3650))$errors[]='documentTerms.validityDays ist ungültig.';
+        if(($terms['validityMode']??'default')==='date'&&!preg_match('/^\d{4}-\d{2}-\d{2}$/',(string)($terms['validityDate']??'')))$errors[]='documentTerms.validityDate ist ungültig.';
+        if(($terms['validityMode']??'default')==='duration'&&(!is_int($terms['validityDays']??null)||$terms['validityDays']<1||$terms['validityDays']>3650))$errors[]='documentTerms.validityDays ist erforderlich.';
     }
 
     /**

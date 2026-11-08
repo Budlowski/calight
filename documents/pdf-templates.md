@@ -4,7 +4,9 @@ Firmendaten und Dokumenttexte werden zentral unter **Einstellungen** gespeichert
 
 Die Standardvorlage verarbeitet ausschließlich kundenrelevante Angaben: Gliederung, Texte, Mengen, Einheiten sowie Verkaufs- und Gesamtpreise. Einkaufspreise, interne Kostensätze, Zuschläge und Deckungsbeiträge werden nicht ausgegeben.
 
-Konfigurierbar sind Akzentfarbe, Logo und Logoposition, Grundschrift, Seitenränder, kompaktes oder DIN-5008-orientiertes Anschriftenfeld, Projektinformationen sowie Kopf-, Fuß- und leere Titelzeilen. Leere Titel sind standardmäßig ausgeblendet. Bedarfs- und Alternativpositionen werden sichtbar gekennzeichnet, bepreist und ausdrücklich von den regulären Summen ausgenommen.
+Konfigurierbar sind Akzentfarbe, maximaler Logorahmen und Logoposition, Grundschrift, Seitenränder, kompaktes oder DIN-5008-orientiertes Anschriftenfeld, Projektinformationen sowie Kopf-, Fuß- und leere Titelzeilen. Das Logo wird proportional und zentriert in seinen maximalen Rahmen eingepasst; es wird niemals gestreckt. Leere Titel sind standardmäßig ausgeblendet. Bedarfs- und Alternativpositionen werden sichtbar und zurückhaltend gekennzeichnet, bepreist und ausdrücklich von den regulären Summen ausgenommen.
+
+Einleitung, Schlusstext, Zahlungsbedingungen, zusätzliche Hinweise und Angebotsgültigkeit besitzen globale Standardwerte. Im Angebotseditor können diese Angaben je Entwurf überschrieben werden. Die individuellen Werte liegen im Angebots-JSON und werden deshalb bereits in der Vorschau des ungespeicherten Editorzustands berücksichtigt. Das Anpassen dieser Angaben vergibt keine Angebotsnummer.
 
 Die Steuerberechnung liegt außerhalb des PDF-Renderers. Die Dokumentlogik liefert Netto-, Steuer- und Bruttobetrag für die gewählte Behandlung `standard` oder `exempt`; dadurch bleibt der Renderer frei von fest hinterlegten Steuersätzen.
 

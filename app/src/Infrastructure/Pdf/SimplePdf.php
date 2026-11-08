@@ -22,6 +22,20 @@ final class SimplePdf
     {
         $size=@getimagesizefromstring($data);if(!is_array($size)||($size[2]??null)!==IMAGETYPE_JPEG)return false;$this->jpeg=['data'=>$data,'width'=>(int)$size[0],'height'=>(int)$size[1]];$this->pages[$this->page].="q {$width} 0 0 {$height} {$x} {$y} cm /Im1 Do Q\n";return true;
     }
+    /** @return array{x:float,y:float,width:float,height:float}|null */
+    public function jpegContained(string $data,float $x,float $y,float $maxWidth,float $maxHeight):?array
+    {
+        $size=@getimagesizefromstring($data);if(!is_array($size)||($size[2]??null)!==IMAGETYPE_JPEG||$size[0]<=0||$size[1]<=0)return null;
+        $dimensions=self::containDimensions((float)$size[0],(float)$size[1],$maxWidth,$maxHeight);$width=$dimensions['width'];$height=$dimensions['height'];
+        $placement=['x'=>$x+($maxWidth-$width)/2,'y'=>$y+($maxHeight-$height)/2,'width'=>$width,'height'=>$height];
+        return $this->jpeg($data,$placement['x'],$placement['y'],$width,$height)?$placement:null;
+    }
+    /** @return array{width:float,height:float} */
+    public static function containDimensions(float $sourceWidth,float $sourceHeight,float $maxWidth,float $maxHeight):array
+    {
+        if($sourceWidth<=0||$sourceHeight<=0||$maxWidth<=0||$maxHeight<=0)throw new \InvalidArgumentException('Bild- und Rahmenmaße müssen positiv sein.');
+        $scale=min($maxWidth/$sourceWidth,$maxHeight/$sourceHeight);return['width'=>$sourceWidth*$scale,'height'=>$sourceHeight*$scale];
+    }
     public function output():string
     {
         $total=count($this->pages);foreach($this->pages as $index=>&$page){$watermark="q BT /F2 58 Tf .94 .95 .96 rg .707 .707 -.707 .707 155 290 Tm (ENTWURF) Tj ET Q\n";$page=$watermark.$page."BT /F1 7 Tf .35 .4 .45 rg 520 25 Td (Seite ".($index+1)." / {$total}) Tj ET\n";}unset($page);

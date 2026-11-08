@@ -14,6 +14,19 @@
         "title": { "type": "string", "minLength": 1, "maxLength": 200 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" },
+        "documentTerms": {
+            "type": "object",
+            "properties": {
+                "introText": { "type": ["string", "null"] },
+                "closingText": { "type": ["string", "null"] },
+                "paymentTerms": { "type": ["string", "null"] },
+                "additionalTerms": { "type": ["string", "null"] },
+                "validityMode": { "enum": ["default", "duration", "date"] },
+                "validityDays": { "type": ["integer", "null"], "minimum": 1, "maximum": 3650 },
+                "validityDate": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$" }
+            },
+            "additionalProperties": false
+        },
         "nodes": {
             "type": "array",
             "items": { "$ref": "#/$defs/node" }
