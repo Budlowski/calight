@@ -26,6 +26,9 @@ final readonly class MasterDataController
         $router->add('POST', '/api/master-data/preview-price', fn (Request $request): Response => $this->mutation(
             $request, fn (array $data): array => $this->service->preview($data)
         ));
+        $router->add('POST', '/api/master-data/preview-master-price-updates', fn (Request $request): Response => $this->mutation(
+            $request, fn (array $data): array => $this->service->previewMasterPriceUpdates($data)
+        ));
 
         $router->add('POST', '/api/master-data/categories', fn (Request $request): Response => $this->mutation(
             $request, fn (array $data): array => $this->service->createCategory($data), 201

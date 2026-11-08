@@ -1,4 +1,7 @@
-<?php $title = 'Stammdaten'; ?>
+<?php
+$title = 'Stammdaten';
+$contentClass = 'content-wide';
+?>
 <div id="master-data-app" data-csrf="<?= $escape($csrfToken) ?>">
     <div class="page-heading">
         <div>
@@ -33,7 +36,7 @@
             </div>
             <form id="cost-item-form" class="card form-stack master-editor" hidden>
                 <input type="hidden" name="id">
-                <div class="editor-heading"><h2>Kostensatz</h2><button type="button" class="icon-button" data-close-form aria-label="Formular schließen">×</button></div>
+                <div class="editor-heading"><h2>Kostensatz</h2></div>
                 <div class="form-grid">
                     <label>Artikelnummer<input name="articleNumber" maxlength="100"></label>
                     <label>Bezeichnung<input name="name" maxlength="250" required></label>
@@ -54,14 +57,22 @@
 
     <section class="tab-panel" data-panel="services" hidden>
         <div class="master-toolbar">
-            <input id="service-search" type="search" placeholder="Leistungspositionen durchsuchen" aria-label="Leistungspositionen durchsuchen">
+            <input id="service-search" type="search" placeholder="Positionsnummer oder Bezeichnung durchsuchen" aria-label="Leistungspositionen durchsuchen">
             <button class="button" type="button" id="new-service">Neue Leistungsposition</button>
         </div>
-        <div id="services-list" class="service-list"></div>
-        <form id="service-form" class="card form-stack service-editor" hidden>
+        <div class="master-split service-master-split">
+            <div id="services-list" class="service-list"></div>
+            <form id="service-form" class="card form-stack service-editor" hidden>
             <input type="hidden" name="id">
-            <div class="editor-heading"><h2>Leistungsposition</h2><button type="button" class="icon-button" data-close-service aria-label="Formular schließen">×</button></div>
-            <div class="form-grid">
+            <div class="editor-heading"><h2>Leistungsposition</h2></div>
+            <div class="form-grid service-header-grid">
+                <div class="service-number-field">
+                    <div class="service-number-heading">
+                        <label for="service-article-number">Positionsnummer</label>
+                        <label class="check-inline auto-number-option"><input type="checkbox" name="autoArticleNumber" checked> Automatisch vergeben</label>
+                    </div>
+                    <input id="service-article-number" name="articleNumber" maxlength="100">
+                </div>
                 <label>Kurztext<input name="shortText" maxlength="250" required></label>
                 <label>Einheit<input name="unit" maxlength="40" required></label>
             </div>
@@ -72,12 +83,15 @@
                     <select id="component-master-select"><option value="">Aus Kostenstamm auswählen …</option></select>
                     <button class="button button-light" type="button" id="add-master-component">Übernehmen</button>
                     <button class="button button-light" type="button" id="add-manual-component">Manuell anlegen</button>
+                    <button class="button button-light" type="button" id="preview-master-prices">Preise aus Stammdaten aktualisieren</button>
                 </div>
+                <div id="master-price-preview" class="price-update-preview" hidden></div>
                 <div id="components-list" class="components-list"></div>
             </details>
             <div class="service-totals" id="service-totals"></div>
             <div class="form-actions"><button class="button" type="submit">Leistungsposition speichern</button><button class="button button-light" type="button" data-close-service>Abbrechen</button></div>
-        </form>
+            </form>
+        </div>
     </section>
 
     <section class="tab-panel" data-panel="categories" hidden>
@@ -86,7 +100,7 @@
             <div id="category-tree" class="category-tree card"></div>
             <form id="category-form" class="card form-stack master-editor" hidden>
                 <input type="hidden" name="id">
-                <div class="editor-heading"><h2>Kategorie</h2><button type="button" class="icon-button" data-close-form>×</button></div>
+                <div class="editor-heading"><h2>Kategorie</h2></div>
                 <label>Bezeichnung<input name="name" maxlength="150" required></label>
                 <label>Übergeordnete Kategorie<select name="parentId"><option value="">Oberste Ebene</option></select></label>
                 <label>Sortierung<input name="sortOrder" type="number" min="0" step="1" value="0" required></label>
@@ -102,7 +116,7 @@
             <div class="table-wrap"><table><thead><tr><th>Nummer</th><th>Name</th><th>Kontakt</th><th></th></tr></thead><tbody id="suppliers-body"></tbody></table></div>
             <form id="supplier-form" class="card form-stack master-editor" hidden>
                 <input type="hidden" name="id">
-                <div class="editor-heading"><h2>Lieferant</h2><button type="button" class="icon-button" data-close-form>×</button></div>
+                <div class="editor-heading"><h2>Lieferant</h2></div>
                 <label>Lieferantennummer<input name="supplierNumber" maxlength="80"></label>
                 <label>Name<input name="name" maxlength="200" required></label>
                 <label>Kontakt und Bemerkungen<textarea name="contact" rows="5" maxlength="2000"></textarea></label>
@@ -111,4 +125,4 @@
         </div>
     </section>
 </div>
-<script src="/assets/master-data.js" defer></script>
+<script src="/assets/master-data.js?v=<?= $escape((string) filemtime(dirname(__DIR__, 2) . '/public/assets/master-data.js')) ?>" defer></script>

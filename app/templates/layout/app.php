@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= $escape($title ?? 'Kalkulationssoftware') ?></title>
-    <link rel="stylesheet" href="/assets/app.css">
+    <link rel="stylesheet" href="/assets/app.css?v=<?= $escape((string) filemtime(dirname(__DIR__, 2) . '/public/assets/app.css')) ?>">
 </head>
 <body>
 <?php if ($currentUser !== null): ?>
@@ -31,7 +31,7 @@
             <a href="#" aria-disabled="true">Zeiten</a>
             <a href="#" aria-disabled="true">Nachkalkulation</a>
         </nav>
-        <main class="content">
+        <main class="content <?= $escape($contentClass ?? '') ?>">
 <?php else: ?>
         <main class="content content-narrow">
 <?php endif; ?>

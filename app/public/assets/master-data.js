@@ -15,8 +15,10 @@
     const categoryForm = document.querySelector('#category-form');
     const supplierForm = document.querySelector('#supplier-form');
     const serviceForm = document.querySelector('#service-form');
+    const masterPricePreview = document.querySelector('#master-price-preview');
     let previewTimer = 0;
     let dirty = false;
+    let pendingPriceUpdates = [];
 
     const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
@@ -24,6 +26,7 @@
     const formatEuro = (value) => euro.format(Number(value || 0));
     const visible = (entry) => entry.active || showArchived.checked;
     const decimalValue = (value) => String(value ?? '').trim().replace(',', '.');
+    const decimalInput = (value, fallback) => String(value ?? fallback).replace('.', ',');
     const activeClass = (entry) => entry.active ? '' : ' archived-row';
 
     function notify(text, type = 'success') {
@@ -181,12 +184,13 @@
     categoryForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         const id = categoryForm.elements.id.value;
-        await mutate(id ? `/api/master-data/categories/${id}` : '/api/master-data/categories', {
+        const saved = await mutate(id ? `/api/master-data/categories/${id}` : '/api/master-data/categories', {
             name: categoryForm.elements.name.value,
             description: categoryForm.elements.description.value,
             parentId: categoryForm.elements.parentId.value || null,
             sortOrder: Number(categoryForm.elements.sortOrder.value),
         }, id ? 'Kategorie gespeichert.' : 'Kategorie angelegt.', id ? 'PUT' : 'POST');
+        if (!saved) return;
         dirty = false;
         categoryForm.hidden = true;
     });
@@ -232,11 +236,12 @@
     supplierForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         const id = supplierForm.elements.id.value;
-        await mutate(id ? `/api/master-data/suppliers/${id}` : '/api/master-data/suppliers', {
+        const saved = await mutate(id ? `/api/master-data/suppliers/${id}` : '/api/master-data/suppliers', {
             supplierNumber: supplierForm.elements.supplierNumber.value || null,
             name: supplierForm.elements.name.value,
             contact: supplierForm.elements.contact.value,
         }, id ? 'Lieferant gespeichert.' : 'Lieferant angelegt.', id ? 'PUT' : 'POST');
+        if (!saved) return;
         dirty = false;
         supplierForm.hidden = true;
     });
@@ -280,8 +285,8 @@
         costForm.elements.unit.value = item?.unit || '';
         costForm.elements.categoryId.innerHTML = categoryOptions(item?.categoryId || '');
         supplierOptions(item?.supplierId || '');
-        costForm.elements.costPrice.value = item?.costPrice || '0.0000';
-        costForm.elements.markupPercent.value = item?.markupPercent || '0.00';
+        costForm.elements.costPrice.value = decimalInput(item?.costPrice, '0.0000');
+        costForm.elements.markupPercent.value = decimalInput(item?.markupPercent, '0.00');
         costForm.elements.supplierArticleNumber.value = item?.supplierArticleNumber || '';
         document.querySelector('#cost-sales-price').textContent = formatEuro(item?.salesPrice || 0);
         costForm.hidden = false;
@@ -295,7 +300,8 @@
     costForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         const id = costForm.elements.id.value;
-        await mutate(id ? `/api/master-data/cost-items/${id}` : '/api/master-data/cost-items', costPayload(), id ? 'Kostensatz gespeichert.' : 'Kostensatz angelegt.', id ? 'PUT' : 'POST');
+        const saved = await mutate(id ? `/api/master-data/cost-items/${id}` : '/api/master-data/cost-items', costPayload(), id ? 'Kostensatz gespeichert.' : 'Kostensatz angelegt.', id ? 'PUT' : 'POST');
+        if (!saved) return;
         dirty = false;
         costForm.hidden = true;
     });
@@ -333,22 +339,14 @@
 
     function renderServices() {
         const servicesList = document.querySelector('#services-list');
-        if (!serviceForm.hidden && serviceForm.parentElement === servicesList) servicesList.after(serviceForm);
         const query = document.querySelector('#service-search').value.trim().toLocaleLowerCase('de');
-        const items = state.services.filter(visible).filter((item) => !query || `${item.shortText} ${item.longText}`.toLocaleLowerCase('de').includes(query));
+        const items = state.services.filter(visible).filter((item) => !query || `${item.articleNumber || ''} ${item.shortText} ${item.longText}`.toLocaleLowerCase('de').includes(query));
         servicesList.innerHTML = items.length ? items.map((item) => `
-            <details class="service-card${activeClass(item)}" data-service-card="${item.id}">
-                <summary><span><strong>${escapeHtml(item.shortText)}</strong> <span class="muted">je ${escapeHtml(item.unit)} · ${item.components.length} Bausteine</span></span><strong>${formatEuro(item.calculation.calculatedUnitPrice)}</strong></summary>
-                <div class="service-card-body"><p>${escapeHtml(item.longText || 'Kein Langtext')}</p>${componentSummaryTable(item.components)}
-                <div class="form-actions"><button type="button" class="button button-light" data-service-edit="${item.id}">Bearbeiten</button><button type="button" class="button button-light" data-service-copy="${item.id}">Kopieren</button><button type="button" class="button button-light" data-service-archive="${item.id}">${item.active ? 'Archivieren' : 'Reaktivieren'}</button></div></div>
-            </details>`).join('') : '<p class="card muted">Keine Leistungspositionen gefunden.</p>';
-    }
-
-    function componentSummaryTable(components) {
-        if (!components.length) return '<p class="muted">Keine Kalkulationsbausteine.</p>';
-        return `<div class="table-wrap"><table><thead><tr><th>Baustein</th><th>Typ</th><th>Menge</th><th>Kostenpreis</th><th>Zuschlag</th></tr></thead><tbody>${components.map((component) =>
-            `<tr><td>${escapeHtml(component.name)}</td><td>${escapeHtml(typeLabels[component.calculationType])}</td><td>${escapeHtml(component.quantity)} ${escapeHtml(component.unit)}</td><td>${formatEuro(component.costPrice)}</td><td>${escapeHtml(component.markupPercent)} %</td></tr>`
-        ).join('')}</tbody></table></div>`;
+            <article class="service-list-item${activeClass(item)}" data-service-card="${item.id}">
+                <div class="service-list-main"><span class="service-number">${escapeHtml(item.articleNumber || 'Ohne Nr.')}</span><strong>${escapeHtml(item.shortText)}</strong><span class="muted">je ${escapeHtml(item.unit)} · ${item.components.length} ${item.components.length === 1 ? 'Baustein' : 'Bausteine'}</span></div>
+                <strong class="service-list-price">${formatEuro(item.calculation.calculatedUnitPrice)}</strong>
+                <div class="service-list-actions"><button type="button" class="table-action" data-service-edit="${item.id}">Bearbeiten</button><button type="button" class="table-action" data-service-copy="${item.id}">Kopieren</button><button type="button" class="table-action" data-service-archive="${item.id}">${item.active ? 'Archivieren' : 'Reaktivieren'}</button></div>
+            </article>`).join('') : '<p class="card muted">Keine Leistungspositionen gefunden.</p>';
     }
 
     document.querySelector('#service-search').addEventListener('input', renderServices);
@@ -357,7 +355,7 @@
         const edit = event.target.closest('[data-service-edit]');
         const copy = event.target.closest('[data-service-copy]');
         const archive = event.target.closest('[data-service-archive]');
-        if (edit) openService(state.services.find((item) => item.id === edit.dataset.serviceEdit), event.target.closest('.service-card'));
+        if (edit) openService(state.services.find((item) => item.id === edit.dataset.serviceEdit));
         if (copy) await mutate(`/api/master-data/services/${copy.dataset.serviceCopy}/copy`, {}, 'Leistungsposition kopiert.');
         if (archive) {
             const item = state.services.find((entry) => entry.id === archive.dataset.serviceArchive);
@@ -365,19 +363,24 @@
         }
     });
 
-    function openService(item = null, card = null) {
+    function openService(item = null) {
         serviceForm.reset();
         serviceForm.elements.id.value = item?.id || '';
+        serviceForm.elements.articleNumber.value = item?.articleNumber || '';
+        const canAssignAutomatically = item === null || !item.articleNumber;
+        serviceForm.elements.autoArticleNumber.checked = canAssignAutomatically;
+        serviceForm.elements.autoArticleNumber.closest('.check-inline').hidden = !canAssignAutomatically;
+        serviceForm.elements.articleNumber.disabled = canAssignAutomatically;
         serviceForm.elements.shortText.value = item?.shortText || '';
         serviceForm.elements.longText.value = item?.longText || '';
         serviceForm.elements.unit.value = item?.unit || '';
         state.components = structuredClone(item?.components || []);
+        masterPricePreview.hidden = true;
+        pendingPriceUpdates = [];
         renderComponents();
         renderServiceTotals(item?.calculation || null);
         serviceForm.hidden = false;
         dirty = false;
-        if (card) card.after(serviceForm);
-        else document.querySelector('#services-list').before(serviceForm);
         serviceForm.elements.shortText.focus();
     }
 
@@ -387,19 +390,28 @@
         ).join('');
     }
 
+    function clearMasterPricePreview() {
+        masterPricePreview.hidden = true;
+        pendingPriceUpdates = [];
+    }
+
     function renderComponents() {
         document.querySelector('#component-count').textContent = `(${state.components.length})`;
         document.querySelector('#components-list').innerHTML = state.components.length ? state.components.map((component, index) => `
             <div class="component-row" data-component-index="${index}">
-                <div class="component-row-heading"><strong>Baustein ${index + 1}</strong><div><button type="button" class="table-action" data-component-up ${index === 0 ? 'disabled' : ''}>↑</button><button type="button" class="table-action" data-component-down ${index === state.components.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="table-action" data-component-copy>Kopieren</button><button type="button" class="table-action danger-text" data-component-remove>Entfernen</button></div></div>
-                <div class="component-grid">
+                <div class="component-primary-grid">
+                    <div class="component-origin"><span>Herkunft</span><strong>${component.masterDataId ? `Aus Kostenstamm${component.sourceArticleNumber ? ` · ${escapeHtml(component.sourceArticleNumber)}` : ' · ohne Artikelnummer'}` : 'Manuell angelegt'}</strong></div>
                     <label>Bezeichnung<input data-field="name" value="${escapeHtml(component.name)}" maxlength="250" required></label>
                     <label>Typ<select data-field="calculationType">${Object.entries(typeLabels).map(([value, label]) => `<option value="${value}" ${component.calculationType === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
                     <label>Einheit<input data-field="unit" value="${escapeHtml(component.unit)}" maxlength="40" required></label>
-                    <label>Menge je Leistungseinheit<input data-field="quantity" value="${escapeHtml(component.quantity)}" inputmode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" required></label>
-                    <label>Kostenpreis<input data-field="costPrice" value="${escapeHtml(component.costPrice)}" inputmode="decimal" pattern="[0-9]+([.,][0-9]{1,4})?" required></label>
-                    <label>Zuschlag %<input data-field="markupPercent" value="${escapeHtml(component.markupPercent)}" inputmode="decimal" pattern="-?[0-9]+([.,][0-9]{1,2})?" required></label>
-                    <label class="check-inline"><input type="checkbox" data-field="priceLocked" ${component.priceLocked ? 'checked' : ''}> Preis gesperrt</label>
+                    <div class="component-controls-actions"><button type="button" class="table-action" data-component-up ${index === 0 ? 'disabled' : ''} title="Nach oben" aria-label="Nach oben">↑</button><button type="button" class="table-action" data-component-down ${index === state.components.length - 1 ? 'disabled' : ''} title="Nach unten" aria-label="Nach unten">↓</button><button type="button" class="table-action" data-component-copy>Kopieren</button><button type="button" class="table-action danger-text" data-component-remove>Entfernen</button></div>
+                </div>
+                <div class="component-price-grid">
+                    <label>Menge je Leistungseinheit<input data-field="quantity" value="${escapeHtml(decimalInput(component.quantity, '0.000'))}" inputmode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" required></label>
+                    <label>Kosten €/Bausteineinheit<input data-field="costPrice" value="${escapeHtml(decimalInput(component.costPrice, '0.0000'))}" inputmode="decimal" pattern="[0-9]+([.,][0-9]{1,4})?" required></label>
+                    <label>Zuschlag auf Kosten %<input data-field="markupPercent" value="${escapeHtml(decimalInput(component.markupPercent, '0.00'))}" inputmode="decimal" pattern="-?[0-9]+([.,][0-9]{1,2})?" required></label>
+                    <div class="component-sales"><span>VK-Anteil je Leistungseinheit</span><strong data-component-sales="${index}">${formatEuro(component.salesPrice || 0)}</strong></div>
+                    <label>Preisbezug<select data-field="priceMode" ${component.masterDataId ? '' : 'disabled'}>${component.masterDataId ? `<option value="master" ${component.priceMode === 'master' ? 'selected' : ''}>Stammdatenpreis</option><option value="locked" ${component.priceMode === 'locked' ? 'selected' : ''}>Stammdatenpreis gesperrt</option>` : ''}<option value="manual" ${component.priceMode === 'manual' || !component.masterDataId ? 'selected' : ''}>Manueller Preis</option></select></label>
                 </div>
             </div>`).join('') : '<p class="muted">Noch keine Kalkulationsbausteine. Wählen Sie einen Stammdatensatz oder legen Sie einen Baustein manuell an.</p>';
     }
@@ -408,23 +420,78 @@
         const id = document.querySelector('#component-master-select').value;
         const item = state.costItems.find((entry) => entry.id === id);
         if (!item) return;
-        state.components.push({ id: crypto.randomUUID(), masterDataId: item.id, name: item.name, calculationType: item.calculationType, unit: item.unit, quantity: '1.000', costPrice: item.costPrice, markupPercent: item.markupPercent, priceLocked: false });
+        // Neue IDs werden erst serverseitig erzeugt, damit das Hinzufügen auch
+        // in Browsern ohne sichere HTTPS-Browserfunktionen im LAN funktioniert.
+        state.components.push({ id: null, masterDataId: item.id, sourceArticleNumber: item.articleNumber, name: item.name, calculationType: item.calculationType, unit: item.unit, quantity: '1.000', costPrice: item.costPrice, markupPercent: item.markupPercent, priceMode: 'master', salesPrice: item.salesPrice });
+        clearMasterPricePreview();
         dirty = true;
         renderComponents();
         scheduleServicePreview();
     });
     document.querySelector('#add-manual-component').addEventListener('click', () => {
-        state.components.push({ id: crypto.randomUUID(), masterDataId: null, name: '', calculationType: 'material', unit: 'Stk.', quantity: '1.000', costPrice: '0.0000', markupPercent: '0.00', priceLocked: false });
+        state.components.push({ id: null, masterDataId: null, sourceArticleNumber: null, name: '', calculationType: 'material', unit: 'Stk.', quantity: '1.000', costPrice: '0.0000', markupPercent: '0.00', priceMode: 'manual', salesPrice: '0.00' });
+        clearMasterPricePreview();
         dirty = true;
         renderComponents();
         document.querySelector('#components-list .component-row:last-child input[data-field="name"]')?.focus();
         scheduleServicePreview();
     });
+    document.querySelector('#preview-master-prices').addEventListener('click', async () => {
+        try {
+            const preview = await api('/api/master-data/preview-master-price-updates', {
+                method: 'POST', body: { components: normalizedComponents() },
+            });
+            pendingPriceUpdates = preview.updates;
+            const warnings = preview.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('');
+            const changes = preview.changes.map((change) => `<tr><td><strong>${escapeHtml(change.name)}</strong><br><span class="muted">${escapeHtml(change.articleNumber || 'ohne Artikelnummer')}</span></td><td>Kosten ${formatEuro(change.oldCostPrice)}<br>Zuschlag ${escapeHtml(decimalInput(change.oldMarkupPercent, '0.00'))} %<br>VK-Anteil ${formatEuro(change.oldSalesPrice)}</td><td>Kosten ${formatEuro(change.newCostPrice)}<br>Zuschlag ${escapeHtml(decimalInput(change.newMarkupPercent, '0.00'))} %<br>VK-Anteil ${formatEuro(change.newSalesPrice)}</td></tr>`).join('');
+            masterPricePreview.innerHTML = `<h3>Vorschau der Preisaktualisierung</h3>${warnings ? `<ul class="notice notice-error">${warnings}</ul>` : ''}${changes ? `<div class="table-wrap"><table><thead><tr><th>Baustein</th><th>Bisher</th><th>Neu</th></tr></thead><tbody>${changes}</tbody></table></div><p class="muted">Gesperrte und manuelle Preise werden nicht verändert. Die angezeigten Änderungen werden zunächst nur in den Entwurf übernommen und erst mit „Leistungsposition speichern“ dauerhaft gespeichert.</p><div class="form-actions"><button type="button" class="button" data-apply-master-prices>Änderungen übernehmen</button><button type="button" class="button button-light" data-cancel-master-prices>Abbrechen</button></div>` : '<p>Alle aktualisierbaren Stammdatenpreise sind bereits auf dem aktuellen Stand. Gesperrte und manuelle Preise wurden nicht berücksichtigt.</p><button type="button" class="button button-light" data-cancel-master-prices>Schließen</button>'}`;
+            masterPricePreview.hidden = false;
+        } catch (error) {
+            notify(error.message, 'error');
+        }
+    });
+    masterPricePreview.addEventListener('click', (event) => {
+        if (event.target.closest('[data-cancel-master-prices]')) {
+            masterPricePreview.hidden = true;
+            pendingPriceUpdates = [];
+            return;
+        }
+        if (!event.target.closest('[data-apply-master-prices]')) return;
+        pendingPriceUpdates.forEach((update) => {
+            const component = state.components[update.index];
+            if (!component) return;
+            component.costPrice = update.costPrice;
+            component.markupPercent = update.markupPercent;
+            component.salesPrice = update.salesPrice;
+            component.sourceArticleNumber = update.sourceArticleNumber;
+        });
+        pendingPriceUpdates = [];
+        masterPricePreview.hidden = true;
+        dirty = true;
+        renderComponents();
+        scheduleServicePreview();
+        notify('Preisänderungen wurden in den ungespeicherten Entwurf übernommen.');
+    });
     document.querySelector('#components-list').addEventListener('input', (event) => {
         const row = event.target.closest('[data-component-index]');
         if (!row || !event.target.dataset.field) return;
         const component = state.components[Number(row.dataset.componentIndex)];
-        component[event.target.dataset.field] = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
+        clearMasterPricePreview();
+        const field = event.target.dataset.field;
+        component[field] = event.target.value;
+        if (component.masterDataId && ['costPrice', 'markupPercent'].includes(field)) {
+            component.priceMode = 'manual';
+            row.querySelector('[data-field="priceMode"]').value = 'manual';
+        }
+        if (field === 'priceMode' && event.target.value === 'master') {
+            const master = state.costItems.find((item) => item.id === component.masterDataId);
+            if (master) {
+                component.costPrice = master.costPrice;
+                component.markupPercent = master.markupPercent;
+                row.querySelector('[data-field="costPrice"]').value = decimalInput(master.costPrice, '0.0000');
+                row.querySelector('[data-field="markupPercent"]').value = decimalInput(master.markupPercent, '0.00');
+            }
+        }
         scheduleServicePreview();
     });
     document.querySelector('#components-list').addEventListener('click', (event) => {
@@ -432,10 +499,11 @@
         if (!row) return;
         const index = Number(row.dataset.componentIndex);
         if (event.target.closest('[data-component-remove]')) state.components.splice(index, 1);
-        else if (event.target.closest('[data-component-copy]')) state.components.splice(index + 1, 0, { ...structuredClone(state.components[index]), id: crypto.randomUUID() });
+        else if (event.target.closest('[data-component-copy]')) state.components.splice(index + 1, 0, { ...structuredClone(state.components[index]), id: null });
         else if (event.target.closest('[data-component-up]') && index > 0) [state.components[index - 1], state.components[index]] = [state.components[index], state.components[index - 1]];
         else if (event.target.closest('[data-component-down]') && index < state.components.length - 1) [state.components[index + 1], state.components[index]] = [state.components[index], state.components[index + 1]];
         else return;
+        clearMasterPricePreview();
         dirty = true;
         renderComponents();
         scheduleServicePreview();
@@ -444,22 +512,38 @@
     serviceForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         const id = serviceForm.elements.id.value;
-        await mutate(id ? `/api/master-data/services/${id}` : '/api/master-data/services', {
+        const saved = await mutate(id ? `/api/master-data/services/${id}` : '/api/master-data/services', {
             shortText: serviceForm.elements.shortText.value,
+            articleNumber: serviceForm.elements.articleNumber.value || null,
+            autoArticleNumber: serviceForm.elements.autoArticleNumber.checked,
             longText: serviceForm.elements.longText.value,
             unit: serviceForm.elements.unit.value,
             components: normalizedComponents(),
         }, id ? 'Leistungsposition gespeichert.' : 'Leistungsposition angelegt.', id ? 'PUT' : 'POST');
+        if (!saved) return;
         dirty = false;
         serviceForm.hidden = true;
     });
+    serviceForm.elements.autoArticleNumber.addEventListener('change', () => {
+        const automatic = serviceForm.elements.autoArticleNumber.checked;
+        serviceForm.elements.articleNumber.disabled = automatic;
+        if (automatic) serviceForm.elements.articleNumber.value = '';
+        else serviceForm.elements.articleNumber.focus();
+    });
+    serviceForm.elements.unit.addEventListener('input', scheduleServicePreview);
 
     function scheduleServicePreview() {
         window.clearTimeout(previewTimer);
         previewTimer = window.setTimeout(async () => {
             if (!state.components.every((component) => component.name && component.unit && component.quantity && component.costPrice && component.markupPercent)) return;
             try {
-                renderServiceTotals(await api('/api/master-data/preview-price', { method: 'POST', body: { components: normalizedComponents() } }));
+                const preview = await api('/api/master-data/preview-price', { method: 'POST', body: { components: normalizedComponents() } });
+                preview.componentSalesPrices.forEach((price, index) => {
+                    state.components[index].salesPrice = price;
+                    const output = document.querySelector(`[data-component-sales="${index}"]`);
+                    if (output) output.textContent = formatEuro(price);
+                });
+                renderServiceTotals(preview);
             } catch (error) {
                 document.querySelector('#service-totals').textContent = error.message;
             }
@@ -472,7 +556,12 @@
             target.innerHTML = '<span class="muted">Noch keine Kalkulation.</span>';
             return;
         }
-        target.innerHTML = `<div><span>Material</span><strong>${formatEuro(calculation.materialCosts)}</strong></div><div><span>Lohn</span><strong>${formatEuro(calculation.laborCosts)}</strong></div><div><span>Fremdleistung</span><strong>${formatEuro(calculation.externalCosts)}</strong></div><div><span>Sonstige Kosten</span><strong>${formatEuro(calculation.otherCosts)}</strong></div><div class="total"><span>Verkaufspreis netto</span><strong>${formatEuro(calculation.calculatedUnitPrice)}</strong></div>`;
+        const optionalCosts = [
+            Number(calculation.externalCosts) !== 0 ? `<div><span>Fremdleistung EK</span><strong>${formatEuro(calculation.externalCosts)}</strong></div>` : '',
+            Number(calculation.otherCosts) !== 0 ? `<div><span>Sonstige Kosten</span><strong>${formatEuro(calculation.otherCosts)}</strong></div>` : '',
+        ].join('');
+        const unit = serviceForm.elements.unit.value.trim();
+        target.innerHTML = `<div><span>Material EK</span><strong>${formatEuro(calculation.materialCosts)}</strong></div><div><span>Lohnkosten</span><strong>${formatEuro(calculation.laborCosts)}</strong></div>${optionalCosts}<div><span>Selbstkosten gesamt</span><strong>${formatEuro(calculation.totalCosts)}</strong></div><div><span>Zuschläge gesamt</span><strong>${formatEuro(calculation.markupTotal ?? calculation.contributionMargin)}</strong></div><div class="total"><span>Verkaufspreis Position netto${unit ? ` je ${escapeHtml(unit)}` : ''}</span><strong>${formatEuro(calculation.calculatedUnitPrice)}</strong></div>`;
     }
 
     function normalizedComponents() {
@@ -492,7 +581,7 @@
             return true;
         } catch (error) {
             notify(error.message, 'error');
-            throw error;
+            return false;
         }
     }
 

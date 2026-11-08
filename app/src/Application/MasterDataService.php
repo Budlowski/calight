@@ -10,6 +10,7 @@ use App\Domain\MasterData\MasterDataValidationException;
 use App\Infrastructure\Persistence\MasterDataRepository;
 use App\Support\Clock;
 use App\Support\Uuid;
+use DateTimeImmutable;
 use PDOException;
 use Throwable;
 
@@ -36,7 +37,7 @@ final readonly class MasterDataService
         return compact('categories', 'suppliers', 'costItems', 'services');
     }
 
-    /** @param array<string,mixed> $input @return array<string,string> */
+    /** @param array<string,mixed> $input @return array<string,mixed> */
     public function preview(array $input): array
     {
         $rawComponents = $input['components'] ?? null;
@@ -59,7 +60,66 @@ final readonly class MasterDataService
                 'markupPercent' => $this->decimal($component, 'markupPercent', 'Zuschlag', Decimal::PERCENT_SCALE, true),
             ];
         }
-        return $this->calculator->calculatePosition('1.000', $components);
+        $result = $this->calculator->calculatePosition('1.000', $components);
+        $result['componentSalesPrices'] = array_map(function (array $component): string {
+            return $this->calculator->calculatePosition('1.000', [$component])['positionTotal'];
+        }, $components);
+        return $result;
+    }
+
+    /** @param array<string,mixed> $input @return array<string,mixed> */
+    public function previewMasterPriceUpdates(array $input): array
+    {
+        $components = $input['components'] ?? null;
+        if (!is_array($components) || !array_is_list($components)) {
+            throw new MasterDataValidationException(['Kalkulationsbausteine müssen als Liste übergeben werden.']);
+        }
+        $updates = [];
+        $changes = [];
+        $warnings = [];
+        foreach ($components as $index => $component) {
+            if (!is_array($component) || ($component['priceMode'] ?? null) !== 'master') continue;
+            $masterDataId = $this->nullableUuid($component['masterDataId'] ?? null, 'Stammdatenreferenz');
+            if ($masterDataId === null) continue;
+            $master = $this->repository->costItem($masterDataId);
+            if ($master === null || !(bool) $master['active']) {
+                $warnings[] = sprintf('Baustein „%s“: Stammdatensatz fehlt oder ist archiviert.', (string) ($component['name'] ?? 'Unbekannt'));
+                continue;
+            }
+            $type = (string) ($component['calculationType'] ?? '');
+            if (!in_array($type, self::TYPES, true)) {
+                throw new MasterDataValidationException([sprintf('Baustein %d hat einen ungültigen Kalkulationstyp.', $index + 1)]);
+            }
+            $quantity = $this->decimal($component, 'quantity', 'Menge', Decimal::QUANTITY_SCALE, false);
+            $oldCost = $this->decimal($component, 'costPrice', 'Kostenpreis', Decimal::COST_SCALE, false);
+            $oldMarkup = $this->decimal($component, 'markupPercent', 'Zuschlag', Decimal::PERCENT_SCALE, true);
+            $oldCostDecimal = Decimal::parse($oldCost, Decimal::COST_SCALE, 'Kostenpreis');
+            $oldMarkupDecimal = Decimal::parse($oldMarkup, Decimal::PERCENT_SCALE, 'Zuschlag');
+            $newCost = (string) $master['cost_price'];
+            $newMarkup = (string) $master['markup_percent'];
+            $newCostDecimal = Decimal::parse($newCost, Decimal::COST_SCALE, 'Kostenpreis');
+            $newMarkupDecimal = Decimal::parse($newMarkup, Decimal::PERCENT_SCALE, 'Zuschlag');
+            $oldSales = $this->calculator->calculatePosition('1.000', [[
+                'type' => $type, 'quantity' => $quantity,
+                'costPrice' => $oldCost, 'markupPercent' => $oldMarkup,
+            ]])['positionTotal'];
+            $newSales = $this->calculator->calculatePosition('1.000', [[
+                'type' => $type, 'quantity' => $quantity,
+                'costPrice' => $newCost, 'markupPercent' => $newMarkup,
+            ]])['positionTotal'];
+            if ($oldCostDecimal->compareTo($newCostDecimal) === 0 && $oldMarkupDecimal->compareTo($newMarkupDecimal) === 0) continue;
+            $updates[] = [
+                'index' => $index, 'costPrice' => $newCost, 'markupPercent' => $newMarkup,
+                'salesPrice' => $newSales, 'sourceArticleNumber' => $master['article_number'],
+            ];
+            $changes[] = [
+                'name' => (string) $component['name'], 'articleNumber' => $master['article_number'],
+                'oldCostPrice' => $oldCost, 'newCostPrice' => $newCost,
+                'oldMarkupPercent' => $oldMarkup, 'newMarkupPercent' => $newMarkup,
+                'oldSalesPrice' => $oldSales, 'newSalesPrice' => $newSales,
+            ];
+        }
+        return compact('updates', 'changes', 'warnings');
     }
 
     /** @param array<string,mixed> $input */
@@ -204,6 +264,13 @@ final readonly class MasterDataService
 
         $this->repository->beginImmediate();
         try {
+            if ($service['article_number'] === null && filter_var($input['autoArticleNumber'] ?? false, FILTER_VALIDATE_BOOL)) {
+                $service['article_number'] = $this->repository->allocateServiceNumber(
+                    $service['id'],
+                    Uuid::v4(),
+                    new DateTimeImmutable(),
+                );
+            }
             $this->repository->createServiceTemplate($service);
             $this->repository->replaceServiceComponents($service['id'], $components);
             $this->repository->commit();
@@ -225,6 +292,13 @@ final readonly class MasterDataService
 
         $this->repository->beginImmediate();
         try {
+            if ($service['article_number'] === null && filter_var($input['autoArticleNumber'] ?? false, FILTER_VALIDATE_BOOL)) {
+                $service['article_number'] = $this->repository->allocateServiceNumber(
+                    $service['id'],
+                    Uuid::v4(),
+                    new DateTimeImmutable(),
+                );
+            }
             $this->repository->updateServiceTemplate($service);
             $this->repository->replaceServiceComponents($id, $components);
             $this->repository->commit();
@@ -243,6 +317,7 @@ final readonly class MasterDataService
         $now = Clock::now();
         $copy = [
             'id' => $newId,
+            'article_number' => null,
             'short_text' => 'Kopie von ' . $source['short_text'],
             'long_text' => $source['long_text'],
             'unit' => $source['unit'],
@@ -257,8 +332,8 @@ final readonly class MasterDataService
             $component['sort_order'] = $index;
             $component['created_at'] = $component['updated_at'] = $now;
             $prepared[] = $this->only($component, [
-                'id', 'service_template_id', 'master_data_id', 'name', 'calculation_type', 'unit',
-                'quantity', 'cost_price', 'markup_percent', 'price_locked', 'sort_order', 'created_at', 'updated_at',
+                'id', 'service_template_id', 'master_data_id', 'source_article_number', 'name', 'calculation_type', 'unit',
+                'quantity', 'cost_price', 'markup_percent', 'price_mode', 'sort_order', 'created_at', 'updated_at',
             ]);
         }
 
@@ -366,23 +441,39 @@ final readonly class MasterDataService
                 throw new MasterDataValidationException([sprintf('Baustein %d hat einen ungültigen Kalkulationstyp.', $index + 1)]);
             }
             $masterDataId = $this->nullableUuid($component['masterDataId'] ?? null, 'Stammdatenreferenz');
+            $masterData = null;
             if ($masterDataId !== null) {
                 $masterData = $this->repository->costItem($masterDataId);
                 if ($masterData === null) throw new MasterDataValidationException([sprintf('Stammdatensatz für Baustein %d wurde nicht gefunden.', $index + 1)]);
             }
+            $priceMode = (string) ($component['priceMode'] ?? ($masterDataId === null ? 'manual' : 'master'));
+            if (!in_array($priceMode, ['master', 'locked', 'manual'], true)) {
+                throw new MasterDataValidationException([sprintf('Preisbezug für Baustein %d ist ungültig.', $index + 1)]);
+            }
+            if ($masterDataId === null && $priceMode !== 'manual') {
+                throw new MasterDataValidationException([sprintf('Baustein %d ohne Stammdatenreferenz muss einen manuellen Preis verwenden.', $index + 1)]);
+            }
+            $costPrice = $this->decimal($component, 'costPrice', 'Bausteinkostenpreis', Decimal::COST_SCALE, false);
+            $markupPercent = $this->decimal($component, 'markupPercent', 'Bausteinzuschlag', Decimal::PERCENT_SCALE, true);
             $validated[] = [
                 'id' => isset($component['id']) && Uuid::isValid((string) $component['id']) ? (string) $component['id'] : Uuid::v4(),
                 'master_data_id' => $masterDataId,
+                'source_article_number' => $masterDataId !== null
+                    ? (array_key_exists('sourceArticleNumber', $component)
+                        ? $this->nullableText($component, 'sourceArticleNumber', 100)
+                        : $masterData['article_number'])
+                    : null,
                 'name' => $this->requiredText($component, 'name', 'Bausteinbezeichnung', 250),
                 'calculation_type' => $type,
                 'unit' => $this->requiredText($component, 'unit', 'Bausteineinheit', 40),
                 'quantity' => $this->decimal($component, 'quantity', 'Bausteinmenge', Decimal::QUANTITY_SCALE, false),
-                'cost_price' => $this->decimal($component, 'costPrice', 'Bausteinkostenpreis', Decimal::COST_SCALE, false),
-                'markup_percent' => $this->decimal($component, 'markupPercent', 'Bausteinzuschlag', Decimal::PERCENT_SCALE, true),
-                'price_locked' => filter_var($component['priceLocked'] ?? false, FILTER_VALIDATE_BOOL) ? 1 : 0,
+                'cost_price' => $costPrice,
+                'markup_percent' => $markupPercent,
+                'price_mode' => $priceMode,
             ];
         }
         return [[
+            'article_number' => $this->nullableText($input, 'articleNumber', 100),
             'short_text' => $this->requiredText($input, 'shortText', 'Kurztext', 250),
             'long_text' => $this->optionalText($input, 'longText', 10000),
             'unit' => $this->requiredText($input, 'unit', 'Einheit', 40),
@@ -449,11 +540,17 @@ final readonly class MasterDataService
         $mappedComponents = [];
         $calculationInput = [];
         foreach ($components as $component) {
+            $componentCalculation = $this->calculator->calculatePosition('1.000', [[
+                'type' => $component['calculation_type'], 'quantity' => $component['quantity'],
+                'costPrice' => $component['cost_price'], 'markupPercent' => $component['markup_percent'],
+            ]]);
             $mappedComponents[] = [
                 'id' => $component['id'], 'masterDataId' => $component['master_data_id'], 'name' => $component['name'],
+                'sourceArticleNumber' => $component['source_article_number'],
                 'calculationType' => $component['calculation_type'], 'unit' => $component['unit'],
                 'quantity' => $component['quantity'], 'costPrice' => $component['cost_price'],
-                'markupPercent' => $component['markup_percent'], 'priceLocked' => (bool) $component['price_locked'],
+                'markupPercent' => $component['markup_percent'], 'priceMode' => $component['price_mode'],
+                'salesPrice' => $componentCalculation['positionTotal'],
             ];
             $calculationInput[] = [
                 'type' => $component['calculation_type'], 'quantity' => $component['quantity'],
@@ -461,8 +558,9 @@ final readonly class MasterDataService
             ];
         }
         $calculation = $this->calculator->calculatePosition('1.000', $calculationInput);
+        $calculation['markupTotal'] = $calculation['contributionMargin'];
         return [
-            'id' => $row['id'], 'shortText' => $row['short_text'], 'longText' => $row['long_text'],
+            'id' => $row['id'], 'articleNumber' => $row['article_number'], 'shortText' => $row['short_text'], 'longText' => $row['long_text'],
             'unit' => $row['unit'], 'active' => (bool) $row['active'], 'copiedFromId' => $row['copied_from_id'],
             'components' => $mappedComponents, 'calculation' => $calculation,
         ];
