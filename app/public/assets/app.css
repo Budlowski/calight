@@ -249,18 +249,29 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .price-update-preview h3 { margin-top: 0; }
 .components-list { display: grid; gap: 3px; padding: 0 9px 8px; }
 .component-row { padding: 6px 7px; border: 1px solid var(--border); border-radius: 3px; background: #f8fafb; }
-.component-primary-grid { display: grid; grid-template-columns: minmax(180px,1.3fr) minmax(110px,.55fr) minmax(80px,.4fr) minmax(230px,1fr) auto; align-items: end; gap: var(--space-1); }
+.component-primary-grid { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(110px, 150px) minmax(70px, 90px) minmax(190px, 270px) auto; align-items: end; gap: 6px; }
 .component-price-grid { display: grid; grid-template-columns: 1.1fr 1.1fr 1fr 1fr; align-items: end; gap: var(--space-1); margin-top: var(--space-1); padding-top: var(--space-1); border-top: 1px solid var(--border); }
+.offer-position-editor .component-primary-grid { grid-template-columns: minmax(260px, 1fr) minmax(110px, 150px) minmax(190px, 270px) auto; }
+.offer-position-editor .component-price-grid { grid-template-columns: minmax(145px, 200px) minmax(70px, 90px) minmax(145px, 200px) minmax(135px, 190px) minmax(120px, 155px) minmax(220px, 1fr); column-gap: 8px; }
 .component-primary-grid label, .component-price-grid label { gap: 3px; font-size: 12px; }
 .component-primary-grid input, .component-primary-grid select, .component-price-grid input, .component-price-grid select { min-height: 30px; padding: 4px 6px; }
 .component-price-grid input, input[inputmode="decimal"] { text-align: right; font-variant-numeric: tabular-nums; }
+.offer-position-editor .component-price-grid label { font-size: 11px; }
+.offer-position-editor .component-price-grid input { min-height: 28px; height: 28px; padding-block: 3px; }
 .component-origin { display: flex; min-height: 42px; flex-direction: column; justify-content: flex-end; gap: 2px; padding-bottom: 4px; }
 .component-origin span { color: var(--muted); font-size: 12px; }
 .component-origin strong { font-size: 12px; overflow-wrap: anywhere; }
-.component-sales { display: flex; min-height: 42px; flex-direction: column; justify-content: flex-end; gap: 2px; padding-bottom: 4px; }
+.component-sales { display: flex; min-height: 40px; flex-direction: column; justify-content: flex-end; gap: 1px; padding-bottom: 2px; }
 .component-sales span { color: var(--muted); font-size: 12px; }
 .component-sales strong { font-size: 14px; }
-.component-controls-actions { display: flex; align-self: start; align-items: center; justify-content: flex-end; white-space: nowrap; }
+.component-controls-actions { display: flex; align-self: start; align-items: center; justify-content: flex-end; gap: 3px; white-space: nowrap; }
+.offer-position-editor .component-controls-actions { margin-left: 10px; }
+.component-controls-actions .icon-button { border-color: #b9c7d0; background: #fff; }
+.component-controls-actions .icon-button:hover { border-color: #8da9bb; background: #edf4f8; }
+.component-controls-actions .icon-button-danger { border-color: #d9aaa5; }
+.component-controls-actions .icon-button-danger:hover { border-color: #c97e76; background: #faecea; }
+.component-save-action { display: flex; min-height: 0; grid-column: 1 / -1; align-items: center; justify-content: flex-end; }
+.offer-position-editor .component-save-action { grid-column: auto; align-self: end; justify-self: end; padding-bottom: 1px; }
 .service-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 8px; }
 .service-totals > div { display: flex; flex-direction: column; padding: 7px 9px; background: #f0f3f5; }
 .service-totals .total { color: white; background: var(--primary); }
@@ -436,6 +447,9 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
     .master-split { grid-template-columns: 1fr; }
     .master-editor { position: static; }
     .form-grid, .service-header-grid, .component-primary-grid, .component-price-grid, .price-method-row { grid-template-columns: 1fr; }
+    .offer-position-editor .component-primary-grid { grid-template-columns: 1fr; }
+    .offer-position-editor .component-price-grid { grid-template-columns: 1fr; }
+    .offer-position-editor .component-save-action { grid-column: 1; }
     .component-controls-actions { justify-content: flex-start; }
     .component-add-row { grid-template-columns: 1fr; }
     .customer-toolbar, .project-toolbar, .customer-head-grid, .project-head-grid, .address-grid, .contact-grid { grid-template-columns: 1fr; }
@@ -475,6 +489,8 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
     .component-primary-grid { grid-template-columns: .8fr 1.4fr .7fr .5fr; }
     .component-controls-actions { grid-column: 1 / -1; justify-content: flex-end; }
     .component-price-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .offer-position-editor .component-price-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .offer-position-editor .component-save-action { grid-row: 2; grid-column: 3; }
     .project-offer-layout { grid-template-columns: 1fr; }
     .settings-panel-grid, .settings-logo-layout { grid-template-columns: 1fr; }
     .settings-grid-company { grid-template-columns: repeat(2, minmax(0, 1fr)); }

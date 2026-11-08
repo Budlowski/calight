@@ -13,10 +13,10 @@
     <div id="offer-tree" class="offer-tree" aria-live="polite"></div>
     <dialog id="cost-item-dialog" class="compact-dialog">
         <form method="dialog" id="cost-item-dialog-form" class="form-stack">
-            <div class="dialog-heading"><div><h2>Als Stammartikel speichern</h2><p class="muted">Der Angebotsbaustein bleibt unverändert.</p></div><button class="icon-button" type="button" data-dialog-close aria-label="Schließen">×</button></div>
+            <div class="dialog-heading"><div><h2>In Artikelstamm speichern</h2><p class="muted">Der Angebotsbaustein bleibt unverändert.</p></div><button class="icon-button" type="button" data-dialog-close aria-label="Schließen">×</button></div>
             <div class="form-grid component-master-dialog-grid"><label>Artikelnummer<input name="articleNumber" maxlength="100" placeholder="Optional"></label><label>Bezeichnung<input name="name" maxlength="250" required></label><label>Typ<select name="calculationType"><option value="material">Material</option><option value="labor">Lohn</option><option value="external">Fremdleistung</option><option value="other">Sonstige Kosten</option></select></label><label>Einheit<input name="unit" maxlength="40" required></label><label>Kosten-EP<input name="costPrice" inputmode="decimal" required></label><label>Aufschlag auf Kosten %<input name="markupPercent" inputmode="decimal" required></label></div>
             <div class="notice notice-error" data-cost-item-dialog-error hidden></div>
-            <div class="form-actions"><button class="button" type="submit" data-icon="save">Stammartikel speichern</button><button class="button button-light" type="button" data-dialog-close>Abbrechen</button></div>
+            <div class="form-actions"><button class="button" type="submit" data-icon="save">In Artikelstamm speichern</button><button class="button button-light" type="button" data-dialog-close>Abbrechen</button></div>
         </form>
     </dialog>
 </div>

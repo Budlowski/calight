@@ -87,7 +87,7 @@ $contentClass = 'content-wide';
             <details class="components-panel" open>
                 <summary>Kalkulationsbausteine <span id="component-count"></span></summary>
                 <div class="component-add-row">
-                    <input id="component-master-select" list="component-master-options" placeholder="Artikelnummer oder Bezeichnung suchen" autocomplete="off"><datalist id="component-master-options"></datalist>
+                    <input id="component-master-select" list="component-master-options" placeholder="Artikelstamm durchsuchen" autocomplete="off"><datalist id="component-master-options"></datalist>
                     <button class="button button-light" type="button" id="add-master-component">Übernehmen</button>
                     <button class="button button-light" type="button" id="add-manual-component">Manuell anlegen</button>
                     <button class="button button-light" type="button" id="preview-master-prices">Preise aktualisieren</button>
