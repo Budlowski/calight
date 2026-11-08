@@ -1,0 +1,26 @@
+{
+    "name": "handwerk/kalkulationssoftware",
+    "description": "Selbst gehostete Kalkulationssoftware fuer einen Elektrohandwerksbetrieb",
+    "type": "project",
+    "require": {
+        "php": "^8.4",
+        "ext-json": "*",
+        "ext-mbstring": "*",
+        "ext-pdo": "*",
+        "ext-pdo_sqlite": "*",
+        "brick/math": "^0.14"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "src/"
+        }
+    },
+    "scripts": {
+        "test": "php tests/run.php",
+        "migrate": "php bin/console migrate"
+    },
+    "config": {
+        "allow-plugins": false,
+        "sort-packages": true
+    }
+}
