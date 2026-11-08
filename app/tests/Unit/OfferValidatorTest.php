@@ -48,6 +48,13 @@ final class OfferValidatorTest extends TestCase
         $this->assertThrows(OfferValidationException::class, fn () => (new OfferValidator())->validate($offer));
     }
 
+    public function testAcceptsLegacyAndSnapshotPriceModes(): void
+    {
+        $offer=$this->offer();$base=['id'=>Uuid::v4(),'name'=>'Material','calculationType'=>'material','unit'=>'Stk.','quantity'=>'1.000','costPrice'=>'2.0000','markupPercent'=>'10.00','masterDataId'=>null];
+        $offer['nodes']=[['id'=>Uuid::v4(),'type'=>'position','positionType'=>'normal','shortText'=>'Alt','longText'=>'','quantity'=>'1.000','unit'=>'Stk.','manualUnitPrice'=>null,'components'=>[$base+['priceLocked'=>false,'masterDataSnapshot'=>null]]],['id'=>Uuid::v4(),'type'=>'position','positionType'=>'normal','shortText'=>'Neu','longText'=>'','quantity'=>'1.000','unit'=>'Stk.','manualUnitPrice'=>null,'components'=>[array_replace($base,['id'=>Uuid::v4(),'priceMode'=>'manual','sourceArticleNumber'=>null])]]];
+        (new OfferValidator())->validate($offer);$this->assertTrue(true);
+    }
+
     /** @return array<string,mixed> */
     private function offer(): array
     {

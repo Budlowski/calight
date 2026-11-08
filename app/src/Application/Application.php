@@ -14,6 +14,7 @@ use App\Http\Session;
 use App\Http\CsrfException;
 use App\Http\MasterDataController;
 use App\Http\CustomerProjectController;
+use App\Http\OfferCalculationController;
 use App\Infrastructure\Persistence\OfferConflictException;
 use App\Infrastructure\Persistence\OfferRepository;
 use App\Infrastructure\Persistence\ProjectRepository;
@@ -34,6 +35,7 @@ final readonly class Application
         private OfferService $offerService,
         private MasterDataController $masterDataController,
         private CustomerProjectController $customerProjectController,
+        private OfferCalculationController $offerCalculationController,
     ) {
         $this->registerRoutes();
     }
@@ -62,6 +64,7 @@ final readonly class Application
     {
         $this->masterDataController->register($this->router);
         $this->customerProjectController->register($this->router);
+        $this->offerCalculationController->register($this->router);
 
         $this->router->add('GET', '/', fn (): Response => Session::user() === null
             ? Response::redirect('/login')

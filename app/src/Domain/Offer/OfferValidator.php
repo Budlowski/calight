@@ -158,8 +158,9 @@ final class OfferValidator
                 $errors[] = $exception->getMessage();
             }
         }
-        if (!is_bool($component['priceLocked'] ?? null)) {
-            $errors[] = $path . '.priceLocked muss ein Wahrheitswert sein.';
-        }
+        if (array_key_exists('priceMode',$component)) {
+            if(!in_array($component['priceMode'],['master','locked','manual'],true))$errors[]=$path.'.priceMode ist ungueltig.';
+            if(($component['masterDataId']??null)===null&&$component['priceMode']!=='manual')$errors[]=$path.'.priceMode muss ohne Stammdatenreferenz manual sein.';
+        } elseif (!is_bool($component['priceLocked'] ?? null)) $errors[] = $path . '.priceLocked muss ein Wahrheitswert sein.';
     }
 }

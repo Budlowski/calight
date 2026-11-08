@@ -8,6 +8,7 @@ use App\Infrastructure\Persistence\OfferConflictException;
 use App\Infrastructure\Persistence\OfferJsonStore;
 use App\Infrastructure\Persistence\OfferRepository;
 use App\Infrastructure\Persistence\ProjectRepository;
+use App\Domain\Offer\OfferCalculator;
 use App\Support\Clock;
 use App\Support\Uuid;
 use PDO;
@@ -21,6 +22,7 @@ final readonly class OfferService
         private ProjectRepository $projects,
         private OfferRepository $offers,
         private OfferJsonStore $store,
+        private OfferCalculator $calculator,
     ) {
     }
 
@@ -98,6 +100,7 @@ final readonly class OfferService
         $newEtag = null;
         $this->pdo->exec('BEGIN IMMEDIATE');
         try {
+            $offer = $this->calculator->calculate($offer);
             $newEtag = $this->store->saveDraft((string) $metadata['project_id'], $offerId, $offer, $expectedEtag);
             if (!$this->offers->updateEtag($offerId, $expectedEtag, $newEtag)) {
                 throw new OfferConflictException('Der Entwurf wurde zwischenzeitlich geaendert. Bitte neu laden.');

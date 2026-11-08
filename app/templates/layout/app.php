@@ -9,7 +9,7 @@
 <body>
 <?php if ($currentUser !== null): ?>
     <header class="topbar">
-        <a class="brand" href="/dashboard">Kalkulationssoftware</a>
+        <a class="brand" href="/dashboard">Calight</a>
         <div class="user-area">
             <span><?= $escape($currentUser['displayName']) ?></span>
             <form action="/logout" method="post">

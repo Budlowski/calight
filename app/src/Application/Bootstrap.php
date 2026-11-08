@@ -8,6 +8,8 @@ use App\Domain\Offer\OfferValidator;
 use App\Domain\Calculation\PriceCalculator;
 use App\Http\MasterDataController;
 use App\Http\CustomerProjectController;
+use App\Http\OfferCalculationController;
+use App\Domain\Offer\OfferCalculator;
 use App\Http\Router;
 use App\Infrastructure\Database\ConnectionFactory;
 use App\Infrastructure\Persistence\OfferJsonStore;
@@ -40,10 +42,10 @@ final readonly class Bootstrap
         $offers = new OfferRepository($this->pdo);
         $store = new OfferJsonStore($this->config->offersPath, new OfferValidator());
         $view = new View($root . '/templates');
-        $masterData = new MasterDataController(
-            $view,
-            new MasterDataService(new MasterDataRepository($this->pdo), new PriceCalculator(), new NumberRangeRepository($this->pdo)),
-        );
+        $priceCalculator=new PriceCalculator();
+        $offerCalculator=new OfferCalculator($priceCalculator);
+        $masterDataService=new MasterDataService(new MasterDataRepository($this->pdo),$priceCalculator,new NumberRangeRepository($this->pdo));
+        $masterData = new MasterDataController($view,$masterDataService);
         $numberRanges = new NumberRangeRepository($this->pdo);
         $customerProjects = new CustomerProjectController(
             $view,
@@ -56,9 +58,10 @@ final readonly class Bootstrap
             new UserRepository($this->pdo),
             $projects,
             $offers,
-            new OfferService($this->pdo, $projects, $offers, $store),
+            new OfferService($this->pdo, $projects, $offers, $store,$offerCalculator),
             $masterData,
             $customerProjects,
+            new OfferCalculationController(new OfferCalculationService($masterDataService,new OfferValidator(),$offerCalculator)),
         );
     }
 }

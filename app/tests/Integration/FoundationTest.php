@@ -6,6 +6,8 @@ namespace App\Tests\Integration;
 
 use App\Application\OfferService;
 use App\Domain\Offer\OfferValidator;
+use App\Domain\Offer\OfferCalculator;
+use App\Domain\Calculation\PriceCalculator;
 use App\Infrastructure\Database\ConnectionFactory;
 use App\Infrastructure\Database\Migrator;
 use App\Infrastructure\Persistence\OfferConflictException;
@@ -32,7 +34,7 @@ final class FoundationTest extends TestCase
             $projects = new ProjectRepository($pdo);
             $offers = new OfferRepository($pdo);
             $store = new OfferJsonStore($temporary . '/offers', new OfferValidator());
-            $service = new OfferService($pdo, $projects, $offers, $store);
+            $service = new OfferService($pdo, $projects, $offers, $store,new OfferCalculator(new PriceCalculator()));
             $projectId = $projects->create('E2E Projekt', 'Musterkunde', 'Musterstraße 1');
             $offerId = $service->createDraft($projectId, 'E2E Angebot');
 
