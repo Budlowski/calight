@@ -32,7 +32,7 @@ final readonly class DocumentSettingsService
         if(!in_array($current['validityMode']??'duration',['duration','date'],true))throw new InvalidArgumentException('Die Art der Angebotsgültigkeit ist ungültig.');
         $fileNamePattern=(string)($current['fileNamePattern']??'');
         if($fileNamePattern===''||mb_strlen($fileNamePattern)>150||preg_match('/[\\\\\/<>:"|?*]/u',$fileNamePattern))throw new InvalidArgumentException('Die Dateinamenvorlage ist ungültig.');
-        $withoutPlaceholders=preg_replace('/\{(?:JJJJ|MM|TT|DOKUMENTTYP|DOKUMENTNUMMER)\}/',$fileNamePattern);
+        $withoutPlaceholders=preg_replace('/\{(?:JJJJ|MM|TT|DOKUMENTTYP|DOKUMENTNUMMER)\}/','',$fileNamePattern);
         if($withoutPlaceholders===null||str_contains($withoutPlaceholders,'{')||str_contains($withoutPlaceholders,'}'))throw new InvalidArgumentException('Die Dateinamenvorlage enthält einen unbekannten Platzhalter.');
         if(($current['validityMode']??'duration')==='date'&&!preg_match('/^\d{4}-\d{2}-\d{2}$/',(string)($current['validityDate']??'')))throw new InvalidArgumentException('Das Gültigkeitsdatum ist ungültig.');
         $days=filter_var($current['validityDays']??null,FILTER_VALIDATE_INT);
