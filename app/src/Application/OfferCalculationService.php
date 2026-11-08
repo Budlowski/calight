@@ -52,7 +52,7 @@ final readonly class OfferCalculationService
         $updateId=trim((string)($input['updateExistingId']??''));
         if($updateId!==''){
             $existing=array_values(array_filter($allServices,static fn(array $service):bool=>$service['id']===$updateId));
-            if($existing===[])throw new MasterDataValidationException(['Zu aktualisierende Leistungsposition wurde nicht gefunden.']);
+            if($existing===[])throw new MasterDataValidationException(['Zu aktualisierende Stammposition wurde nicht gefunden.']);
             $payload['articleNumber']=$existing[0]['articleNumber'];$payload['autoArticleNumber']=false;
         }
         $saved=$updateId!==''?$this->masterData->updateService($updateId,$payload):$this->masterData->createService($payload);

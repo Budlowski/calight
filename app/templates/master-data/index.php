@@ -6,7 +6,7 @@ $contentClass = 'content-wide';
     <div class="page-heading">
         <div>
             <h1>Stammdaten</h1>
-            <p class="muted">Kategorien, Kostenstamm, Leistungspositionen und Lieferanten zentral verwalten.</p>
+            <p class="muted">Artikelstamm, Positionsstamm, Kategorien und Lieferanten zentral verwalten.</p>
         </div>
         <label class="check-inline"><input type="checkbox" id="show-archived"> Archivierte anzeigen</label>
     </div>
@@ -14,21 +14,21 @@ $contentClass = 'content-wide';
     <div id="master-message" class="notice" role="status" hidden></div>
 
     <nav class="tabs" aria-label="Stammdatenbereiche">
-        <button class="tab-button active" type="button" data-tab="cost-items">Kostenstamm</button>
-        <button class="tab-button" type="button" data-tab="services">Leistungspositionen</button>
+        <button class="tab-button active" type="button" data-tab="cost-items">Artikelstamm</button>
+        <button class="tab-button" type="button" data-tab="services">Positionsstamm</button>
         <button class="tab-button" type="button" data-tab="categories">Kategorien</button>
         <button class="tab-button" type="button" data-tab="suppliers">Lieferanten</button>
     </nav>
 
     <section class="tab-panel active" data-panel="cost-items">
         <div class="master-toolbar">
-            <input id="cost-search" type="search" placeholder="Artikelnummer, Bezeichnung oder Beschreibung suchen" aria-label="Kostenstamm durchsuchen">
+            <input id="cost-search" type="search" placeholder="Artikelnummer, Bezeichnung oder Beschreibung suchen" aria-label="Artikelstamm durchsuchen">
             <select id="cost-category-filter" aria-label="Kategorie filtern"><option value="">Alle Kategorien</option></select>
             <select id="cost-type-filter" aria-label="Kalkulationstyp filtern">
                 <option value="">Alle Typen</option><option value="material">Material</option><option value="labor">Lohn</option>
                 <option value="external">Fremdleistung</option><option value="other">Sonstige Kosten</option>
             </select>
-            <button class="button" type="button" id="new-cost-item">Neuer Kostensatz</button>
+            <button class="button" type="button" id="new-cost-item">Neuer Stammartikel</button>
         </div>
         <div class="master-split">
             <div class="table-wrap">
@@ -36,7 +36,7 @@ $contentClass = 'content-wide';
             </div>
             <form id="cost-item-form" class="card form-stack master-editor" hidden>
                 <input type="hidden" name="id">
-                <div class="editor-heading"><h2>Kostensatz</h2></div>
+                <div class="editor-heading"><h2>Stammartikel</h2></div>
                 <div class="form-grid">
                     <label>Artikelnummer<input name="articleNumber" maxlength="100"></label>
                     <label>Bezeichnung<input name="name" maxlength="250" required></label>
@@ -57,14 +57,14 @@ $contentClass = 'content-wide';
 
     <section class="tab-panel" data-panel="services" hidden>
         <div class="master-toolbar">
-            <input id="service-search" type="search" placeholder="Positionsnummer oder Bezeichnung durchsuchen" aria-label="Leistungspositionen durchsuchen">
-            <button class="button" type="button" id="new-service">Neue Leistungsposition</button>
+            <input id="service-search" type="search" placeholder="Positionsnummer oder Bezeichnung durchsuchen" aria-label="Positionsstamm durchsuchen">
+            <button class="button" type="button" id="new-service">Neue Stammposition</button>
         </div>
         <div class="master-split service-master-split">
             <div id="services-list" class="service-list"></div>
             <form id="service-form" class="card form-stack service-editor" hidden>
             <input type="hidden" name="id">
-            <div class="editor-heading"><h2>Leistungsposition</h2></div>
+            <div class="editor-heading"><h2>Stammposition</h2></div>
             <div class="form-grid service-header-grid">
                 <div class="service-number-field">
                     <div class="service-number-heading">
@@ -80,16 +80,16 @@ $contentClass = 'content-wide';
             <details class="components-panel" open>
                 <summary>Kalkulationsbausteine <span id="component-count"></span></summary>
                 <div class="component-add-row">
-                    <select id="component-master-select"><option value="">Aus Kostenstamm auswählen …</option></select>
+                    <select id="component-master-select"><option value="">Stammartikel auswählen …</option></select>
                     <button class="button button-light" type="button" id="add-master-component">Übernehmen</button>
                     <button class="button button-light" type="button" id="add-manual-component">Manuell anlegen</button>
-                    <button class="button button-light" type="button" id="preview-master-prices">Preise aus Stammdaten aktualisieren</button>
+                    <button class="button button-light" type="button" id="preview-master-prices">Preise aktualisieren</button>
                 </div>
                 <div id="master-price-preview" class="price-update-preview" hidden></div>
                 <div id="components-list" class="components-list"></div>
             </details>
             <div class="service-totals" id="service-totals"></div>
-            <div class="form-actions"><button class="button" type="submit">Leistungsposition speichern</button><button class="button button-light" type="button" data-close-service>Abbrechen</button></div>
+            <div class="form-actions"><button class="button" type="submit">Stammposition speichern</button><button class="button button-light" type="button" data-close-service>Abbrechen</button></div>
             </form>
         </div>
     </section>

@@ -48,4 +48,11 @@ final class OfferCalculatorTest extends TestCase
         $this->assertSame('0.05',$result['calculatedUnitPrice']);
         $this->assertSame('0.07',$result['positionTotal']);
     }
+
+    public function testRemovingManualUnitPriceImmediatelyRestoresCalculatedPrice():void
+    {
+        $calculator=new OfferCalculator(new PriceCalculator());$position=['id'=>'p','type'=>'position','positionType'=>'normal','shortText'=>'Preiswechsel','longText'=>'','quantity'=>'2.000','unit'=>'Stk.','manualUnitPrice'=>'20.00','components'=>[['calculationType'=>'material','quantity'=>'1.000','costPrice'=>'10.0000','markupPercent'=>'25.00']]];
+        $manual=$calculator->calculate(['nodes'=>[$position]])['nodes'][0]['calculation'];$this->assertSame('20.00',$manual['effectiveUnitPrice']);$this->assertSame('40.00',$manual['positionTotal']);
+        $position['manualUnitPrice']=null;$calculated=$calculator->calculate(['nodes'=>[$position]])['nodes'][0]['calculation'];$this->assertSame('12.50',$calculated['effectiveUnitPrice']);$this->assertSame('25.00',$calculated['positionTotal']);
+    }
 }

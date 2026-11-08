@@ -81,11 +81,11 @@ final readonly class MasterDataService
         $warnings = [];
         foreach ($components as $index => $component) {
             if (!is_array($component) || ($component['priceMode'] ?? null) !== 'master') continue;
-            $masterDataId = $this->nullableUuid($component['masterDataId'] ?? null, 'Stammdatenreferenz');
+            $masterDataId = $this->nullableUuid($component['masterDataId'] ?? null, 'Artikelstammreferenz');
             if ($masterDataId === null) continue;
             $master = $this->repository->costItem($masterDataId);
             if ($master === null || !(bool) $master['active']) {
-                $warnings[] = sprintf('Baustein „%s“: Stammdatensatz fehlt oder ist archiviert.', (string) ($component['name'] ?? 'Unbekannt'));
+                $warnings[] = sprintf('Baustein „%s“: Stammartikel fehlt oder ist archiviert.', (string) ($component['name'] ?? 'Unbekannt'));
                 continue;
             }
             $type = (string) ($component['calculationType'] ?? '');
@@ -152,7 +152,7 @@ final readonly class MasterDataService
     {
         $category = $this->requireCategory($id);
         if ($archived && $this->repository->categoryHasActiveReferences($id)) {
-            throw new MasterDataValidationException(['Kategorie kann erst archiviert werden, wenn aktive Unterkategorien und Kostensätze verschoben oder archiviert wurden.']);
+            throw new MasterDataValidationException(['Kategorie kann erst archiviert werden, wenn aktive Unterkategorien und Stammartikel verschoben oder archiviert wurden.']);
         }
         if (!$archived && $category['parent_id'] !== null) {
             $parent = $this->requireCategory((string) $category['parent_id']);
@@ -189,7 +189,7 @@ final readonly class MasterDataService
     {
         $this->requireSupplier($id);
         if ($archived && $this->repository->supplierHasActiveItems($id)) {
-            throw new MasterDataValidationException(['Lieferant kann erst archiviert werden, wenn zugeordnete aktive Kostensätze geändert oder archiviert wurden.']);
+            throw new MasterDataValidationException(['Lieferant kann erst archiviert werden, wenn zugeordnete aktive Stammartikel geändert oder archiviert wurden.']);
         }
         $this->repository->setActive('suppliers', $id, !$archived, Clock::now());
         return $this->mapSupplier($this->requireSupplier($id));
@@ -434,18 +434,18 @@ final readonly class MasterDataService
             if (!in_array($type, self::TYPES, true)) {
                 throw new MasterDataValidationException([sprintf('Baustein %d hat einen ungültigen Kalkulationstyp.', $index + 1)]);
             }
-            $masterDataId = $this->nullableUuid($component['masterDataId'] ?? null, 'Stammdatenreferenz');
+            $masterDataId = $this->nullableUuid($component['masterDataId'] ?? null, 'Artikelstammreferenz');
             $masterData = null;
             if ($masterDataId !== null) {
                 $masterData = $this->repository->costItem($masterDataId);
-                if ($masterData === null) throw new MasterDataValidationException([sprintf('Stammdatensatz für Baustein %d wurde nicht gefunden.', $index + 1)]);
+                if ($masterData === null) throw new MasterDataValidationException([sprintf('Stammartikel für Baustein %d wurde nicht gefunden.', $index + 1)]);
             }
             $priceMode = (string) ($component['priceMode'] ?? ($masterDataId === null ? 'manual' : 'master'));
             if (!in_array($priceMode, ['master', 'locked', 'manual'], true)) {
                 throw new MasterDataValidationException([sprintf('Preisbezug für Baustein %d ist ungültig.', $index + 1)]);
             }
             if ($masterDataId === null && $priceMode !== 'manual') {
-                throw new MasterDataValidationException([sprintf('Baustein %d ohne Stammdatenreferenz muss einen manuellen Preis verwenden.', $index + 1)]);
+                throw new MasterDataValidationException([sprintf('Baustein %d ohne Artikelstammreferenz muss einen manuellen Preis verwenden.', $index + 1)]);
             }
             $costPrice = $this->decimal($component, 'costPrice', 'Bausteinkostenpreis', Decimal::COST_SCALE, false);
             $markupPercent = $this->decimal($component, 'markupPercent', 'Bausteinzuschlag', Decimal::PERCENT_SCALE, true);
@@ -580,7 +580,7 @@ final readonly class MasterDataService
     private function requireCostItem(string $id): array
     {
         $row = Uuid::isValid($id) ? $this->repository->costItem($id) : null;
-        if ($row === null) throw new MasterDataValidationException(['Kostensatz wurde nicht gefunden.']);
+        if ($row === null) throw new MasterDataValidationException(['Stammartikel wurde nicht gefunden.']);
         return $row;
     }
 
@@ -588,7 +588,7 @@ final readonly class MasterDataService
     private function requireService(string $id): array
     {
         $row = Uuid::isValid($id) ? $this->repository->serviceTemplate($id) : null;
-        if ($row === null) throw new MasterDataValidationException(['Leistungsposition wurde nicht gefunden.']);
+        if ($row === null) throw new MasterDataValidationException(['Stammposition wurde nicht gefunden.']);
         return $row;
     }
 
