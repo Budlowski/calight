@@ -8,6 +8,7 @@ use App\Domain\Calculation\Decimal;
 use App\Domain\Calculation\PriceCalculator;
 use App\Domain\MasterData\MasterDataValidationException;
 use App\Infrastructure\Persistence\MasterDataRepository;
+use App\Infrastructure\Persistence\NumberRangeRepository;
 use App\Support\Clock;
 use App\Support\Uuid;
 use DateTimeImmutable;
@@ -21,6 +22,7 @@ final readonly class MasterDataService
     public function __construct(
         private MasterDataRepository $repository,
         private PriceCalculator $calculator,
+        private NumberRangeRepository $numberRanges,
     ) {
     }
 
@@ -265,11 +267,7 @@ final readonly class MasterDataService
         $this->repository->beginImmediate();
         try {
             if ($service['article_number'] === null && filter_var($input['autoArticleNumber'] ?? false, FILTER_VALIDATE_BOOL)) {
-                $service['article_number'] = $this->repository->allocateServiceNumber(
-                    $service['id'],
-                    Uuid::v4(),
-                    new DateTimeImmutable(),
-                );
+                $service['article_number'] = $this->numberRanges->allocate('service_template', 'service_template', $service['id'], Uuid::v4(), new DateTimeImmutable());
             }
             $this->repository->createServiceTemplate($service);
             $this->repository->replaceServiceComponents($service['id'], $components);
@@ -293,11 +291,7 @@ final readonly class MasterDataService
         $this->repository->beginImmediate();
         try {
             if ($service['article_number'] === null && filter_var($input['autoArticleNumber'] ?? false, FILTER_VALIDATE_BOOL)) {
-                $service['article_number'] = $this->repository->allocateServiceNumber(
-                    $service['id'],
-                    Uuid::v4(),
-                    new DateTimeImmutable(),
-                );
+                $service['article_number'] = $this->numberRanges->allocate('service_template', 'service_template', $service['id'], Uuid::v4(), new DateTimeImmutable());
             }
             $this->repository->updateServiceTemplate($service);
             $this->repository->replaceServiceComponents($id, $components);

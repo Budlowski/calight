@@ -10,6 +10,7 @@ use App\Domain\MasterData\MasterDataValidationException;
 use App\Infrastructure\Database\ConnectionFactory;
 use App\Infrastructure\Database\Migrator;
 use App\Infrastructure\Persistence\MasterDataRepository;
+use App\Infrastructure\Persistence\NumberRangeRepository;
 use App\Tests\TestCase;
 
 final class MasterDataTest extends TestCase
@@ -159,7 +160,7 @@ final class MasterDataTest extends TestCase
         mkdir($temporary, 0770, true);
         $pdo = ConnectionFactory::create($temporary . '/app.sqlite');
         (new Migrator($pdo, $root . '/migrations'))->migrate();
-        return [new MasterDataService(new MasterDataRepository($pdo), new PriceCalculator()), $temporary];
+        return [new MasterDataService(new MasterDataRepository($pdo), new PriceCalculator(), new NumberRangeRepository($pdo)), $temporary];
     }
 
     private function removeTree(string $path): void

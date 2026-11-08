@@ -7,6 +7,7 @@ namespace App\Application;
 use App\Domain\Offer\OfferValidator;
 use App\Domain\Calculation\PriceCalculator;
 use App\Http\MasterDataController;
+use App\Http\CustomerProjectController;
 use App\Http\Router;
 use App\Infrastructure\Database\ConnectionFactory;
 use App\Infrastructure\Persistence\OfferJsonStore;
@@ -14,6 +15,8 @@ use App\Infrastructure\Persistence\OfferRepository;
 use App\Infrastructure\Persistence\ProjectRepository;
 use App\Infrastructure\Persistence\UserRepository;
 use App\Infrastructure\Persistence\MasterDataRepository;
+use App\Infrastructure\Persistence\NumberRangeRepository;
+use App\Infrastructure\Persistence\CustomerProjectRepository;
 use App\View\View;
 use PDO;
 
@@ -39,7 +42,12 @@ final readonly class Bootstrap
         $view = new View($root . '/templates');
         $masterData = new MasterDataController(
             $view,
-            new MasterDataService(new MasterDataRepository($this->pdo), new PriceCalculator()),
+            new MasterDataService(new MasterDataRepository($this->pdo), new PriceCalculator(), new NumberRangeRepository($this->pdo)),
+        );
+        $numberRanges = new NumberRangeRepository($this->pdo);
+        $customerProjects = new CustomerProjectController(
+            $view,
+            new CustomerProjectService(new CustomerProjectRepository($this->pdo), $numberRanges),
         );
 
         return new Application(
@@ -50,6 +58,7 @@ final readonly class Bootstrap
             $offers,
             new OfferService($this->pdo, $projects, $offers, $store),
             $masterData,
+            $customerProjects,
         );
     }
 }

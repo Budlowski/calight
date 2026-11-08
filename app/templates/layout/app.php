@@ -22,7 +22,7 @@
         <nav class="sidebar" aria-label="Hauptnavigation">
             <a href="/dashboard">Übersicht</a>
             <a href="/master-data">Stammdaten</a>
-            <a href="#" aria-disabled="true">Kunden</a>
+            <a href="/customers">Kunden</a>
             <a href="/projects">Projekte</a>
             <a href="#" aria-disabled="true">Angebote</a>
             <a href="#" aria-disabled="true">Aufmaß</a>

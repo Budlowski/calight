@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Persistence;
 
-use DateTimeImmutable;
 use PDO;
-use RuntimeException;
 
 final readonly class MasterDataRepository
 {
@@ -246,60 +244,6 @@ final readonly class MasterDataRepository
         );
         $statement->execute(['active' => $active ? 1 : 0, 'updated_at' => $updatedAt, 'id' => $id]);
         return $statement->rowCount() === 1;
-    }
-
-    public function allocateServiceNumber(string $entityId, string $assignmentId, DateTimeImmutable $now): string
-    {
-        $range = $this->one('SELECT * FROM number_ranges WHERE code = :code', ['code' => 'service_template']);
-        if ($range === null) {
-            throw new RuntimeException('Nummernkreis für Leistungspositionen fehlt.');
-        }
-        $period = match ($range['reset_mode']) {
-            'yearly' => $now->format('Y'),
-            'monthly' => $now->format('Y-m'),
-            default => null,
-        };
-        $counter = (int) $range['next_counter'];
-        if ($period !== null && $range['counter_period'] !== $period) {
-            $counter = 1;
-        }
-
-        $collision = $this->pdo->prepare(
-            'SELECT EXISTS(SELECT 1 FROM service_templates WHERE article_number = :number COLLATE NOCASE)
-             OR EXISTS(SELECT 1 FROM assigned_numbers WHERE number_range_id = :range_id AND business_number = :number COLLATE NOCASE)'
-        );
-        for ($attempt = 0; $attempt < 100000; $attempt++, $counter++) {
-            $number = strtr((string) $range['format'], [
-                '{K}' => (string) $range['prefix'],
-                '{JJJJ}' => $now->format('Y'),
-                '{JJ}' => $now->format('y'),
-                '{MM}' => $now->format('m'),
-                '{NR}' => str_pad((string) $counter, (int) $range['minimum_length'], '0', STR_PAD_LEFT),
-            ]);
-            $collision->execute(['number' => $number, 'range_id' => $range['id']]);
-            if ((bool) $collision->fetchColumn()) continue;
-
-            $this->execute(
-                'INSERT INTO assigned_numbers
-                 (id, number_range_id, business_number, entity_type, entity_id, counter_value, assigned_manually, assigned_at)
-                 VALUES (:id, :number_range_id, :business_number, :entity_type, :entity_id, :counter_value, 0, :assigned_at)',
-                [
-                    'id' => $assignmentId, 'number_range_id' => $range['id'], 'business_number' => $number,
-                    'entity_type' => 'service_template', 'entity_id' => $entityId, 'counter_value' => $counter,
-                    'assigned_at' => $now->format(DATE_ATOM),
-                ],
-            );
-            $this->execute(
-                'UPDATE number_ranges SET next_counter = :next_counter, counter_period = :counter_period,
-                 updated_at = :updated_at WHERE id = :id',
-                [
-                    'next_counter' => $counter + 1, 'counter_period' => $period,
-                    'updated_at' => $now->format(DATE_ATOM), 'id' => $range['id'],
-                ],
-            );
-            return $number;
-        }
-        throw new RuntimeException('Keine freie Positionsnummer im Nummernkreis gefunden.');
     }
 
     public function beginImmediate(): void

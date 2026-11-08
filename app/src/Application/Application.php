@@ -6,12 +6,14 @@ namespace App\Application;
 
 use App\Domain\Offer\OfferValidationException;
 use App\Domain\MasterData\MasterDataValidationException;
+use App\Domain\Customer\CustomerProjectValidationException;
 use App\Http\Request;
 use App\Http\Response;
 use App\Http\Router;
 use App\Http\Session;
 use App\Http\CsrfException;
 use App\Http\MasterDataController;
+use App\Http\CustomerProjectController;
 use App\Infrastructure\Persistence\OfferConflictException;
 use App\Infrastructure\Persistence\OfferRepository;
 use App\Infrastructure\Persistence\ProjectRepository;
@@ -31,6 +33,7 @@ final readonly class Application
         private OfferRepository $offers,
         private OfferService $offerService,
         private MasterDataController $masterDataController,
+        private CustomerProjectController $customerProjectController,
     ) {
         $this->registerRoutes();
     }
@@ -45,6 +48,8 @@ final readonly class Application
             return Response::json(['error' => 'Validierung fehlgeschlagen.', 'details' => $exception->errors], 422);
         } catch (MasterDataValidationException $exception) {
             return Response::json(['error' => 'Validierung fehlgeschlagen.', 'details' => $exception->errors], 422);
+        } catch (CustomerProjectValidationException $exception) {
+            return Response::json(['error' => 'Validierung fehlgeschlagen.', 'details' => $exception->errors], 422);
         } catch (CsrfException $exception) {
             return new Response('Sicherheitsprüfung fehlgeschlagen.', 419, ['Content-Type' => 'text/plain; charset=utf-8']);
         } catch (Throwable $exception) {
@@ -56,6 +61,7 @@ final readonly class Application
     private function registerRoutes(): void
     {
         $this->masterDataController->register($this->router);
+        $this->customerProjectController->register($this->router);
 
         $this->router->add('GET', '/', fn (): Response => Session::user() === null
             ? Response::redirect('/login')

@@ -95,6 +95,18 @@ th, td { padding: 10px; border-bottom: 1px solid var(--border); text-align: left
 .service-number-heading > label:first-child { display: block; font-weight: 600; }
 .service-number-field .check-inline { font-size: 12px; }
 .auto-number-option { white-space: nowrap; }
+.customer-toolbar, .project-toolbar { grid-template-columns: minmax(260px, 1fr) minmax(180px, .3fr) auto; }
+.customer-project-split { grid-template-columns: minmax(320px, .55fr) minmax(720px, 1.45fr); }
+.customer-head-grid, .project-head-grid { grid-template-columns: minmax(210px, .7fr) minmax(220px, 1fr) minmax(180px, .8fr); }
+.address-grid { display: grid; grid-template-columns: minmax(180px, 1.4fr) minmax(100px, .45fr) minmax(90px, .45fr) minmax(160px, 1fr) minmax(140px, .7fr); gap: 10px; }
+.inline-toolbar { padding: 0 14px 10px; }
+.inline-record-list { display: grid; gap: 8px; padding: 0 14px 14px; }
+.inline-record { padding: 10px; border: 1px solid var(--border); border-radius: 5px; background: #f8fafb; }
+.inline-record-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.contact-grid { display: grid; grid-template-columns: .55fr 1fr 1fr 1fr 1.3fr 1fr 1fr; gap: 8px; }
+.contact-grid label, .address-grid label { font-size: 12px; }
+.contact-grid input, .address-grid input, .address-grid select { padding: 7px 8px; }
+.inline-empty { margin: 0; padding: 0 14px 14px; }
 .components-panel { border: 1px solid var(--border); border-radius: 5px; }
 .components-panel > summary { padding: 12px 14px; cursor: pointer; font-weight: 700; }
 .component-add-row { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto auto; gap: 8px; padding: 0 14px 14px; }
@@ -130,12 +142,13 @@ th, td { padding: 10px; border-bottom: 1px solid var(--border); text-align: left
     .form-grid, .service-header-grid, .component-primary-grid, .component-price-grid { grid-template-columns: 1fr; }
     .component-controls-actions { justify-content: flex-start; }
     .component-add-row { grid-template-columns: 1fr; }
+    .customer-toolbar, .project-toolbar, .customer-head-grid, .project-head-grid, .address-grid, .contact-grid { grid-template-columns: 1fr; }
     .service-totals { grid-template-columns: repeat(2, 1fr); }
     .category-row { grid-template-columns: 1fr auto; }
     .category-row > .muted { display: none; }
 }
 
 @media (min-width: 801px) and (max-width: 1350px) {
-    .service-master-split { grid-template-columns: 1fr; }
+    .service-master-split, .customer-project-split { grid-template-columns: 1fr; }
     .service-editor { position: static; }
 }
