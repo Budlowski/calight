@@ -194,6 +194,20 @@ final readonly class Application
             return Response::json(['saved' => true, 'etag' => $newEtag], headers: ['ETag' => '"' . $newEtag . '"']);
         }));
 
+        $this->router->add('DELETE','/api/offers/{id}',fn(Request $request,array $parameters):Response=>$this->protected(function()use($request,$parameters):Response{
+            $this->requireCsrf($request,$request->headers['x-csrf-token']??null);
+            return Response::json($this->offerService->deleteDraft($parameters['id']));
+        }));
+        $this->router->add('POST','/api/offers/{id}/copy',fn(Request $request,array $parameters):Response=>$this->protected(function()use($request,$parameters):Response{
+            $this->requireCsrf($request,$request->headers['x-csrf-token']??null);
+            $id=$this->offerService->copyAsDraft($parameters['id']);
+            return Response::json(['id'=>$id,'url'=>'/offers/'.rawurlencode($id)],201);
+        }));
+        $this->router->add('POST','/offers/{id}/delete',fn(Request $request,array $parameters):Response=>$this->protected(function()use($request,$parameters):Response{
+            $this->requireCsrf($request);$result=$this->offerService->deleteDraft($parameters['id']);Session::flash('success','Angebotsentwurf gelöscht.');
+            return Response::redirect('/projects/'.rawurlencode($result['projectId']));
+        }));
+
         $this->router->add('GET','/api/offers/{id}/export',fn(Request $request,array $parameters):Response=>$this->protected(function()use($parameters){$export=$this->offerService->exportDraft($parameters['id']);$json=json_encode($export['offer'],JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n";return new Response($json,200,['Content-Type'=>'application/json; charset=utf-8','Content-Disposition'=>'attachment; filename="angebot-'.$parameters['id'].'.json"','ETag'=>'"'.$export['etag'].'"']);}));
         $this->router->add('POST','/api/offers/{id}/import-preview',fn(Request $request,array $parameters):Response=>$this->protected(function()use($request,$parameters){$this->requireCsrf($request,$request->headers['x-csrf-token']??null);$data=$this->jsonBody($request);$etag=trim((string)($request->headers['if-match']??''),'"');if($etag==='')return Response::json(['error'=>'If-Match-Header fehlt.'],428);return Response::json($this->offerService->previewImport($parameters['id'],$data,$etag));}));
         $this->router->add('PUT','/api/offers/{id}/import',fn(Request $request,array $parameters):Response=>$this->protected(function()use($request,$parameters){$this->requireCsrf($request,$request->headers['x-csrf-token']??null);$data=$this->jsonBody($request);$etag=trim((string)($request->headers['if-match']??''),'"');if($etag==='')return Response::json(['error'=>'If-Match-Header fehlt.'],428);$new=$this->offerService->importExisting($parameters['id'],$data,$etag);return Response::json(['saved'=>true,'etag'=>$new],headers:['ETag'=>'"'.$new.'"']);}));

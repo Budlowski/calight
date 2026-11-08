@@ -144,6 +144,12 @@ final class MasterDataTest extends TestCase
             $locked = $template['components'];
             $locked[0]['priceMode'] = 'locked';
             $this->assertSame(0, count($service->previewMasterPriceUpdates(['components' => $locked])['changes']));
+            $legacySaved=$service->updateService($template['id'],[
+                'articleNumber'=>$template['articleNumber'],'shortText'=>$template['shortText'],'longText'=>$template['longText'],
+                'unit'=>$template['unit'],'components'=>$locked,
+            ]);
+            $this->assertSame('manual',$legacySaved['components'][0]['priceMode']);
+            $this->assertSame('5.0000',$legacySaved['components'][0]['costPrice']);
 
             $copy = $service->copyService($template['id']);
             $this->assertTrue($copy['id'] !== $template['id']);
@@ -154,6 +160,45 @@ final class MasterDataTest extends TestCase
         } finally {
             $this->removeTree($temporary);
         }
+    }
+
+    public function testCompleteMasterDataScopesCanBeExportedAndImported():void
+    {
+        [$source,$sourceTemporary]=$this->service();[$target,$targetTemporary]=$this->service();
+        try{
+            $category=$source->createCategory(['name'=>'Elektro','description'=>'Hauptgruppe','parentId'=>null,'sortOrder'=>1]);
+            $child=$source->createCategory(['name'=>'Installationsmaterial','description'=>'','parentId'=>$category['id'],'sortOrder'=>2]);
+            $supplier=$source->createSupplier(['supplierNumber'=>'70042','name'=>'Großhandel','contact'=>'Einkauf']);
+            $article=$source->createCostItem(['articleNumber'=>'M-42','name'=>'Installationsrohr','description'=>'M20','categoryId'=>$child['id'],'calculationType'=>'material','unit'=>'m','costPrice'=>'2.5000','markupPercent'=>'20.00','supplierId'=>$supplier['id'],'supplierArticleNumber'=>'GH-42']);
+            $trailing=$source->createTrailingText(['code'=>'TEST','name'=>'Lieferung und Montage gemäß Planung']);
+            $service=$source->createService(['articleNumber'=>'LP-42','shortText'=>'Installationsrohr verlegen','longText'=>'Komplettleistung','unit'=>'m','trailingTextId'=>$trailing['id'],'components'=>[['masterDataId'=>$article['id'],'sourceArticleNumber'=>'M-42','name'=>'Installationsrohr','calculationType'=>'material','unit'=>'m','quantity'=>'1.000','costPrice'=>'2.5000','markupPercent'=>'20.00','priceMode'=>'master']]]);
+
+            foreach(['categories','suppliers','cost-items','trailing-texts','services'] as $scope){
+                $document=$source->exportScope($scope);
+                $this->assertSame('calight-master-data',$document['format']);
+                $this->assertSame($scope,$document['scope']);
+                if($scope==='categories')$this->assertSame($child['id'],$document['items'][0]['children'][0]['id']??null);
+                $target->importScope($scope,$document);
+            }
+            $imported=$target->overview(true);
+            $importedCategory=array_values(array_filter($imported['categories'],static fn(array $item):bool=>$item['id']===$child['id']))[0]??null;
+            $importedArticle=array_values(array_filter($imported['costItems'],static fn(array $item):bool=>$item['id']===$article['id']))[0]??null;
+            $importedService=array_values(array_filter($imported['services'],static fn(array $item):bool=>$item['id']===$service['id']))[0]??null;
+            $this->assertSame($category['id'],$importedCategory['parentId']??null);
+            $this->assertSame($child['id'],$importedArticle['categoryId']??null);
+            $this->assertSame($supplier['id'],$importedArticle['supplierId']??null);
+            $this->assertSame($article['id'],$importedService['components'][0]['masterDataId']??null);
+            $this->assertSame($trailing['id'],$importedService['trailingTextId']??null);
+            $this->assertSame('3.00',$importedService['calculation']['calculatedUnitPrice']??null);
+
+            $articleDocument=$source->exportScope('cost-items');
+            foreach($articleDocument['items'] as &$item)if($item['id']===$article['id'])$item['name']='Installationsrohr aktualisiert';
+            unset($item);
+            $this->assertSame(1,$target->importScope('cost-items',$articleDocument)['imported']);
+            $updated=array_values(array_filter($target->overview(true)['costItems'],static fn(array $item):bool=>$item['id']===$article['id']))[0]??null;
+            $this->assertSame('Installationsrohr aktualisiert',$updated['name']??null);
+            $this->assertThrows(MasterDataValidationException::class,fn()=>$target->importScope('services',$source->exportScope('cost-items')));
+        }finally{$this->removeTree($sourceTemporary);$this->removeTree($targetTemporary);}
     }
 
     /** @return array{MasterDataService,string} */

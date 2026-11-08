@@ -47,10 +47,50 @@
         if (node instanceof Element) decorateIcons(node);
     }))).observe(document.body, {childList: true, subtree: true});
 
+    // Alle destruktiven Aktionen laufen zentral durch dieselbe Sicherheitsabfrage.
+    // Der Text-Fallback erfasst auch serverseitig gerenderte Löschbuttons, während
+    // die Datenattribute dynamisch erzeugte Editor-Aktionen eindeutig markieren.
+    const destructiveSelector = [
+        '[data-remove]', '[data-component-remove]', '[data-remove-contact]',
+        '[data-remove-address]', '[data-trailing-delete]', '[data-delete-offer]'
+    ].join(',');
+    const confirmedForms = new WeakSet();
+    const isDestructiveControl = element => element.matches(destructiveSelector)
+        || /^(Löschen|Entfernen)$/i.test(element.textContent.trim());
+    const confirmDestructive = element => window.confirm(
+        element.dataset.confirmMessage || 'Element wirklich löschen beziehungsweise entfernen?'
+    );
+
+    document.addEventListener('click', event => {
+        const control = event.target.closest('button, a');
+        if (!control || control.disabled || !isDestructiveControl(control)) return;
+        if (!confirmDestructive(control)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return;
+        }
+        if (control.form) confirmedForms.add(control.form);
+    }, true);
+
+    document.addEventListener('submit', event => {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement)) return;
+        if (confirmedForms.has(form)) {
+            confirmedForms.delete(form);
+            return;
+        }
+        const destructive = /\/delete(?:$|[/?#])/i.test(form.action)
+            || form.querySelector('button[type="submit"]')?.textContent.trim().match(/^(Löschen|Entfernen)$/i);
+        if (destructive && !confirmDestructive(form)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }
+    }, true);
+
     const visible = element => element && !element.hidden && element.getClientRects().length > 0;
     const editorForms = [
         '#cost-item-form', '#service-form', '#category-form', '#supplier-form',
-        '#customer-form', '#project-form'
+        '#customer-form', '#project-form', '#settings-form'
     ];
 
     document.addEventListener('keydown', event => {

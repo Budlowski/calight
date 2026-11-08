@@ -10,6 +10,7 @@ use App\Infrastructure\Persistence\OfferRepository;
 use App\Infrastructure\Persistence\ProjectRepository;
 use App\Domain\Offer\OfferCalculator;
 use App\Domain\Offer\OfferValidator;
+use App\Domain\Offer\OfferValidationException;
 use App\Domain\Offer\OfferNormalizer;
 use App\Support\Clock;
 use App\Support\Uuid;
@@ -59,6 +60,36 @@ final readonly class OfferService
         }
 
         return $offerId;
+    }
+
+    public function copyAsDraft(string $offerId): string
+    {
+        $source = $this->loadDraft($offerId)['offer'];
+        $source['title'] = 'Kopie von ' . (string) $source['title'];
+        $this->assignNewNodeIds($source['nodes']);
+
+        return $this->importNew((string) $source['projectId'], $source);
+    }
+
+    /** @return array{deleted:true,projectId:string} */
+    public function deleteDraft(string $offerId):array
+    {
+        $metadata=$this->offers->find($offerId);
+        if($metadata===null)throw new RuntimeException('Angebotsentwurf wurde nicht gefunden.');
+        if(($metadata['status']??null)!=='draft'||($metadata['offer_number']??null)!==null)throw new OfferValidationException(['Nur Angebotsentwürfe ohne Angebotsnummer können gelöscht werden.']);
+        $projectId=(string)$metadata['project_id'];$staged=null;
+        $this->pdo->exec('BEGIN IMMEDIATE');
+        try{
+            $staged=$this->store->stageDraftDeletion($projectId,$offerId);
+            if(!$this->offers->deleteDraft($offerId))throw new RuntimeException('Angebotsentwurf konnte nicht aus der Datenbank gelöscht werden.');
+            $this->pdo->commit();
+        }catch(Throwable $exception){
+            if($this->pdo->inTransaction())$this->pdo->rollBack();
+            if($staged!==null){try{$this->store->restoreStagedDeletion($staged,$projectId,$offerId);}catch(Throwable $restoreException){error_log($restoreException->getMessage());}}
+            throw$exception;
+        }
+        try{$this->store->finalizeStagedDeletion((string)$staged);}catch(Throwable $exception){error_log('Vorbereitete Angebotsdateien konnten nicht abschließend entfernt werden: '.$exception->getMessage());}
+        return['deleted'=>true,'projectId'=>$projectId];
     }
 
     /** @return list<array<string,mixed>> */
@@ -224,5 +255,22 @@ final readonly class OfferService
             }
         }
         return $count;
+    }
+
+    /** @param list<array<string,mixed>> $nodes */
+    private function assignNewNodeIds(array &$nodes): void
+    {
+        foreach ($nodes as &$node) {
+            $node['id'] = Uuid::v4();
+            if (($node['type'] ?? '') === 'title') {
+                $this->assignNewNodeIds($node['children']);
+            } elseif (($node['type'] ?? '') === 'position') {
+                foreach ($node['components'] as &$component) {
+                    $component['id'] = Uuid::v4();
+                }
+                unset($component);
+            }
+        }
+        unset($node);
     }
 }

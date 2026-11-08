@@ -107,6 +107,29 @@ final readonly class OfferJsonStore
         return $projectId . '/' . $offerId . '/draft.json';
     }
 
+    public function stageDraftDeletion(string $projectId,string $offerId):string
+    {
+        $this->assertIdentifiers($projectId,$offerId);
+        $directory=$this->offerDirectory($projectId,$offerId);
+        if(!is_dir($directory))throw new RuntimeException('Angebotsentwurf wurde nicht gefunden.');
+        $staged=dirname($directory).'/.deleted-'.$offerId.'-'.bin2hex(random_bytes(6));
+        if(!rename($directory,$staged))throw new RuntimeException('Angebotsentwurf konnte nicht zum Löschen vorbereitet werden.');
+        return$staged;
+    }
+
+    public function restoreStagedDeletion(string $stagedPath,string $projectId,string $offerId):void
+    {
+        $this->assertIdentifiers($projectId,$offerId);$target=$this->offerDirectory($projectId,$offerId);
+        if(is_dir($target)||!is_dir($stagedPath)||!rename($stagedPath,$target))throw new RuntimeException('Angebotsentwurf konnte nach einem Datenbankfehler nicht wiederhergestellt werden.');
+    }
+
+    public function finalizeStagedDeletion(string $stagedPath):void
+    {
+        if(!is_dir($stagedPath))return;
+        foreach(scandir($stagedPath)?:[] as $item){if($item==='.'||$item==='..')continue;$path=$stagedPath.'/'.$item;if(is_dir($path))throw new RuntimeException('Unerwartetes Unterverzeichnis im Angebotsentwurf.');if(!unlink($path))throw new RuntimeException('Datei des Angebotsentwurfs konnte nicht gelöscht werden.');}
+        if(!rmdir($stagedPath))throw new RuntimeException('Verzeichnis des Angebotsentwurfs konnte nicht gelöscht werden.');
+    }
+
     private function offerDirectory(string $projectId, string $offerId): string
     {
         return rtrim($this->basePath, '/') . '/' . $projectId . '/' . $offerId;

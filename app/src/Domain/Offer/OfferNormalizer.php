@@ -70,6 +70,9 @@ final class OfferNormalizer
                         ? 'manual'
                         : (($component['priceLocked'] ?? false) ? 'locked' : 'master');
                 }
+                // Der frühere Modus "locked" entspricht fachlich dem eigenen Preis.
+                // Die Artikelreferenz und der gespeicherte Kostenpreis bleiben erhalten.
+                if (($component['priceMode'] ?? null) === 'locked') $component['priceMode'] = 'manual';
                 // Legacy-Hilfs- und Ergebnisfelder sind keine persistenten Eingaben.
                 unset($component['salesPrice'], $component['priceLocked'], $component['masterDataSnapshot']);
                 if (isset($component['quantity'])) $component['quantity'] = $this->decimal($component['quantity'], Decimal::QUANTITY_SCALE, 'Bausteinmenge');

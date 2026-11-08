@@ -23,6 +23,12 @@ final readonly class MasterDataController
         $router->add('GET', '/api/master-data', fn (Request $request): Response => $this->api(
             fn (): Response => Response::json($this->service->overview(($request->query['archived'] ?? '1') !== '0'))
         ));
+        $router->add('GET','/api/master-data/export/{scope}',fn(Request $_,array $parameters):Response=>$this->api(
+            fn():Response=>$this->export($parameters['scope'])
+        ));
+        $router->add('POST','/api/master-data/import/{scope}',fn(Request $request,array $parameters):Response=>$this->mutation(
+            $request,fn(array $data):array=>$this->service->importScope($parameters['scope'],$data)
+        ));
         $router->add('POST', '/api/master-data/preview-price', fn (Request $request): Response => $this->mutation(
             $request, fn (array $data): array => $this->service->preview($data)
         ));
@@ -96,6 +102,14 @@ final readonly class MasterDataController
         return Session::user() === null
             ? Response::json(['error' => 'Anmeldung erforderlich.'], 401)
             : $handler();
+    }
+
+    private function export(string $scope):Response
+    {
+        $names=['cost-items'=>'artikelstamm','services'=>'positionsstamm','categories'=>'kategorien','suppliers'=>'lieferanten','trailing-texts'=>'schlepptexte'];
+        $document=$this->service->exportScope($scope);
+        $name='calight-'.($names[$scope]??'stammdaten').'-'.date('Y-m-d').'.json';
+        return Response::json($document,200,['Content-Disposition'=>'attachment; filename="'.$name.'"','Cache-Control'=>'no-store']);
     }
 
     private function mutation(Request $request, callable $operation, int $status = 200): Response

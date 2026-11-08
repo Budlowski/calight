@@ -35,6 +35,22 @@ final readonly class OfferCalculationService
         return $this->masterData->previewMasterPriceUpdates($input);
     }
 
+    public function saveCostItem(array $input): array
+    {
+        return $this->masterData->createCostItem([
+            'articleNumber' => $input['articleNumber'] ?? null,
+            'name' => $input['name'] ?? '',
+            'description' => '',
+            'categoryId' => null,
+            'calculationType' => $input['calculationType'] ?? '',
+            'unit' => $input['unit'] ?? '',
+            'costPrice' => $input['costPrice'] ?? '',
+            'markupPercent' => $input['markupPercent'] ?? '',
+            'supplierId' => null,
+            'supplierArticleNumber' => null,
+        ]);
+    }
+
     public function savePosition(array $input): array
     {
         $position=$input['position']??null;if(!is_array($position))throw new MasterDataValidationException(['Angebotsposition fehlt.']);
@@ -45,11 +61,13 @@ final readonly class OfferCalculationService
             if(($sourceNumber!==''&&strcasecmp((string)($service['articleNumber']??''),$sourceNumber)===0)||strcasecmp((string)$service['shortText'],$shortText)===0)$duplicates[]=['id'=>$service['id'],'articleNumber'=>$service['articleNumber'],'shortText'=>$service['shortText'],'active'=>$service['active']];
         }
         if($duplicates!==[]&&!filter_var($input['confirmDuplicate']??false,FILTER_VALIDATE_BOOL)&&empty($input['updateExistingId']))return ['saved'=>null,'duplicates'=>$duplicates];
-        $components=[];foreach(($position['components']??[]) as $component){if(!is_array($component))continue;$components[]=[
+        $components=[];foreach(($position['components']??[]) as $component){if(!is_array($component))continue;
+            $priceMode=(string)($component['priceMode']??'manual');if($priceMode==='locked')$priceMode='manual';
+            $components[]=[
             'masterDataId'=>$component['masterDataId']??null,'sourceArticleNumber'=>$component['sourceArticleNumber']??null,
             'name'=>$component['name']??'','calculationType'=>$component['calculationType']??'', 'unit'=>$component['unit']??'',
             'quantity'=>$component['quantity']??'','costPrice'=>$component['costPrice']??'','markupPercent'=>$component['markupPercent']??'',
-            'priceMode'=>$component['priceMode']??(($component['masterDataId']??null)===null?'manual':'locked'),
+            'priceMode'=>$priceMode,
         ];}
         $trailingId = $position['trailingText']['id'] ?? null;
         $knownTrailing = array_filter(

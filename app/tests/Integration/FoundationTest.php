@@ -6,6 +6,7 @@ namespace App\Tests\Integration;
 
 use App\Application\OfferService;
 use App\Domain\Offer\OfferValidator;
+use App\Domain\Offer\OfferValidationException;
 use App\Domain\Offer\OfferCalculator;
 use App\Domain\Calculation\PriceCalculator;
 use App\Infrastructure\Database\ConnectionFactory;
@@ -16,6 +17,7 @@ use App\Infrastructure\Persistence\OfferRepository;
 use App\Infrastructure\Persistence\ProjectRepository;
 use App\Tests\TestCase;
 use App\Support\Uuid;
+use RuntimeException;
 
 final class FoundationTest extends TestCase
 {
@@ -28,7 +30,7 @@ final class FoundationTest extends TestCase
         try {
             $pdo = ConnectionFactory::create($temporary . '/app.sqlite');
             $migrator = new Migrator($pdo, $root . '/migrations');
-            $this->assertSame(['0001_foundation', '0002_master_data', '0003_service_component_price_mode', '0004_service_numbers_and_component_origin', '0005_remove_legacy_service_price_locked', '0006_service_template_number_range', '0007_customers_and_projects', '0008_document_settings', '0009_pdf_document_options', '0010_offer_document_terms', '0011_larger_document_logo', '0012_offer_title_summary', '0013_document_filename_pattern', '0014_trailing_texts'], $migrator->migrate());
+            $this->assertSame(['0001_foundation', '0002_master_data', '0003_service_component_price_mode', '0004_service_numbers_and_component_origin', '0005_remove_legacy_service_price_locked', '0006_service_template_number_range', '0007_customers_and_projects', '0008_document_settings', '0009_pdf_document_options', '0010_offer_document_terms', '0011_larger_document_logo', '0012_offer_title_summary', '0013_document_filename_pattern', '0014_trailing_texts', '0015_normalize_component_price_modes'], $migrator->migrate());
             $this->assertSame([], $migrator->migrate());
 
             $projects = new ProjectRepository($pdo);
@@ -63,10 +65,31 @@ final class FoundationTest extends TestCase
             $this->assertSame('draft',$overview[0]['status']);
             $this->assertSame(2,$overview[0]['draftVersion']);
 
+            $copyId=$service->copyAsDraft($offerId);
+            $copy=$service->loadDraft($copyId);
+            $this->assertSame('Kopie von Gespeichert und geladen',$copy['offer']['title']);
+            $this->assertSame('draft',$copy['offer']['status']);
+            $this->assertSame(null,$copy['offer']['offerNumber']);
+            $this->assertTrue($copy['offer']['nodes'][0]['id']!==$changed['nodes'][0]['id']);
+            $this->assertTrue($copy['offer']['nodes'][0]['children'][0]['children'][0]['id']!==$changed['nodes'][0]['children'][0]['children'][0]['id']);
+            $service->deleteDraft($copyId);
+
             $this->assertThrows(
                 OfferConflictException::class,
                 fn () => $service->saveDraft($offerId, $changed, $oldEtag),
             );
+
+            $deleted=$service->deleteDraft($offerId);
+            $this->assertSame(true,$deleted['deleted']);
+            $this->assertSame($projectId,$deleted['projectId']);
+            $this->assertSame(null,$offers->find($offerId));
+            $this->assertSame(0,count($service->overview()));
+            $this->assertThrows(RuntimeException::class,fn()=>$service->loadDraft($offerId));
+
+            $submittedId=$service->createDraft($projectId,'Verbindliches Angebot');
+            $pdo->prepare('UPDATE offers SET status=:status, offer_number=:number WHERE id=:id')->execute(['status'=>'submitted','number'=>'AG-1','id'=>$submittedId]);
+            $this->assertThrows(OfferValidationException::class,fn()=>$service->deleteDraft($submittedId));
+            $this->assertTrue($offers->find($submittedId)!==null);
         } finally {
             $this->removeTree($temporary);
         }

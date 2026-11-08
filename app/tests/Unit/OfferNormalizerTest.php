@@ -54,6 +54,19 @@ final class OfferNormalizerTest extends TestCase
         $this->assertSame('Importierter Text', $result['nodes'][1]['trailingText']['name']);
     }
 
+    public function testLegacyLockedPriceBecomesOwnPriceWithoutChangingReferenceOrCost():void
+    {
+        $masterId=Uuid::v4();
+        $offer=['nodes'=>[['type'=>'position','components'=>[
+            ['masterDataId'=>$masterId,'sourceArticleNumber'=>'ALT-42','priceMode'=>'locked','costPrice'=>'12.3456'],
+        ]]]];
+        $component=(new OfferNormalizer())->normalize($offer)['nodes'][0]['components'][0];
+        $this->assertSame('manual',$component['priceMode']);
+        $this->assertSame($masterId,$component['masterDataId']);
+        $this->assertSame('ALT-42',$component['sourceArticleNumber']);
+        $this->assertSame('12.3456',$component['costPrice']);
+    }
+
     public function testInvalidTimestampAndDecimalBecomeValidationErrors(): void
     {
         $normalizer = new OfferNormalizer();

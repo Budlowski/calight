@@ -37,6 +37,9 @@ final class OfferCalculationTest extends TestCase
             $preview=$service->previewPriceUpdates(['components'=>$position['components']]);$this->assertSame(1,count($preview['changes']));$this->assertSame('6.0000',$preview['updates'][0]['costPrice']);
             $locked=$position['components'];$locked[0]['priceMode']='locked';$this->assertSame(0,count($service->previewPriceUpdates(['components'=>$locked])['changes']));
             $manual=$position['components'];$manual[0]['priceMode']='manual';$this->assertSame(0,count($service->previewPriceUpdates(['components'=>$manual])['changes']));
+            $newArticle=$service->saveCostItem(['articleNumber'=>'NEU-1','name'=>'Neuer Artikel','calculationType'=>'material','unit'=>'Stk.','costPrice'=>'3.2500','markupPercent'=>'15.00']);
+            $this->assertSame('NEU-1',$newArticle['articleNumber']);$this->assertSame('3.2500',$newArticle['costPrice']);
+            $this->assertThrows(\App\Domain\MasterData\MasterDataValidationException::class,fn()=>$service->saveCostItem(['articleNumber'=>'NEU-1','name'=>'Dublette','calculationType'=>'material','unit'=>'Stk.','costPrice'=>'4.0000','markupPercent'=>'0.00']));
             $saved=$service->savePosition(['position'=>$position,'confirmDuplicate'=>true]);$this->assertSame('LP00002',$saved['saved']['articleNumber']);$this->assertSame('LM',$saved['saved']['trailingText']['code']);
             $duplicate=$service->savePosition(['position'=>$position]);$this->assertSame(null,$duplicate['saved']);$this->assertTrue(count($duplicate['duplicates'])>=1);
             $updated=$service->savePosition(['position'=>$position,'updateExistingId'=>$saved['saved']['id']]);

@@ -8,13 +8,29 @@
   const preview=document.querySelector('#logo-preview');
   const booleanNames=['showEmptyTitles','showHeader','showFooter','showProjectInfo','showTitleSummary'];
   let logoData=null;
-  const documentOptions=form.querySelector('input[name="showProjectInfo"]')?.closest('.form-grid');
-  if(documentOptions&&!form.elements.fileNamePattern){
-    documentOptions.insertAdjacentHTML('beforebegin','<div class="form-grid"><label>Dateinamenvorlage<input name="fileNamePattern" maxlength="150" placeholder="{JJJJ}-{MM}-{TT}_{DOKUMENTTYP}_{DOKUMENTNUMMER}"><small>Platzhalter: {JJJJ}, {MM}, {TT}, {DOKUMENTTYP}, {DOKUMENTNUMMER}</small></label></div>');
-  }
-  if(documentOptions&&!form.elements.showTitleSummary){
-    documentOptions.insertAdjacentHTML('beforeend','<label class="checkbox-row"><input name="showTitleSummary" type="checkbox"> Titelübersicht als Abschlussseite</label>');
-  }
+  const tabs=[...root.querySelectorAll('[data-settings-tab]')],panels=[...root.querySelectorAll('[data-settings-panel]')];
+  const selectTab=name=>{
+    if(!tabs.some(tab=>tab.dataset.settingsTab===name))name='company';
+    tabs.forEach(tab=>{const active=tab.dataset.settingsTab===name;tab.classList.toggle('active',active);tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;});
+    panels.forEach(panel=>{const active=panel.dataset.settingsPanel===name;panel.classList.toggle('active',active);panel.hidden=!active;});
+    history.replaceState(null,'',`#settings-${name}`);
+  };
+  tabs.forEach(tab=>tab.addEventListener('click',()=>selectTab(tab.dataset.settingsTab)));
+  tabs.forEach((tab,index)=>tab.addEventListener('keydown',event=>{
+    if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+    event.preventDefault();
+    const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;
+    selectTab(tabs[next].dataset.settingsTab);tabs[next].focus();
+  }));
+  selectTab(location.hash.replace('#settings-','')||'company');
+  const updateConditionalFields=()=>{
+    const duration=form.elements.validityMode.value==='duration';
+    form.querySelector('[data-validity-duration]').hidden=!duration;form.querySelector('[data-validity-date]').hidden=duration;
+    form.elements.validityDays.disabled=!duration;form.elements.validityDate.disabled=duration;
+    form.elements.vatRate.disabled=form.elements.taxMode.value==='exempt';
+  };
+  form.elements.validityMode.addEventListener('change',updateConditionalFields);
+  form.elements.taxMode.addEventListener('change',updateConditionalFields);
   const notify=(text,type='success')=>{message.textContent=text;message.className=`notice notice-${type}`;message.hidden=false;};
   const showLogo=()=>preview.innerHTML=logoData?`<img class="settings-logo-preview" src="${logoData}" alt="Aktuelles Firmenlogo">`:'<span class="muted">Kein Logo hinterlegt</span>';
   fetch('/api/settings',{credentials:'same-origin'}).then(async response=>{
@@ -25,7 +41,7 @@
       if(!field||key==='logoData')return;
       if(field.type==='checkbox')field.checked=Boolean(value);else field.value=value??'';
     });
-    logoData=result.settings.logoData;showLogo();
+    logoData=result.settings.logoData;showLogo();updateConditionalFields();
   }).catch(error=>notify(error.message,'error'));
   file.onchange=()=>{
     const selected=file.files[0];if(!selected)return;
@@ -35,7 +51,7 @@
     reader.readAsDataURL(selected);
   };
   form.onsubmit=async event=>{
-    event.preventDefault();const data=Object.fromEntries(new FormData(form));booleanNames.forEach(name=>data[name]=form.elements[name].checked);data.logoData=logoData;
+    event.preventDefault();const data=Object.fromEntries(new FormData(form));booleanNames.forEach(name=>data[name]=form.elements[name].checked);data.validityDays=form.elements.validityDays.value;data.validityDate=form.elements.validityDate.value;data.vatRate=form.elements.vatRate.value;data.logoData=logoData;
     const response=await fetch('/api/settings',{method:'PUT',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':root.dataset.csrf},body:JSON.stringify(data)}),result=await response.json();
     if(!response.ok)return notify(result.error||'Speichern fehlgeschlagen.','error');notify('Einstellungen gespeichert.');
   };

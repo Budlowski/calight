@@ -17,9 +17,11 @@
     const serviceForm = document.querySelector('#service-form');
     const trailingTextForm=document.querySelector('#trailing-text-form');
     const masterPricePreview = document.querySelector('#master-price-preview');
+    const importFile = document.querySelector('#master-import-file');
     let previewTimer = 0;
     let dirty = false;
     let pendingPriceUpdates = [];
+    let importScope = '';
 
     const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
@@ -69,6 +71,28 @@
         }
     }
 
+    root.addEventListener('click',event=>{
+        const exportButton=event.target.closest('[data-master-export]');
+        if(exportButton){
+            const link=document.createElement('a');link.href=`/api/master-data/export/${encodeURIComponent(exportButton.dataset.masterExport)}`;link.download='';link.click();return;
+        }
+        const importButton=event.target.closest('[data-master-import]');
+        if(!importButton)return;
+        if(dirty&&!confirm('Ungespeicherte Änderungen verwerfen und den vollständigen Stamm importieren?'))return;
+        importScope=importButton.dataset.masterImport;importFile.value='';importFile.click();
+    });
+    importFile.addEventListener('change',async()=>{
+        const file=importFile.files[0];if(!file||!importScope)return;
+        if(file.size>10_000_000){notify('Die JSON-Datei darf höchstens 10 MB groß sein.','error');return;}
+        if(!confirm('Den vollständigen Stamm aus dieser Datei importieren? Vorhandene Datensätze mit gleicher interner ID werden aktualisiert.'))return;
+        try{
+            const document=JSON.parse(await file.text());
+            const result=await api(`/api/master-data/import/${encodeURIComponent(importScope)}`,{method:'POST',body:document});
+            dirty=false;await load();notify(`${result.imported} Datensätze wurden importiert.`);
+        }catch(error){notify(error instanceof SyntaxError?'Die ausgewählte Datei enthält kein gültiges JSON.':error.message,'error');}
+        finally{importFile.value='';importScope='';}
+    });
+
     function renderAll() {
         renderCategoryOptions();
         renderCategories();
@@ -95,7 +119,7 @@
     function renderTrailingTexts(){document.querySelector('#trailing-texts-body').innerHTML=state.trailingTexts.map(item=>`<tr><td><strong>${escapeHtml(item.code)}</strong></td><td>${escapeHtml(item.name)}</td><td><button class="table-action" data-trailing-edit="${item.id}">Bearbeiten</button> <button class="table-action danger-text" data-trailing-delete="${item.id}">Löschen</button></td></tr>`).join('')||'<tr><td colspan="3" class="muted">Keine Schlepptexte vorhanden.</td></tr>';}
     function openTrailingText(item=null){dirty=false;trailingTextForm.reset();trailingTextForm.elements.id.value=item?.id||'';trailingTextForm.elements.code.value=item?.code||'';trailingTextForm.elements.name.value=item?.name||'';trailingTextForm.hidden=false;trailingTextForm.elements.code.focus();}
     document.querySelector('#new-trailing-text').addEventListener('click',()=>openTrailingText());
-    document.querySelector('#trailing-texts-body').addEventListener('click',async event=>{const edit=event.target.closest('[data-trailing-edit]'),remove=event.target.closest('[data-trailing-delete]');if(edit)return openTrailingText(state.trailingTexts.find(item=>item.id===edit.dataset.trailingEdit));if(remove&&confirm('Schlepptext wirklich löschen?'))await mutate(`/api/master-data/trailing-texts/${remove.dataset.trailingDelete}`,{},'Schlepptext gelöscht.','DELETE');});
+    document.querySelector('#trailing-texts-body').addEventListener('click',async event=>{const edit=event.target.closest('[data-trailing-edit]'),remove=event.target.closest('[data-trailing-delete]');if(edit)return openTrailingText(state.trailingTexts.find(item=>item.id===edit.dataset.trailingEdit));if(remove)await mutate(`/api/master-data/trailing-texts/${remove.dataset.trailingDelete}`,{},'Schlepptext gelöscht.','DELETE');});
     trailingTextForm.addEventListener('submit',async event=>{event.preventDefault();const id=trailingTextForm.elements.id.value,saved=await mutate(id?`/api/master-data/trailing-texts/${id}`:'/api/master-data/trailing-texts',{code:trailingTextForm.elements.code.value,name:trailingTextForm.elements.name.value},id?'Schlepptext gespeichert.':'Schlepptext angelegt.',id?'PUT':'POST');if(saved){dirty=false;trailingTextForm.hidden=true;}});
     root.addEventListener('input', (event) => {
         if (event.target.closest('#cost-item-form, #category-form, #supplier-form, #service-form, #trailing-text-form')) dirty = true;
@@ -395,8 +419,8 @@
     }
 
     function renderMasterComponentOptions() {
-        document.querySelector('#component-master-select').innerHTML = '<option value="">Stammartikel auswählen …</option>' + state.costItems.filter((item) => item.active).map((item) =>
-            `<option value="${item.id}">${escapeHtml(item.name)} · ${escapeHtml(typeLabels[item.calculationType])} · ${formatEuro(item.salesPrice)}</option>`
+        document.querySelector('#component-master-options').innerHTML = state.costItems.filter((item) => item.active).map((item) =>
+            `<option value="${escapeHtml(`${item.articleNumber||'Ohne Nr.'} · ${item.name}`)}"></option>`
         ).join('');
     }
 
@@ -408,31 +432,44 @@
     function renderComponents() {
         document.querySelector('#component-count').textContent = `(${state.components.length})`;
         document.querySelector('#components-list').innerHTML = state.components.length ? state.components.map((component, index) => `
-            <div class="component-row" data-component-index="${index}">
-                <div class="component-primary-grid">
-                    <div class="component-origin"><span>Herkunft</span><strong>${component.masterDataId ? `Aus Artikelstamm${component.sourceArticleNumber ? ` · ${escapeHtml(component.sourceArticleNumber)}` : ' · ohne Artikelnummer'}` : 'Manuell angelegt'}</strong></div>
+            <details class="component-row" data-component-index="${index}" data-component-type="${escapeHtml(component.calculationType)}">
+                <summary class="component-summary"><span class="component-identity" title="${escapeHtml(component.name)}"><strong data-component-compact-name>${escapeHtml(component.name)}</strong><small data-component-compact-source>${escapeHtml(component.priceMode==='master'?`Aus Artikelstamm ${component.sourceArticleNumber||component.name}`:component.masterDataId?`Eigener Preis · Artikelstamm ${component.sourceArticleNumber||component.name}`:'Eigener Preis')}</small></span><span class="component-type-badge" data-component-compact-type>${escapeHtml(typeLabels[component.calculationType])}</span><span class="component-summary-value"><small>Menge</small><strong data-component-compact-quantity>${escapeHtml(decimalInput(component.quantity,'1.000'))} ${escapeHtml(component.unit)}</strong></span><span class="component-summary-value"><small>Kosten-EP</small><strong data-component-compact-cost>${formatEuro(component.costPrice)}</strong></span><span class="component-summary-value"><small>Aufschlag</small><strong data-component-compact-markup>${escapeHtml(decimalInput(component.markupPercent,'0.00'))} %</strong></span><span class="component-summary-value component-summary-sales"><small>VK-Anteil</small><strong data-component-compact-sales>${formatEuro(component.salesPrice||0)}</strong></span></summary>
+                <div class="component-editor-body"><div class="component-primary-grid">
                     <label>Bezeichnung<input data-field="name" value="${escapeHtml(component.name)}" maxlength="250" required></label>
                     <label>Typ<select data-field="calculationType">${Object.entries(typeLabels).map(([value, label]) => `<option value="${value}" ${component.calculationType === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
                     <label>Einheit<input data-field="unit" value="${escapeHtml(component.unit)}" maxlength="40" required></label>
+                    <label>Preisquelle<select data-field="priceMode" ${component.masterDataId ? '' : 'disabled'}>${component.masterDataId ? `<option value="master" ${component.priceMode === 'master' ? 'selected' : ''}>Aus Artikelstamm ${escapeHtml(component.sourceArticleNumber || component.name)}</option>` : ''}<option value="manual" ${component.priceMode !== 'master' || !component.masterDataId ? 'selected' : ''}>${component.masterDataId ? `Eigener Preis · Artikelstamm ${escapeHtml(component.sourceArticleNumber || component.name)}` : 'Eigener Preis'}</option></select></label>
                     <div class="component-controls-actions"><button type="button" class="table-action" data-component-up ${index === 0 ? 'disabled' : ''} title="Nach oben" aria-label="Nach oben">↑</button><button type="button" class="table-action" data-component-down ${index === state.components.length - 1 ? 'disabled' : ''} title="Nach unten" aria-label="Nach unten">↓</button><button type="button" class="table-action" data-component-copy>Kopieren</button><button type="button" class="table-action danger-text" data-component-remove>Entfernen</button></div>
                 </div>
                 <div class="component-price-grid">
                     <label>Menge je Leistungseinheit<input data-field="quantity" value="${escapeHtml(decimalInput(component.quantity, '0.000'))}" inputmode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" required></label>
-                    <label>Kosten €/Bausteineinheit<input data-field="costPrice" value="${escapeHtml(decimalInput(component.costPrice, '0.0000'))}" inputmode="decimal" pattern="[0-9]+([.,][0-9]{1,4})?" required></label>
-                    <label>Zuschlag auf Kosten %<input data-field="markupPercent" value="${escapeHtml(decimalInput(component.markupPercent, '0.00'))}" inputmode="decimal" pattern="-?[0-9]+([.,][0-9]{1,2})?" required></label>
+                    <label>Kosten-EP<input data-field="costPrice" value="${escapeHtml(decimalInput(component.costPrice, '0.0000'))}" inputmode="decimal" pattern="[0-9]+([.,][0-9]{1,4})?" ${component.priceMode==='master'?'readonly':''} required></label>
+                    <label>Aufschlag auf Kosten %<input data-field="markupPercent" value="${escapeHtml(decimalInput(component.markupPercent, '0.00'))}" inputmode="decimal" pattern="-?[0-9]+([.,][0-9]{1,2})?" ${component.priceMode==='master'?'readonly':''} required></label>
                     <div class="component-sales"><span>VK-Anteil je Leistungseinheit</span><strong data-component-sales="${index}">${formatEuro(component.salesPrice || 0)}</strong></div>
-                    <label>Preisbezug<select data-field="priceMode" ${component.masterDataId ? '' : 'disabled'}>${component.masterDataId ? `<option value="master" ${component.priceMode === 'master' ? 'selected' : ''}>Artikelstammpreis</option><option value="locked" ${component.priceMode === 'locked' ? 'selected' : ''}>Artikelstammpreis gesperrt</option>` : ''}<option value="manual" ${component.priceMode === 'manual' || !component.masterDataId ? 'selected' : ''}>Manueller Preis</option></select></label>
-                </div>
-            </div>`).join('') : '<p class="muted">Noch keine Kalkulationsbausteine. Wählen Sie einen Stammartikel oder legen Sie einen Baustein manuell an.</p>';
+                </div></div>
+            </details>`).join('') : '<p class="muted component-empty">Noch keine Kalkulationsbausteine. Wählen Sie einen Stammartikel oder legen Sie einen Baustein manuell an.</p>';
+    }
+
+    function refreshMasterComponentSummary(row,component){
+        row.dataset.componentType=component.calculationType;
+        row.querySelector('[data-component-compact-name]').textContent=component.name;
+        row.querySelector('.component-identity').title=component.name;
+        row.querySelector('[data-component-compact-source]').textContent=component.priceMode==='master'?`Aus Artikelstamm ${component.sourceArticleNumber||component.name}`:component.masterDataId?`Eigener Preis · Artikelstamm ${component.sourceArticleNumber||component.name}`:'Eigener Preis';
+        row.querySelector('[data-component-compact-type]').textContent=typeLabels[component.calculationType]||component.calculationType;
+        row.querySelector('[data-component-compact-quantity]').textContent=`${decimalInput(component.quantity,'1.000')} ${component.unit}`;
+        row.querySelector('[data-component-compact-cost]').textContent=formatEuro(component.costPrice);
+        row.querySelector('[data-component-compact-markup]').textContent=`${decimalInput(component.markupPercent,'0.00')} %`;
+        row.querySelector('[data-component-compact-sales]').textContent=formatEuro(component.salesPrice||0);
     }
 
     document.querySelector('#add-master-component').addEventListener('click', () => {
-        const id = document.querySelector('#component-master-select').value;
-        const item = state.costItems.find((entry) => entry.id === id);
-        if (!item) return;
+        const input=document.querySelector('#component-master-select'),value=input.value.trim();
+        const matches=state.costItems.filter(item=>item.active&&`${item.articleNumber||'Ohne Nr.'} · ${item.name}`===value),item=matches[0];
+        if(matches.length!==1){notify(matches.length?'Die Auswahl ist nicht eindeutig.':'Bitte einen vorhandenen Stammartikel auswählen.','error');return;}
         // Neue IDs werden erst serverseitig erzeugt, damit das Hinzufügen auch
         // in Browsern ohne sichere HTTPS-Browserfunktionen im LAN funktioniert.
         state.components.push({ id: null, masterDataId: item.id, sourceArticleNumber: item.articleNumber, name: item.name, calculationType: item.calculationType, unit: item.unit, quantity: '1.000', costPrice: item.costPrice, markupPercent: item.markupPercent, priceMode: 'master', salesPrice: item.salesPrice });
+        input.value='';
         clearMasterPricePreview();
         dirty = true;
         renderComponents();
@@ -454,7 +491,7 @@
             pendingPriceUpdates = preview.updates;
             const warnings = preview.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('');
             const changes = preview.changes.map((change) => `<tr><td><strong>${escapeHtml(change.name)}</strong><br><span class="muted">${escapeHtml(change.articleNumber || 'ohne Artikelnummer')}</span></td><td>Kosten ${formatEuro(change.oldCostPrice)}<br>Zuschlag ${escapeHtml(decimalInput(change.oldMarkupPercent, '0.00'))} %<br>VK-Anteil ${formatEuro(change.oldSalesPrice)}</td><td>Kosten ${formatEuro(change.newCostPrice)}<br>Zuschlag ${escapeHtml(decimalInput(change.newMarkupPercent, '0.00'))} %<br>VK-Anteil ${formatEuro(change.newSalesPrice)}</td></tr>`).join('');
-            masterPricePreview.innerHTML = `<h3>Vorschau der Preisaktualisierung</h3>${warnings ? `<ul class="notice notice-error">${warnings}</ul>` : ''}${changes ? `<div class="table-wrap"><table><thead><tr><th>Baustein</th><th>Bisher</th><th>Neu</th></tr></thead><tbody>${changes}</tbody></table></div><p class="muted">Gesperrte und manuelle Preise werden nicht verändert. Die angezeigten Änderungen werden zunächst nur in den Entwurf übernommen und erst mit „Stammposition speichern“ dauerhaft gespeichert.</p><div class="form-actions"><button type="button" class="button" data-apply-master-prices>Änderungen übernehmen</button><button type="button" class="button button-light" data-cancel-master-prices>Abbrechen</button></div>` : '<p>Alle aktualisierbaren Artikelstammpreise sind bereits auf dem aktuellen Stand. Gesperrte und manuelle Preise wurden nicht berücksichtigt.</p><button type="button" class="button button-light" data-cancel-master-prices>Schließen</button>'}`;
+            masterPricePreview.innerHTML = `<h3>Vorschau der Preisaktualisierung</h3>${warnings ? `<ul class="notice notice-error">${warnings}</ul>` : ''}${changes ? `<div class="table-wrap"><table><thead><tr><th>Baustein</th><th>Bisher</th><th>Neu</th></tr></thead><tbody>${changes}</tbody></table></div><p class="muted">Eigene Preise werden nicht verändert. Die angezeigten Änderungen werden zunächst nur in den Entwurf übernommen und erst mit „Stammposition speichern“ dauerhaft gespeichert.</p><div class="form-actions"><button type="button" class="button" data-apply-master-prices>Änderungen übernehmen</button><button type="button" class="button button-light" data-cancel-master-prices>Abbrechen</button></div>` : '<p>Alle Preise aus dem Artikelstamm sind bereits aktuell. Eigene Preise wurden nicht berücksichtigt.</p><button type="button" class="button button-light" data-cancel-master-prices>Schließen</button>'}`;
             masterPricePreview.hidden = false;
         } catch (error) {
             notify(error.message, 'error');
@@ -502,6 +539,8 @@
                 row.querySelector('[data-field="markupPercent"]').value = decimalInput(master.markupPercent, '0.00');
             }
         }
+        if(field==='priceMode'){dirty=true;renderComponents();scheduleServicePreview();return;}
+        refreshMasterComponentSummary(row,component);
         scheduleServicePreview();
     });
     document.querySelector('#components-list').addEventListener('click', (event) => {
@@ -553,6 +592,7 @@
                     state.components[index].salesPrice = price;
                     const output = document.querySelector(`[data-component-sales="${index}"]`);
                     if (output) output.textContent = formatEuro(price);
+                    const row=document.querySelector(`[data-component-index="${index}"]`);if(row)refreshMasterComponentSummary(row,state.components[index]);
                 });
                 renderServiceTotals(preview);
             } catch (error) {

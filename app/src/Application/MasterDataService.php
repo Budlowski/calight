@@ -18,6 +18,7 @@ use Throwable;
 final readonly class MasterDataService
 {
     private const TYPES = ['material', 'labor', 'external', 'other'];
+    private const EXCHANGE_SCOPES = ['cost-items', 'services', 'categories', 'suppliers', 'trailing-texts'];
 
     public function __construct(
         private MasterDataRepository $repository,
@@ -38,6 +39,126 @@ final readonly class MasterDataService
             $services[] = $this->mapService($service, $this->repository->serviceComponents((string) $service['id']));
         }
         return compact('categories', 'suppliers', 'costItems', 'services', 'trailingTexts');
+    }
+
+    /** @return array<string,mixed> */
+    public function exportScope(string $scope): array
+    {
+        $this->validateExchangeScope($scope);
+        $overview=$this->overview(true);
+        $items=match($scope){
+            'categories'=>$this->categoryExportTree($overview['categories']),
+            'suppliers'=>$overview['suppliers'],
+            'trailing-texts'=>$overview['trailingTexts'],
+            'cost-items'=>array_map(static function(array $item):array{unset($item['categoryName'],$item['supplierName'],$item['salesPrice'],$item['copiedFromId']);return $item;},$overview['costItems']),
+            'services'=>array_map(static function(array $item):array{unset($item['calculation'],$item['copiedFromId']);foreach($item['components'] as &$component)unset($component['salesPrice']);unset($component);return $item;},$overview['services']),
+        };
+        return['format'=>'calight-master-data','schemaVersion'=>1,'scope'=>$scope,'exportedAt'=>Clock::now(),'items'=>$items];
+    }
+
+    /** @param array<string,mixed> $document @return array{scope:string,imported:int} */
+    public function importScope(string $scope,array $document):array
+    {
+        $this->validateExchangeScope($scope);
+        if(($document['format']??null)!=='calight-master-data'||($document['schemaVersion']??null)!==1||($document['scope']??null)!==$scope){
+            throw new MasterDataValidationException(['Die JSON-Datei gehört nicht zum gewählten Stammdatenbereich oder hat eine nicht unterstützte Version.']);
+        }
+        $items=$document['items']??null;
+        if(!is_array($items)||!array_is_list($items)||count($items)>10000)throw new MasterDataValidationException(['Die Importdatei enthält keine gültige Datensatzliste.']);
+        if($scope==='categories')$items=$this->flattenImportedCategories($items);
+        $ids=[];
+        foreach($items as $index=>$item){
+            if(!is_array($item))throw new MasterDataValidationException([sprintf('Datensatz %d ist ungültig.',$index+1)]);
+            $id=(string)($item['id']??'');if(!Uuid::isValid($id))throw new MasterDataValidationException([sprintf('Datensatz %d enthält keine gültige interne ID.',$index+1)]);
+            if(isset($ids[$id]))throw new MasterDataValidationException(['Ein Datensatz ist in der Importdatei doppelt enthalten.']);$ids[$id]=true;
+        }
+        if($scope==='categories')$items=$this->sortedImportedCategories($items);
+        $now=Clock::now();
+        $this->repository->beginImmediate();
+        try{
+            foreach($items as $item)$this->importItem($scope,$item,$now);
+            $this->repository->commit();
+        }catch(Throwable $exception){
+            $this->repository->rollBack();
+            $this->translateWriteException($exception);
+        }
+        return['scope'=>$scope,'imported'=>count($items)];
+    }
+
+    /** @param list<array<string,mixed>> $categories @return list<array<string,mixed>> */
+    private function categoryExportTree(array $categories):array
+    {
+        $children=[];foreach($categories as $category)$children[(string)($category['parentId']??'')][]=$category;
+        $build=function(string $parent='')use(&$build,&$children):array{
+            return array_map(function(array $category)use(&$build):array{$id=(string)$category['id'];unset($category['parentId']);$category['children']=$build($id);return$category;},$children[$parent]??[]);
+        };
+        return$build();
+    }
+
+    /** @param list<mixed> $nodes @return list<array<string,mixed>> */
+    private function flattenImportedCategories(array $nodes):array
+    {
+        $result=[];
+        $walk=function(array $items,?string $parentId,int $depth)use(&$walk,&$result):void{
+            if($depth>50)throw new MasterDataValidationException(['Die importierte Kategoriehierarchie ist zu tief verschachtelt.']);
+            foreach($items as $item){
+                if(!is_array($item))throw new MasterDataValidationException(['Die Importdatei enthält eine ungültige Kategorie.']);
+                $children=$item['children']??[];if(!is_array($children)||!array_is_list($children))throw new MasterDataValidationException(['Unterkategorien müssen als Liste angegeben werden.']);
+                unset($item['children']);$item['parentId']=$parentId;$result[]=$item;
+                if(count($result)>10000)throw new MasterDataValidationException(['Die Importdatei enthält zu viele Kategorien.']);
+                $id=(string)($item['id']??'');if(!Uuid::isValid($id))throw new MasterDataValidationException(['Eine Kategorie enthält keine gültige interne ID.']);
+                $walk($children,$id,$depth+1);
+            }
+        };
+        $walk($nodes,null,0);return$result;
+    }
+
+    private function validateExchangeScope(string $scope):void
+    {
+        if(!in_array($scope,self::EXCHANGE_SCOPES,true))throw new MasterDataValidationException(['Unbekannter Stammdatenbereich.']);
+    }
+
+    /** @param array<string,mixed> $item */
+    private function importItem(string $scope,array $item,string $now):void
+    {
+        $id=(string)($item['id']??'');
+        if(!Uuid::isValid($id))throw new MasterDataValidationException(['Ein Datensatz enthält keine gültige interne ID.']);
+        $active=filter_var($item['active']??true,FILTER_VALIDATE_BOOL,FILTER_NULL_ON_FAILURE);
+        if($active===null)throw new MasterDataValidationException(['Der Aktivstatus eines Datensatzes ist ungültig.']);
+        if($scope==='trailing-texts'){
+            $data=$this->trailingTextData($item)+['id'=>$id,'created_at'=>$now,'updated_at'=>$now];$this->repository->upsertTrailingText($data);return;
+        }
+        if($scope==='suppliers'){
+            $data=$this->supplierData($item)+['id'=>$id,'active'=>$active?1:0,'created_at'=>$now,'updated_at'=>$now];$this->repository->upsertSupplier($data);return;
+        }
+        if($scope==='categories'){
+            $parentId=$this->nullableUuid($item['parentId']??null,'Übergeordnete Kategorie');
+            if($parentId!==null&&$this->repository->category($parentId)===null)throw new MasterDataValidationException(['Eine übergeordnete Kategorie aus der Importdatei fehlt.']);
+            $sort=filter_var($item['sortOrder']??0,FILTER_VALIDATE_INT);
+            if($sort===false||$sort<0)throw new MasterDataValidationException(['Sortierung muss eine nicht negative ganze Zahl sein.']);
+            $data=['id'=>$id,'parent_id'=>$parentId,'name'=>$this->requiredText($item,'name','Bezeichnung',150),'description'=>$this->optionalText($item,'description',2000),'sort_order'=>$sort,'active'=>$active?1:0,'created_at'=>$now,'updated_at'=>$now];
+            $this->repository->upsertCategory($data);return;
+        }
+        if($scope==='cost-items'){
+            $data=$this->costItemData($item,true)+['id'=>$id,'active'=>$active?1:0,'created_at'=>$now,'updated_at'=>$now];$this->repository->upsertCostItem($data);return;
+        }
+        [$service,$components]=$this->serviceData($item);$service+=['id'=>$id,'active'=>$active?1:0,'created_at'=>$now,'updated_at'=>$now];
+        $this->repository->upsertServiceTemplate($service);$this->repository->replaceServiceComponents($id,$this->prepareComponents($id,$components));
+    }
+
+    /** @param list<array<string,mixed>> $items @return list<array<string,mixed>> */
+    private function sortedImportedCategories(array $items):array
+    {
+        $byId=[];$parents=[];
+        foreach($this->repository->categories(true) as $category)$parents[(string)$category['id']]=$category['parent_id'];
+        foreach($items as $item){$id=(string)($item['id']??'');if(!Uuid::isValid($id))throw new MasterDataValidationException(['Eine Kategorie enthält keine gültige interne ID.']);if(isset($byId[$id]))throw new MasterDataValidationException(['Eine Kategorie ist in der Importdatei doppelt enthalten.']);$byId[$id]=$item;$parents[$id]=$this->nullableUuid($item['parentId']??null,'Übergeordnete Kategorie');}
+        $result=[];$visiting=[];$done=[];
+        $visit=function(string $id)use(&$visit,&$byId,&$parents,&$result,&$visiting,&$done):void{
+            if(isset($done[$id]))return;if(isset($visiting[$id]))throw new MasterDataValidationException(['Die importierte Kategoriehierarchie enthält einen Kreis.']);$visiting[$id]=true;
+            $parent=$parents[$id]??null;if($parent!==null){if(!array_key_exists($parent,$parents))throw new MasterDataValidationException(['Eine übergeordnete Kategorie aus der Importdatei fehlt.']);$visit($parent);}
+            unset($visiting[$id]);$done[$id]=true;if(isset($byId[$id]))$result[]=$byId[$id];
+        };
+        foreach(array_keys($byId) as $id)$visit($id);return$result;
     }
 
     /** @param array<string,mixed> $input @return array<string,mixed> */
@@ -422,7 +543,7 @@ final readonly class MasterDataService
     }
 
     /** @param array<string,mixed> $input @return array<string,mixed> */
-    private function costItemData(array $input): array
+    private function costItemData(array $input,bool $allowArchivedReferences=false): array
     {
         $type = (string) ($input['calculationType'] ?? '');
         if (!in_array($type, self::TYPES, true)) {
@@ -434,13 +555,13 @@ final readonly class MasterDataService
         if ($categoryId !== null) {
             $category = $this->repository->category($categoryId);
             if ($category === null) throw new MasterDataValidationException(['Kategorie wurde nicht gefunden.']);
-            if (!(bool) $category['active']) throw new MasterDataValidationException(['Eine archivierte Kategorie kann nicht zugeordnet werden.']);
+            if (!$allowArchivedReferences&&!(bool) $category['active']) throw new MasterDataValidationException(['Eine archivierte Kategorie kann nicht zugeordnet werden.']);
         }
         $supplierId = $this->nullableUuid($input['supplierId'] ?? null, 'Lieferant');
         if ($supplierId !== null) {
             $supplier = $this->repository->supplier($supplierId);
             if ($supplier === null) throw new MasterDataValidationException(['Lieferant wurde nicht gefunden.']);
-            if (!(bool) $supplier['active']) throw new MasterDataValidationException(['Ein archivierter Lieferant kann nicht zugeordnet werden.']);
+            if (!$allowArchivedReferences&&!(bool) $supplier['active']) throw new MasterDataValidationException(['Ein archivierter Lieferant kann nicht zugeordnet werden.']);
         }
         return [
             'article_number' => $this->nullableText($input, 'articleNumber', 100),
@@ -479,7 +600,8 @@ final readonly class MasterDataService
                 if ($masterData === null) throw new MasterDataValidationException([sprintf('Stammartikel für Baustein %d wurde nicht gefunden.', $index + 1)]);
             }
             $priceMode = (string) ($component['priceMode'] ?? ($masterDataId === null ? 'manual' : 'master'));
-            if (!in_array($priceMode, ['master', 'locked', 'manual'], true)) {
+            if ($priceMode === 'locked') $priceMode = 'manual';
+            if (!in_array($priceMode, ['master', 'manual'], true)) {
                 throw new MasterDataValidationException([sprintf('Preisbezug für Baustein %d ist ungültig.', $index + 1)]);
             }
             if ($masterDataId === null && $priceMode !== 'manual') {
@@ -582,7 +704,7 @@ final readonly class MasterDataService
                 'sourceArticleNumber' => $component['source_article_number'],
                 'calculationType' => $component['calculation_type'], 'unit' => $component['unit'],
                 'quantity' => $component['quantity'], 'costPrice' => $component['cost_price'],
-                'markupPercent' => $component['markup_percent'], 'priceMode' => $component['price_mode'],
+                'markupPercent' => $component['markup_percent'], 'priceMode' => $component['price_mode'] === 'locked' ? 'manual' : $component['price_mode'],
                 'salesPrice' => $componentCalculation['positionTotal'],
             ];
             $calculationInput[] = [

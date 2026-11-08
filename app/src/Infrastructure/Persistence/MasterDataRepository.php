@@ -43,6 +43,17 @@ final readonly class MasterDataRepository
         ) === 1;
     }
 
+    /** @param array<string,mixed> $data */
+    public function upsertTrailingText(array $data): void
+    {
+        $this->execute(
+            'INSERT INTO trailing_texts (id, code, name, created_at, updated_at)
+             VALUES (:id, :code, :name, :created_at, :updated_at)
+             ON CONFLICT(id) DO UPDATE SET code=excluded.code, name=excluded.name, updated_at=excluded.updated_at',
+            $data,
+        );
+    }
+
     public function deleteTrailingText(string $id): bool
     {
         return $this->execute('DELETE FROM trailing_texts WHERE id = :id', ['id' => $id]) === 1;
@@ -92,6 +103,18 @@ final readonly class MasterDataRepository
              sort_order = :sort_order, updated_at = :updated_at WHERE id = :id',
             $data,
         ) === 1;
+    }
+
+    /** @param array<string,mixed> $data */
+    public function upsertCategory(array $data): void
+    {
+        $this->execute(
+            'INSERT INTO master_categories (id, parent_id, name, description, active, sort_order, created_at, updated_at)
+             VALUES (:id, :parent_id, :name, :description, :active, :sort_order, :created_at, :updated_at)
+             ON CONFLICT(id) DO UPDATE SET parent_id=excluded.parent_id, name=excluded.name, description=excluded.description,
+             active=excluded.active, sort_order=excluded.sort_order, updated_at=excluded.updated_at',
+            $data,
+        );
     }
 
     public function categoryWouldCycle(string $id, ?string $parentId): bool
@@ -156,6 +179,18 @@ final readonly class MasterDataRepository
         ) === 1;
     }
 
+    /** @param array<string,mixed> $data */
+    public function upsertSupplier(array $data): void
+    {
+        $this->execute(
+            'INSERT INTO suppliers (id, supplier_number, name, contact, active, created_at, updated_at)
+             VALUES (:id, :supplier_number, :name, :contact, :active, :created_at, :updated_at)
+             ON CONFLICT(id) DO UPDATE SET supplier_number=excluded.supplier_number, name=excluded.name,
+             contact=excluded.contact, active=excluded.active, updated_at=excluded.updated_at',
+            $data,
+        );
+    }
+
     public function supplierHasActiveItems(string $id): bool
     {
         $statement = $this->pdo->prepare('SELECT EXISTS(SELECT 1 FROM cost_items WHERE supplier_id = :id AND active = 1)');
@@ -215,6 +250,24 @@ final readonly class MasterDataRepository
         ) === 1;
     }
 
+    /** @param array<string,mixed> $data */
+    public function upsertCostItem(array $data): void
+    {
+        $this->execute(
+            'INSERT INTO cost_items
+             (id, article_number, name, description, category_id, calculation_type, unit, cost_price,
+              markup_percent, supplier_id, supplier_article_number, copied_from_id, active, created_at, updated_at)
+             VALUES (:id, :article_number, :name, :description, :category_id, :calculation_type, :unit, :cost_price,
+              :markup_percent, :supplier_id, :supplier_article_number, NULL, :active, :created_at, :updated_at)
+             ON CONFLICT(id) DO UPDATE SET article_number=excluded.article_number, name=excluded.name,
+             description=excluded.description, category_id=excluded.category_id, calculation_type=excluded.calculation_type,
+             unit=excluded.unit, cost_price=excluded.cost_price, markup_percent=excluded.markup_percent,
+             supplier_id=excluded.supplier_id, supplier_article_number=excluded.supplier_article_number,
+             active=excluded.active, updated_at=excluded.updated_at',
+            $data,
+        );
+    }
+
     /** @return list<array<string,mixed>> */
     public function serviceTemplates(bool $includeArchived = true): array
     {
@@ -259,6 +312,20 @@ final readonly class MasterDataRepository
              unit = :unit, trailing_text_id=:trailing_text_id, updated_at = :updated_at WHERE id = :id',
             $data,
         ) === 1;
+    }
+
+    /** @param array<string,mixed> $data */
+    public function upsertServiceTemplate(array $data): void
+    {
+        $this->execute(
+            'INSERT INTO service_templates
+             (id, article_number, short_text, long_text, unit, trailing_text_id, copied_from_id, active, created_at, updated_at)
+             VALUES (:id, :article_number, :short_text, :long_text, :unit, :trailing_text_id, NULL, :active, :created_at, :updated_at)
+             ON CONFLICT(id) DO UPDATE SET article_number=excluded.article_number, short_text=excluded.short_text,
+             long_text=excluded.long_text, unit=excluded.unit, trailing_text_id=excluded.trailing_text_id,
+             active=excluded.active, updated_at=excluded.updated_at',
+            $data,
+        );
     }
 
     /** @param list<array<string,mixed>> $components */

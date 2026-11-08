@@ -71,4 +71,11 @@ final readonly class OfferRepository
         ]);
         return $statement->rowCount() === 1;
     }
+
+    public function deleteDraft(string $id):bool
+    {
+        $statement=$this->pdo->prepare('DELETE FROM offers WHERE id=:id AND status=:status');
+        $statement->execute(['id'=>$id,'status'=>'draft']);
+        return $statement->rowCount()===1;
+    }
 }
