@@ -22,4 +22,11 @@ assert(generated.get('root')==='1','Haupttitel wurde falsch nummeriert.');
 assert(generated.get('root-text')==='','Textposition darf keine Nummer erhalten.');
 assert(generated.get('root-position')==='1.01'&&generated.get('root-position-2')==='1.02','Text oder Untertitel beeinflusst den Positionszähler.');
 assert(generated.get('child')==='1.1'&&generated.get('child-position')==='1.1.01','Untertitel wurde falsch nummeriert.');
+const counts=CalightOfferSearch.positionCounts([{id:'root',type:'title',children:[
+  {id:'direct',type:'position'},
+  {id:'note',type:'text'},
+  {id:'child',type:'title',children:[{id:'nested',type:'position'},{id:'deep',type:'title',children:[{id:'deep-position',type:'position'}]}]},
+]}]);
+assert(counts.get('root')===3,'Positionen wurden für den Haupttitel nicht rekursiv gezählt.');
+assert(counts.get('child')===2&&counts.get('deep')===1,'Positionen wurden für Untertitel nicht korrekt gezählt.');
 console.log('offer search tests passed');

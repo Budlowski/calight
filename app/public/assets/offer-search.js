@@ -31,5 +31,20 @@
     walk(Array.isArray(nodes)?nodes:[]);
     return hits;
   }
-  globalThis.CalightOfferSearch={find,numbering};
+  function positionCounts(nodes){
+    const counts=new Map();
+    const count=items=>{
+      let total=0;
+      for(const node of Array.isArray(items)?items:[]){
+        if(node.type==='position')total++;
+        else if(node.type==='title'){
+          const nested=count(node.children);counts.set(node.id,nested);total+=nested;
+        }
+      }
+      return total;
+    };
+    count(nodes);
+    return counts;
+  }
+  globalThis.CalightOfferSearch={find,numbering,positionCounts};
 })();

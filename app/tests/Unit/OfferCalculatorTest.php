@@ -51,16 +51,25 @@ final class OfferCalculatorTest extends TestCase
                 ['id'=>'alternative','type'=>'title','titleType'=>'alternative','name'=>'Alternative','description'=>'','children'=>[$position('excluded-nested','40.00')]],
                 ['id'=>'hint','type'=>'text','title'=>'Hinweis','text'=>'Ohne Preis'],
             ]],
-            ['id'=>'bedarf','type'=>'title','titleType'=>'bedarf','name'=>'Bedarf','description'=>'','children'=>[$position('excluded','25.00')]],
+            ['id'=>'bedarf','type'=>'title','titleType'=>'bedarf','name'=>'Bedarf','description'=>'','children'=>[
+                ['id'=>'nested-alternative','type'=>'title','titleType'=>'alternative','name'=>'Trotzdem Bedarf','description'=>'','children'=>[$position('excluded','25.00')]],
+            ]],
         ]];
         $calculator=new OfferCalculator(new PriceCalculator());
         $discount=$calculator->calculate($base+['offerAdjustment'=>['type'=>'discount','mode'=>'percentage','value'=>'5.00','label'=>null]]);
         $this->assertSame('165.00',$discount['calculation']['calculatedTotal']);
         $this->assertSame('100.00',$discount['calculation']['subtotalNet']);
+        $this->assertSame('100.00',$discount['calculation']['regularSubtotal']);
+        $this->assertSame('25.00',$discount['calculation']['demandSubtotal']);
+        $this->assertSame('40.00',$discount['calculation']['alternativeSubtotal']);
         $this->assertSame('-5.00',$discount['calculation']['adjustmentSigned']);
         $this->assertSame('95.00',$discount['calculation']['netTotal']);
         $this->assertSame('40.00',$discount['nodes'][0]['children'][1]['calculation']['subtotal']);
         $this->assertSame('0.00',$discount['nodes'][0]['children'][1]['calculation']['includedSubtotal']);
+        $this->assertSame('40.00',$discount['nodes'][0]['children'][1]['calculation']['alternativeSubtotal']);
+        $this->assertSame('40.00',$discount['nodes'][0]['calculation']['alternativeSubtotal']);
+        $this->assertSame('25.00',$discount['nodes'][1]['calculation']['demandSubtotal']);
+        $this->assertSame('0.00',$discount['nodes'][1]['calculation']['alternativeSubtotal']);
         $absolute=$calculator->calculate($base+['offerAdjustment'=>['type'=>'surcharge','mode'=>'absolute','value'=>'12.34','label'=>'Fracht']]);
         $this->assertSame('112.34',$absolute['calculation']['netTotal']);
         $this->assertThrows(OfferValidationException::class,fn()=>$calculator->calculate($base+['offerAdjustment'=>['type'=>'discount','mode'=>'absolute','value'=>'100.01','label'=>null]]));

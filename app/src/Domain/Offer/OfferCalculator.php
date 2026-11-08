@@ -16,7 +16,7 @@ final readonly class OfferCalculator
     /** @param array<string,mixed> $offer @return array<string,mixed> */
     public function calculate(array $offer): array
     {
-        $totals=['calculated'=>BigDecimal::zero(),'included'=>BigDecimal::zero()];
+        $totals=$this->emptyTotals();
         $offer['nodes']=$this->calculateNodes($offer['nodes']??[],$totals);
         $subtotal=$totals['included'];
         $adjustment=$this->calculateAdjustment($offer['offerAdjustment']??null,$subtotal);
@@ -25,6 +25,9 @@ final readonly class OfferCalculator
         $offer['calculation']=[
             'calculatedTotal'=>Decimal::money($totals['calculated']),
             'subtotalNet'=>Decimal::money($subtotal),
+            'regularSubtotal'=>Decimal::money($totals['regular']),
+            'demandSubtotal'=>Decimal::money($totals['demand']),
+            'alternativeSubtotal'=>Decimal::money($totals['alternative']),
             'adjustmentAmount'=>Decimal::money($adjustment['amount']),
             'adjustmentSigned'=>Decimal::money($adjustment['signed']),
             'netTotal'=>Decimal::money($net),
@@ -34,23 +37,34 @@ final readonly class OfferCalculator
 
     /**
      * @param list<array<string,mixed>> $nodes
-     * @param array{calculated:BigDecimal,included:BigDecimal} $totals
+     * @param array{calculated:BigDecimal,included:BigDecimal,regular:BigDecimal,demand:BigDecimal,alternative:BigDecimal} $totals
      * @return list<array<string,mixed>>
      */
     private function calculateNodes(array $nodes,array &$totals):array
     {
         foreach($nodes as &$node){
             if(($node['type']??null)==='title'){
-                $childTotals=['calculated'=>BigDecimal::zero(),'included'=>BigDecimal::zero()];
+                $childTotals=$this->emptyTotals();
                 $node['children']=$this->calculateNodes($node['children']??[],$childTotals);
-                $included=($node['titleType']??'normal')==='normal'?$childTotals['included']:BigDecimal::zero();
+                $titleType=$node['titleType']??'normal';
+                $contribution=$childTotals;
+                if($titleType!=='normal'){
+                    $contribution['regular']=BigDecimal::zero();
+                    $contribution['demand']=BigDecimal::zero();
+                    $contribution['alternative']=BigDecimal::zero();
+                    $contribution[$titleType==='bedarf'?'demand':'alternative']=$childTotals['calculated'];
+                    $contribution['included']=BigDecimal::zero();
+                }
                 $node['calculation']=[
                     'calculatedSubtotal'=>Decimal::money($childTotals['calculated']),
                     'subtotal'=>Decimal::money($childTotals['included']),
-                    'includedSubtotal'=>Decimal::money($included),
+                    'includedSubtotal'=>Decimal::money($contribution['included']),
+                    'regularSubtotal'=>Decimal::money($contribution['regular']),
+                    'demandSubtotal'=>Decimal::money($contribution['demand']),
+                    'alternativeSubtotal'=>Decimal::money($contribution['alternative']),
                 ];
                 $totals['calculated']=$totals['calculated']->plus($childTotals['calculated']);
-                $totals['included']=$totals['included']->plus($included);
+                foreach(['included','regular','demand','alternative'] as $key)$totals[$key]=$totals[$key]->plus($contribution[$key]);
                 continue;
             }
             if(($node['type']??null)==='text'){$node['calculation']=null;continue;}
@@ -74,10 +88,19 @@ final readonly class OfferCalculator
             ];
             $positionTotal=BigDecimal::of($position['positionTotal']);
             $totals['calculated']=$totals['calculated']->plus($positionTotal);
-            if(($node['positionType']??'normal')==='normal')$totals['included']=$totals['included']->plus($positionTotal);
+            $positionType=$node['positionType']??'normal';
+            $category=$positionType==='bedarf'?'demand':($positionType==='alternative'?'alternative':'regular');
+            $totals[$category]=$totals[$category]->plus($positionTotal);
+            if($positionType==='normal')$totals['included']=$totals['included']->plus($positionTotal);
         }
         unset($node);
         return $nodes;
+    }
+
+    /** @return array{calculated:BigDecimal,included:BigDecimal,regular:BigDecimal,demand:BigDecimal,alternative:BigDecimal} */
+    private function emptyTotals():array
+    {
+        return['calculated'=>BigDecimal::zero(),'included'=>BigDecimal::zero(),'regular'=>BigDecimal::zero(),'demand'=>BigDecimal::zero(),'alternative'=>BigDecimal::zero()];
     }
 
     /** @return array{amount:BigDecimal,signed:BigDecimal} */
