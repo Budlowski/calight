@@ -107,6 +107,29 @@ th, td { padding: 10px; border-bottom: 1px solid var(--border); text-align: left
 .contact-grid label, .address-grid label { font-size: 12px; }
 .contact-grid input, .address-grid input, .address-grid select { padding: 7px 8px; }
 .inline-empty { margin: 0; padding: 0 14px 14px; }
+.offer-overview-grid { grid-template-columns: minmax(300px, .55fr) minmax(520px, 1.45fr); align-items: start; }
+.offer-toolbar { grid-template-columns: minmax(220px, 1fr) minmax(160px, .35fr); }
+.offer-editor-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
+.offer-editor-header h1 { margin-bottom: 0; }
+.offer-save-area { display: flex; align-items: center; gap: 14px; }
+.offer-document-head { margin: 14px 0; }
+.offer-tree-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin: 14px 0; }
+.offer-tree { display: grid; gap: 7px; }
+.offer-node { margin-left: calc(var(--depth) * 18px); border: 1px solid var(--border); border-radius: 5px; background: white; }
+.offer-node > summary { display: grid; grid-template-columns: minmax(70px, auto) minmax(180px, 1fr) auto auto; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer; list-style-position: inside; }
+.offer-title-node > summary { background: #eef3f6; }
+.offer-position-node > summary { background: white; }
+.offer-node-number { color: var(--primary); font-weight: 750; }
+.offer-position-summary { white-space: nowrap; }
+.offer-node-actions { display: flex; align-items: center; justify-content: flex-end; white-space: nowrap; }
+.offer-drag { cursor: grab; font-size: 17px; text-decoration: none; }
+.offer-node-editor { display: grid; gap: 12px; padding: 12px; border-top: 1px solid var(--border); }
+.offer-position-grid { display: grid; grid-template-columns: minmax(260px, 1.6fr) minmax(160px, .7fr) minmax(110px, .4fr) minmax(110px, .4fr); gap: 10px; }
+.offer-child-toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
+.offer-children { display: grid; gap: 7px; }
+.offer-drop-zone { min-height: 5px; margin-left: calc(var(--depth, 0) * 18px); border-radius: 4px; }
+.offer-drop-zone.active { min-height: 24px; border: 2px dashed #5594bd; background: #e4f2fb; }
+.offer-empty { display: flex; flex-direction: column; gap: 5px; text-align: center; }
 .components-panel { border: 1px solid var(--border); border-radius: 5px; }
 .components-panel > summary { padding: 12px 14px; cursor: pointer; font-weight: 700; }
 .component-add-row { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto auto; gap: 8px; padding: 0 14px 14px; }
@@ -143,6 +166,12 @@ th, td { padding: 10px; border-bottom: 1px solid var(--border); text-align: left
     .component-controls-actions { justify-content: flex-start; }
     .component-add-row { grid-template-columns: 1fr; }
     .customer-toolbar, .project-toolbar, .customer-head-grid, .project-head-grid, .address-grid, .contact-grid { grid-template-columns: 1fr; }
+    .offer-overview-grid, .offer-position-grid { grid-template-columns: 1fr; }
+    .offer-editor-header { display: block; }
+    .offer-save-area { justify-content: space-between; }
+    .offer-node { margin-left: calc(var(--depth) * 8px); }
+    .offer-node > summary { grid-template-columns: auto 1fr; }
+    .offer-node-actions { grid-column: 1 / -1; justify-content: flex-start; }
     .service-totals { grid-template-columns: repeat(2, 1fr); }
     .category-row { grid-template-columns: 1fr auto; }
     .category-row > .muted { display: none; }

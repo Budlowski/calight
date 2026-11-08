@@ -141,6 +141,25 @@ final readonly class Application
             return Response::redirect('/offers/' . rawurlencode($offerId));
         }));
 
+        $this->router->add('GET', '/offers', fn (): Response => $this->protected(
+            fn (): Response => $this->view->render('offers/index', ['projects' => $this->projects->all()])
+        ));
+
+        $this->router->add('GET', '/api/offers', fn (): Response => $this->protected(
+            fn (): Response => Response::json(['offers' => $this->offerService->overview()])
+        ));
+
+        $this->router->add('POST', '/api/offers', fn (Request $request): Response => $this->protected(function () use ($request): Response {
+            $this->requireCsrf($request, $request->headers['x-csrf-token'] ?? null);
+            try { $data=json_decode($request->body,true,flags:JSON_THROW_ON_ERROR); }
+            catch(JsonException){ return Response::json(['error'=>'Ungültiger JSON-Anfrageinhalt.'],400); }
+            if(!is_array($data)) return Response::json(['error'=>'Der Anfrageinhalt muss ein JSON-Objekt sein.'],400);
+            $projectId=trim((string)($data['projectId']??'')); $title=trim((string)($data['title']??''));
+            if($projectId===''||$title==='') return Response::json(['error'=>'Projekt und Angebotsbezeichnung sind erforderlich.'],422);
+            $id=$this->offerService->createDraft($projectId,$title);
+            return Response::json(['id'=>$id,'url'=>'/offers/'.rawurlencode($id)],201);
+        }));
+
         $this->router->add('GET', '/offers/{id}', fn (Request $request, array $parameters): Response => $this->protected(function () use ($parameters): Response {
             $draft = $this->offerService->loadDraft($parameters['id']);
             return $this->view->render('offers/edit', $draft);

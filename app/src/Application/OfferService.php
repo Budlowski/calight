@@ -56,6 +56,19 @@ final readonly class OfferService
         return $offerId;
     }
 
+    /** @return list<array<string,mixed>> */
+    public function overview(): array
+    {
+        $result=[];
+        foreach($this->offers->all() as $metadata){
+            $draft=$this->store->loadDraft((string)$metadata['project_id'],(string)$metadata['id']);
+            $result[]=['id'=>$metadata['id'],'projectId'=>$metadata['project_id'],'projectName'=>$metadata['project_name'],
+                'projectNumber'=>$metadata['project_number'],'offerNumber'=>$metadata['offer_number'],'status'=>$metadata['status'],
+                'title'=>$draft['offer']['title'],'updatedAt'=>$metadata['updated_at'],'draftVersion'=>(int)$metadata['draft_version']];
+        }
+        return $result;
+    }
+
     /** @return array{metadata:array<string,mixed>,offer:array<string,mixed>,etag:string} */
     public function loadDraft(string $offerId): array
     {

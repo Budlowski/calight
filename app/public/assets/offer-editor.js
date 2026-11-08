@@ -1,70 +1,36 @@
 (() => {
     'use strict';
-
-    const form = document.querySelector('#offer-form');
-    const titleInput = document.querySelector('#offer-title');
-    const status = document.querySelector('#save-status');
-    const submitButton = form?.querySelector('button[type="submit"]');
-    if (!form || !titleInput || !status || !submitButton) return;
-
-    let offer = null;
-    let etag = form.dataset.etag;
-    let dirty = false;
-
-    fetch(`/api/offers/${encodeURIComponent(form.dataset.offerId)}`, { credentials: 'same-origin' })
-        .then(async (response) => {
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.error || 'Entwurf konnte nicht geladen werden.');
-            offer = result.offer;
-            etag = result.etag;
-            form.dataset.etag = etag;
-            submitButton.disabled = false;
-            status.textContent = '';
-        })
-        .catch((error) => {
-            status.textContent = error instanceof Error ? error.message : 'Entwurf konnte nicht geladen werden.';
-        });
-
-    titleInput.addEventListener('input', () => {
-        dirty = true;
-        status.textContent = 'Ungespeicherte Änderungen';
-    });
-
-    window.addEventListener('beforeunload', (event) => {
-        if (!dirty) return;
-        event.preventDefault();
-        event.returnValue = '';
-    });
-
-    form.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        if (offer === null) return;
-        offer.title = titleInput.value.trim();
-        offer.updatedAt = new Date().toISOString();
-        status.textContent = 'Speichert …';
-
-        try {
-            const response = await fetch(`/api/offers/${encodeURIComponent(form.dataset.offerId)}`, {
-                method: 'PUT',
-                credentials: 'same-origin',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'If-Match': `"${etag}"`,
-                    'X-CSRF-Token': form.dataset.csrf,
-                },
-                body: JSON.stringify(offer),
-            });
-            const result = await response.json();
-            if (!response.ok) {
-                const details = Array.isArray(result.details) ? ` ${result.details.join(' ')}` : '';
-                throw new Error((result.error || 'Speichern fehlgeschlagen.') + details);
-            }
-            etag = result.etag;
-            form.dataset.etag = etag;
-            dirty = false;
-            status.textContent = 'Gespeichert';
-        } catch (error) {
-            status.textContent = error instanceof Error ? error.message : 'Speichern fehlgeschlagen.';
-        }
-    });
+    const root=document.querySelector('#offer-editor'); if(!root)return;
+    const tree=document.querySelector('#offer-tree'),titleInput=document.querySelector('#offer-title'),status=document.querySelector('#save-status'),saveButton=document.querySelector('#save-offer');
+    let offer=null,etag=root.dataset.etag,dirty=false,draggedId=null; const openNodes=new Set();
+    const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+    function uuid(){if(globalThis.crypto?.randomUUID)return crypto.randomUUID();return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0,v=c==='x'?r:(r&3|8);return v.toString(16);});}
+    function markDirty(){dirty=true;status.textContent='Ungespeicherte Änderungen';}
+    function newTitle(){return {id:uuid(),type:'title',name:'Neuer Titel',description:'',children:[]};}
+    function newPosition(){return {id:uuid(),type:'position',positionType:'normal',shortText:'Neue Position',longText:'',quantity:'1.000',unit:'Stk.',manualUnitPrice:null,components:[]};}
+    function find(id,nodes=offer.nodes){for(const node of nodes){if(node.id===id)return node;if(node.type==='title'){const found=find(id,node.children);if(found)return found;}}return null;}
+    function container(parentId){if(!parentId)return offer.nodes;const parent=find(parentId);return parent?.type==='title'?parent.children:null;}
+    function locate(id,nodes=offer.nodes,parentId=''){for(let index=0;index<nodes.length;index++){const node=nodes[index];if(node.id===id)return {nodes,index,parentId};if(node.type==='title'){const found=locate(id,node.children,node.id);if(found)return found;}}return null;}
+    function cloneNode(node){const copy=structuredClone(node);const renew=item=>{item.id=uuid();if(item.type==='title')item.children.forEach(renew);};renew(copy);return copy;}
+    function numbering(nodes,prefix=[]){const map=new Map();let titles=0,positions=0;for(const node of nodes){if(node.type==='title'){titles++;const path=[...prefix,titles];map.set(node.id,path.join('.'));for(const [id,number] of numbering(node.children,path))map.set(id,number);}else{positions++;map.set(node.id,(prefix.length?`${prefix.join('.')}.`:'')+String(positions).padStart(2,'0'));}}return map;}
+    function dropZone(parentId,index){return `<div class="offer-drop-zone" data-drop-parent="${esc(parentId)}" data-drop-index="${index}"></div>`;}
+    function controls(node,index,total){return `<div class="offer-node-actions"><button class="table-action offer-drag" type="button" draggable="true" data-drag-id="${node.id}" title="Ziehen">↕</button><button class="table-action" type="button" data-up ${index===0?'disabled':''} title="Nach oben">↑</button><button class="table-action" type="button" data-down ${index===total-1?'disabled':''} title="Nach unten">↓</button><button class="table-action" type="button" data-copy>Kopieren</button><button class="table-action danger-text" type="button" data-remove>Entfernen</button></div>`;}
+    function renderNodes(nodes,parentId,numbers,depth=0){let html=dropZone(parentId,0);nodes.forEach((node,index)=>{const number=numbers.get(node.id);if(node.type==='title'){html+=`<details class="offer-node offer-title-node" data-node-id="${node.id}" style="--depth:${depth}" ${openNodes.has(node.id)?'open':''}><summary><span class="offer-node-number">${number}</span><strong data-node-label>${esc(node.name)}</strong>${controls(node,index,nodes.length)}</summary><div class="offer-node-editor"><div class="form-grid"><label>Titelbezeichnung<input data-field="name" value="${esc(node.name)}" maxlength="500" required></label><label>Beschreibung<textarea data-field="description" rows="2">${esc(node.description)}</textarea></label></div><div class="offer-child-toolbar"><button class="button button-light" type="button" data-add-child-title>Untertitel hinzufügen</button><button class="button button-light" type="button" data-add-child-position>Position hinzufügen</button></div><div class="offer-children">${renderNodes(node.children,node.id,numbers,depth+1)}</div></div></details>`;}else{html+=`<details class="offer-node offer-position-node" data-node-id="${node.id}" style="--depth:${depth}" ${openNodes.has(node.id)?'open':''}><summary><span class="offer-node-number">${number}</span><strong data-node-label>${esc(node.shortText)}</strong><span class="muted offer-position-summary">${esc(String(node.quantity).replace('.',','))} ${esc(node.unit)}</span>${controls(node,index,nodes.length)}</summary><div class="offer-node-editor"><div class="offer-position-grid"><label>Kurztext<input data-field="shortText" value="${esc(node.shortText)}" maxlength="500" required></label><label>Positionsart<select data-field="positionType"><option value="normal" ${node.positionType==='normal'?'selected':''}>Normalposition</option><option value="bedarf" ${node.positionType==='bedarf'?'selected':''}>Bedarfsposition</option><option value="alternative" ${node.positionType==='alternative'?'selected':''}>Alternativposition</option></select></label><label>Menge<input data-field="quantity" inputmode="decimal" value="${esc(String(node.quantity).replace('.',','))}" required></label><label>Einheit<input data-field="unit" value="${esc(node.unit)}" maxlength="40" required></label></div><label>Langtext<textarea data-field="longText" rows="3">${esc(node.longText)}</textarea></label></div></details>`;}html+=dropZone(parentId,index+1);});return html;}
+    function render(){if(!offer)return;tree.innerHTML=offer.nodes.length?renderNodes(offer.nodes,'',numbering(offer.nodes)):'<div class="card offer-empty"><strong>Noch keine Angebotsstruktur.</strong><span class="muted">Fügen Sie einen Titel oder eine Position hinzu.</span></div>';}
+    function structuralChange(focusId=null){markDirty();render();if(focusId){const el=tree.querySelector(`[data-node-id="${focusId}"] input`);el?.focus();el?.select();}}
+    function addNode(parentId,node){const nodes=container(parentId);if(!nodes)return;nodes.push(node);openNodes.add(node.id);structuralChange(node.id);}
+    document.querySelector('[data-add-root-title]').addEventListener('click',()=>addNode('',newTitle()));
+    document.querySelector('[data-add-root-position]').addEventListener('click',()=>addNode('',newPosition()));
+    tree.addEventListener('toggle',e=>{const details=e.target.closest?.('[data-node-id]');if(!details||details!==e.target)return;details.open?openNodes.add(details.dataset.nodeId):openNodes.delete(details.dataset.nodeId);},true);
+    tree.addEventListener('input',e=>{const row=e.target.closest('[data-node-id]'),field=e.target.dataset.field;if(!row||!field)return;const node=find(row.dataset.nodeId);if(!node)return;node[field]=field==='quantity'?e.target.value.trim().replace(',','.'):e.target.value;if(field==='name'||field==='shortText')row.querySelector('[data-node-label]').textContent=e.target.value;if(field==='quantity'||field==='unit')row.querySelector('.offer-position-summary').textContent=`${String(node.quantity).replace('.',',')} ${node.unit}`;markDirty();});
+    tree.addEventListener('click',e=>{if(e.target.closest('.offer-node-actions'))e.preventDefault();const row=e.target.closest('[data-node-id]');if(!row)return;const id=row.dataset.nodeId,node=find(id),where=locate(id);if(!node||!where)return;if(e.target.closest('[data-add-child-title]')){addNode(id,newTitle());return;}if(e.target.closest('[data-add-child-position]')){addNode(id,newPosition());return;}if(e.target.closest('[data-copy]')){const copy=cloneNode(node);where.nodes.splice(where.index+1,0,copy);openNodes.add(copy.id);structuralChange(copy.id);return;}if(e.target.closest('[data-remove]')){if(node.type==='title'&&node.children.length&&!confirm('Titel einschließlich aller Untertitel und Positionen entfernen?'))return;where.nodes.splice(where.index,1);openNodes.delete(id);structuralChange();return;}if(e.target.closest('[data-up]')&&where.index>0){[where.nodes[where.index-1],where.nodes[where.index]]=[where.nodes[where.index],where.nodes[where.index-1]];structuralChange();return;}if(e.target.closest('[data-down]')&&where.index<where.nodes.length-1){[where.nodes[where.index+1],where.nodes[where.index]]=[where.nodes[where.index],where.nodes[where.index+1]];structuralChange();}});
+    tree.addEventListener('dragstart',e=>{const handle=e.target.closest('[data-drag-id]');if(!handle)return;draggedId=handle.dataset.dragId;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',draggedId);});
+    tree.addEventListener('dragover',e=>{const zone=e.target.closest('[data-drop-parent]');if(!zone)return;e.preventDefault();zone.classList.add('active');});
+    tree.addEventListener('dragleave',e=>e.target.closest('[data-drop-parent]')?.classList.remove('active'));
+    tree.addEventListener('drop',e=>{const zone=e.target.closest('[data-drop-parent]');if(!zone||!draggedId)return;e.preventDefault();const moving=find(draggedId),targetParent=zone.dataset.dropParent;if(!moving||moving.id===targetParent)return;if(moving.type==='title'&&findIn(moving,targetParent))return;const source=locate(draggedId),target=container(targetParent);if(!source||!target)return;source.nodes.splice(source.index,1);let index=Number(zone.dataset.dropIndex);if(source.nodes===target&&source.index<index)index--;target.splice(Math.max(0,index),0,moving);draggedId=null;structuralChange();});
+    function findIn(node,id){if(!id||node.type!=='title')return false;if(node.id===id)return true;return node.children.some(child=>findIn(child,id));}
+    titleInput.addEventListener('input',markDirty);
+    window.addEventListener('beforeunload',e=>{if(!dirty)return;e.preventDefault();e.returnValue='';});
+    saveButton.addEventListener('click',async()=>{if(!offer)return;offer.title=titleInput.value.trim();offer.updatedAt=new Date().toISOString();status.textContent='Speichert …';saveButton.disabled=true;try{const response=await fetch(`/api/offers/${encodeURIComponent(root.dataset.offerId)}`,{method:'PUT',credentials:'same-origin',headers:{'Content-Type':'application/json','If-Match':`"${etag}"`,'X-CSRF-Token':root.dataset.csrf},body:JSON.stringify(offer)}),result=await response.json();if(!response.ok)throw new Error((result.error||'Speichern fehlgeschlagen.')+(Array.isArray(result.details)?` ${result.details.join(' ')}`:''));etag=result.etag;root.dataset.etag=etag;dirty=false;status.textContent='Gespeichert';}catch(error){status.textContent=error.message||'Speichern fehlgeschlagen.';}finally{saveButton.disabled=false;}});
+    fetch(`/api/offers/${encodeURIComponent(root.dataset.offerId)}`,{credentials:'same-origin'}).then(async response=>{const result=await response.json();if(!response.ok)throw new Error(result.error||'Entwurf konnte nicht geladen werden.');offer=result.offer;etag=result.etag;titleInput.value=offer.title;offer.nodes.filter(n=>n.type==='title').forEach(n=>openNodes.add(n.id));render();saveButton.disabled=false;status.textContent='';}).catch(error=>status.textContent=error.message||'Entwurf konnte nicht geladen werden.');
 })();

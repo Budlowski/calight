@@ -31,6 +31,13 @@ final readonly class OfferRepository
         return $statement->fetchAll();
     }
 
+    /** @return list<array<string,mixed>> */
+    public function all(): array
+    {
+        return $this->pdo->query('SELECT o.*, p.name AS project_name, p.project_number
+            FROM offers o JOIN projects p ON p.id=o.project_id ORDER BY o.updated_at DESC')->fetchAll();
+    }
+
     public function create(string $id, string $projectId, string $relativePath, string $etag): void
     {
         $now = Clock::now();

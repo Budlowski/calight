@@ -24,7 +24,7 @@
             <a href="/master-data">Stammdaten</a>
             <a href="/customers">Kunden</a>
             <a href="/projects">Projekte</a>
-            <a href="#" aria-disabled="true">Angebote</a>
+            <a href="/offers">Angebote</a>
             <a href="#" aria-disabled="true">Aufmaß</a>
             <a href="#" aria-disabled="true">Materialbedarf</a>
             <a href="#" aria-disabled="true">Kosten</a>

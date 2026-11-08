@@ -13,6 +13,7 @@ use App\Infrastructure\Persistence\OfferJsonStore;
 use App\Infrastructure\Persistence\OfferRepository;
 use App\Infrastructure\Persistence\ProjectRepository;
 use App\Tests\TestCase;
+use App\Support\Uuid;
 
 final class FoundationTest extends TestCase
 {
@@ -37,12 +38,28 @@ final class FoundationTest extends TestCase
 
             $loaded = $service->loadDraft($offerId);
             $this->assertSame('E2E Angebot', $loaded['offer']['title']);
+            $this->assertSame(null, $loaded['offer']['offerNumber']);
+            $this->assertSame(null, $loaded['metadata']['offer_number']);
             $oldEtag = $loaded['etag'];
             $changed = $loaded['offer'];
             $changed['title'] = 'Gespeichert und geladen';
+            $changed['nodes'] = [[
+                'id'=>Uuid::v4(),'type'=>'title','name'=>'Titel 1','description'=>'','children'=>[[
+                    'id'=>Uuid::v4(),'type'=>'title','name'=>'Untertitel','description'=>'','children'=>[[
+                        'id'=>Uuid::v4(),'type'=>'position','positionType'=>'normal','shortText'=>'Leitung verlegen',
+                        'longText'=>'Ausführlicher Text','quantity'=>'12.500','unit'=>'m','manualUnitPrice'=>null,'components'=>[],
+                    ]],
+                ]],
+            ]];
             $newEtag = $service->saveDraft($offerId, $changed, $oldEtag);
             $this->assertTrue($newEtag !== $oldEtag);
             $this->assertSame('Gespeichert und geladen', $service->loadDraft($offerId)['offer']['title']);
+            $this->assertSame('Leitung verlegen', $service->loadDraft($offerId)['offer']['nodes'][0]['children'][0]['children'][0]['shortText']);
+            $overview=$service->overview();
+            $this->assertSame(1,count($overview));
+            $this->assertSame('Gespeichert und geladen',$overview[0]['title']);
+            $this->assertSame('draft',$overview[0]['status']);
+            $this->assertSame(2,$overview[0]['draftVersion']);
 
             $this->assertThrows(
                 OfferConflictException::class,
