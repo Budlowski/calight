@@ -20,16 +20,16 @@
     </header>
     <div class="shell">
         <nav class="sidebar" aria-label="Hauptnavigation">
-            <a href="/dashboard">Übersicht</a>
-            <a href="/master-data">Stammdaten</a>
-            <a href="/customers">Kunden</a>
-            <a href="/projects">Projekte</a>
-            <a href="/offers">Angebote</a>
-            <a href="#" aria-disabled="true">Aufmaß</a>
-            <a href="#" aria-disabled="true">Materialbedarf</a>
-            <a href="#" aria-disabled="true">Kosten</a>
-            <a href="#" aria-disabled="true">Zeiten</a>
-            <a href="#" aria-disabled="true">Nachkalkulation</a>
+            <a href="/dashboard" data-icon="layout-dashboard">Übersicht</a>
+            <a href="/master-data" data-icon="database">Stammdaten</a>
+            <a href="/customers" data-icon="users">Kunden</a>
+            <a href="/projects" data-icon="folder-kanban">Projekte</a>
+            <a href="/offers" data-icon="file-text">Angebote</a>
+            <a href="#" aria-disabled="true" data-icon="ruler">Aufmaß</a>
+            <a href="#" aria-disabled="true" data-icon="package">Materialbedarf</a>
+            <a href="#" aria-disabled="true" data-icon="badge-euro">Kosten</a>
+            <a href="#" aria-disabled="true" data-icon="clock-3">Zeiten</a>
+            <a href="#" aria-disabled="true" data-icon="chart-no-axes-column-increasing">Nachkalkulation</a>
         </nav>
         <main class="content <?= $escape($contentClass ?? '') ?>">
 <?php else: ?>
@@ -43,5 +43,6 @@
 <?php if ($currentUser !== null): ?>
     </div>
 <?php endif; ?>
+<script src="/assets/ui.js?v=<?= $escape((string) filemtime(dirname(__DIR__, 2) . '/public/assets/ui.js')) ?>" defer></script>
 </body>
 </html>
