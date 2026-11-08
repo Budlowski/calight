@@ -23,7 +23,14 @@ final readonly class ProjectRepository
     /** @return array<string,mixed>|null */
     public function find(string $id): ?array
     {
-        $statement = $this->pdo->prepare('SELECT * FROM projects WHERE id = :id');
+        $statement = $this->pdo->prepare("SELECT p.*,
+            CASE WHEN c.customer_type='company' THEN c.company_name ELSE trim(c.first_name || ' ' || c.last_name) END AS linked_customer_name,
+            trim(co.first_name || ' ' || co.last_name) AS contact_name, co.function AS contact_function,
+            co.email AS contact_email, co.phone AS contact_phone
+            FROM projects p
+            LEFT JOIN customers c ON c.id=p.customer_id
+            LEFT JOIN customer_contacts co ON co.id=p.contact_id
+            WHERE p.id = :id");
         $statement->execute(['id' => $id]);
         $project = $statement->fetch();
 

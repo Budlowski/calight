@@ -1,31 +1,25 @@
-<?php $title = $project['name']; ?>
-<p><a href="/projects">← Projekte</a></p>
-<h1><?= $escape($project['name']) ?></h1>
-<dl class="details">
-    <dt>Kunde</dt><dd><?= $escape($project['customer_name'] ?: '–') ?></dd>
-    <dt>Baustelle</dt><dd><?= nl2br($escape($project['site_address'] ?: '–')) ?></dd>
-</dl>
-<div class="grid-two">
-    <section class="card">
-        <h2>Neuer Angebotsentwurf</h2>
-        <form action="/projects/<?= $escape(rawurlencode($project['id'])) ?>/offers" method="post" class="form-stack">
-            <input type="hidden" name="_csrf" value="<?= $escape($csrfToken) ?>">
-            <label>Bezeichnung
-                <input name="title" maxlength="200" required>
-            </label>
-            <button class="button" type="submit">Entwurf anlegen</button>
-        </form>
-    </section>
-    <section class="card">
-        <h2>Angebote</h2>
-        <?php if ($offers === []): ?>
-            <p>Noch keine Angebote vorhanden.</p>
-        <?php else: ?>
-            <ul class="link-list">
-                <?php foreach ($offers as $item): ?>
-                    <li><a href="/offers/<?= $escape(rawurlencode($item['id'])) ?>">Entwurf <?= $escape(substr($item['id'], 0, 8)) ?></a> <span class="muted">Version <?= $escape($item['draft_version']) ?></span></li>
-                <?php endforeach; ?>
-            </ul>
-        <?php endif; ?>
+<?php
+$title=$project['name'];
+$contentClass='content-wide';
+$statusLabels=['draft'=>'Entwurf','active'=>'Aktiv','completed'=>'Abgeschlossen','archived'=>'Archiviert'];
+$offerStatusLabels=['draft'=>'Entwurf','submitted'=>'Abgegeben','commissioned'=>'Beauftragt','rejected'=>'Abgelehnt'];
+$customerName=$project['linked_customer_name'] ?: $project['customer_name'];
+$siteParts=array_filter([
+    trim($project['site_street'].' '.$project['site_house_number']),
+    trim($project['site_postal_code'].' '.$project['site_city']),
+    $project['site_country'],
+]);
+$siteAddress=$siteParts!==[]?implode(', ',$siteParts):$project['site_address'];
+?>
+<p class="breadcrumb"><a href="/projects">← Projekte</a></p>
+<header class="project-detail-head card">
+    <div><span class="service-number"><?= $escape($project['project_number'] ?: 'Ohne Projektnummer') ?></span><h1><?= $escape($project['name']) ?></h1><p class="muted"><?= $escape($project['description'] ?: 'Keine Projektbeschreibung') ?></p></div>
+    <span class="status-badge status-<?= $escape($project['status']) ?>"><?= $escape($statusLabels[$project['status']] ?? $project['status']) ?></span>
+    <dl class="project-facts"><div><dt>Kunde</dt><dd><?= $escape($customerName ?: '–') ?></dd></div><div><dt>Baustelle</dt><dd><?= $escape($siteAddress ?: '–') ?></dd></div><div><dt>Ansprechpartner</dt><dd><?= $escape($project['contact_name'] ?: '–') ?><?php if($project['contact_function']): ?><span class="muted"> · <?= $escape($project['contact_function']) ?></span><?php endif; ?><?php if($project['contact_email'] || $project['contact_phone']): ?><small><?= $escape(implode(' · ',array_filter([$project['contact_email'],$project['contact_phone']]))) ?></small><?php endif; ?></dd></div></dl>
+</header>
+<div class="project-offer-layout">
+    <section class="card project-offer-create"><h2>Neuer Angebotsentwurf</h2><form action="/projects/<?= $escape(rawurlencode($project['id'])) ?>/offers" method="post" class="compact-action-form"><input type="hidden" name="_csrf" value="<?= $escape($csrfToken) ?>"><label>Bezeichnung<input name="title" maxlength="200" required></label><button class="button" type="submit">Entwurf anlegen</button></form><span class="muted">Noch ohne Angebotsnummer</span></section>
+    <section class="project-offers"><div class="section-heading"><h2>Angebote</h2><span class="muted"><?= count($offers) ?> Einträge</span></div>
+        <?php if($offers===[]): ?><p class="card muted">Noch keine Angebote vorhanden.</p><?php else: ?><div class="offer-detail-list"><?php foreach($offers as $item): ?><a class="offer-detail-row" href="/offers/<?= $escape(rawurlencode($item['id'])) ?>"><span><strong><?= $escape($item['title']) ?></strong><small><?= $escape($item['offerNumber'] ?: 'Entwurf ohne Angebotsnummer') ?></small></span><span class="status-badge status-<?= $escape($item['status']) ?>"><?= $escape($offerStatusLabels[$item['status']] ?? $item['status']) ?></span><span>Version <?= $escape($item['draftVersion']) ?></span><time datetime="<?= $escape($item['updatedAt']) ?>"><?= $escape((new DateTimeImmutable($item['updatedAt']))->format('d.m.Y H:i')) ?></time></a><?php endforeach; ?></div><?php endif; ?>
     </section>
 </div>

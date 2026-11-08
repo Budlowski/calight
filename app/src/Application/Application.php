@@ -129,7 +129,10 @@ final readonly class Application
             }
             return $this->view->render('projects/show', [
                 'project' => $project,
-                'offers' => $this->offers->forProject((string) $project['id']),
+                'offers' => array_values(array_filter(
+                    $this->offerService->overview(),
+                    static fn (array $offer): bool => $offer['projectId'] === $project['id'],
+                )),
             ]);
         }));
 
