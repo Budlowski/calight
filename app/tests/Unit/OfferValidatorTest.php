@@ -55,6 +55,12 @@ final class OfferValidatorTest extends TestCase
         (new OfferValidator())->validate($offer);$this->assertTrue(true);
     }
 
+    public function testRejectsUnknownManipulatedFields():void
+    {
+        $offer=$this->offer();$offer['serverPath']='/etc/passwd';
+        $this->assertThrows(OfferValidationException::class,fn()=>(new OfferValidator())->validate($offer));
+    }
+
     /** @return array<string,mixed> */
     private function offer(): array
     {

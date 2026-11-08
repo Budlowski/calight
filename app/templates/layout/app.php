@@ -25,6 +25,7 @@
             <a href="/customers" data-icon="users">Kunden</a>
             <a href="/projects" data-icon="folder-kanban">Projekte</a>
             <a href="/offers" data-icon="file-text">Angebote</a>
+            <a href="/settings" data-icon="settings">Einstellungen</a>
             <a href="#" aria-disabled="true" data-icon="ruler">Aufmaß</a>
             <a href="#" aria-disabled="true" data-icon="package">Materialbedarf</a>
             <a href="#" aria-disabled="true" data-icon="badge-euro">Kosten</a>

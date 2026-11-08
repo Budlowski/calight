@@ -15,6 +15,7 @@ final class OfferValidator
     {
         $errors = [];
         $seenIds = [];
+        $this->rejectUnknown($offer,['schemaVersion','id','projectId','offerNumber','revision','status','title','createdAt','updatedAt','nodes','calculation'],'offer',$errors);
 
         if (($offer['schemaVersion'] ?? null) !== 1) {
             $errors[] = 'schemaVersion muss 1 sein.';
@@ -66,6 +67,7 @@ final class OfferValidator
 
         $type = $node['type'] ?? null;
         if ($type === 'title') {
+            $this->rejectUnknown($node,['id','type','name','description','children','calculation'],$path,$errors);
             if (!is_string($node['name'] ?? null) || trim($node['name']) === '') {
                 $errors[] = $path . '.name darf nicht leer sein.';
             }
@@ -83,6 +85,7 @@ final class OfferValidator
             $errors[] = $path . '.type muss title oder position sein.';
             return;
         }
+        $this->rejectUnknown($node,['id','type','positionType','shortText','longText','quantity','unit','manualUnitPrice','components','sourceServiceId','sourceServiceNumber','calculation'],$path,$errors);
 
         if (!in_array($node['positionType'] ?? null, ['normal', 'bedarf', 'alternative'], true)) {
             $errors[] = $path . '.positionType ist ungueltig.';
@@ -127,6 +130,7 @@ final class OfferValidator
             $errors[] = $path . ' muss ein Objekt sein.';
             return;
         }
+        $this->rejectUnknown($component,['id','name','calculationType','unit','quantity','costPrice','markupPercent','masterDataId','priceLocked','priceMode','sourceArticleNumber','masterDataSnapshot','salesPrice'],$path,$errors);
         $id = $component['id'] ?? null;
         if (!is_string($id) || !Uuid::isValid($id)) {
             $errors[] = $path . '.id muss eine gueltige UUID sein.';
@@ -162,5 +166,11 @@ final class OfferValidator
             if(!in_array($component['priceMode'],['master','locked','manual'],true))$errors[]=$path.'.priceMode ist ungueltig.';
             if(($component['masterDataId']??null)===null&&$component['priceMode']!=='manual')$errors[]=$path.'.priceMode muss ohne Stammdatenreferenz manual sein.';
         } elseif (!is_bool($component['priceLocked'] ?? null)) $errors[] = $path . '.priceLocked muss ein Wahrheitswert sein.';
+    }
+
+    /** @param array<string,mixed> $value @param list<string> $allowed @param list<string> $errors */
+    private function rejectUnknown(array $value,array $allowed,string $path,array &$errors):void
+    {
+        foreach(array_diff(array_keys($value),$allowed) as $field)$errors[]=$path.'.'.$field.' ist kein zulässiges Feld.';
     }
 }

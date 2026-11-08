@@ -15,6 +15,7 @@ use App\Http\CsrfException;
 use App\Http\MasterDataController;
 use App\Http\CustomerProjectController;
 use App\Http\OfferCalculationController;
+use App\Http\SettingsController;
 use App\Infrastructure\Persistence\OfferConflictException;
 use App\Infrastructure\Persistence\OfferRepository;
 use App\Infrastructure\Persistence\ProjectRepository;
@@ -36,6 +37,8 @@ final readonly class Application
         private MasterDataController $masterDataController,
         private CustomerProjectController $customerProjectController,
         private OfferCalculationController $offerCalculationController,
+        private SettingsController $settingsController,
+        private OfferPdfService $offerPdfService,
     ) {
         $this->registerRoutes();
     }
@@ -65,6 +68,7 @@ final readonly class Application
         $this->masterDataController->register($this->router);
         $this->customerProjectController->register($this->router);
         $this->offerCalculationController->register($this->router);
+        $this->settingsController->register($this->router);
 
         $this->router->add('GET', '/', fn (): Response => Session::user() === null
             ? Response::redirect('/login')
@@ -196,7 +200,15 @@ final readonly class Application
             $newEtag = $this->offerService->saveDraft($parameters['id'], $offer, $etag);
             return Response::json(['saved' => true, 'etag' => $newEtag], headers: ['ETag' => '"' . $newEtag . '"']);
         }));
+
+        $this->router->add('GET','/api/offers/{id}/export',fn(Request $request,array $parameters):Response=>$this->protected(function()use($parameters){$draft=$this->offerService->loadDraft($parameters['id']);$json=json_encode($draft['offer'],JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n";return new Response($json,200,['Content-Type'=>'application/json; charset=utf-8','Content-Disposition'=>'attachment; filename="angebot-'.$parameters['id'].'.json"','ETag'=>'"'.$draft['etag'].'"']);}));
+        $this->router->add('POST','/api/offers/{id}/import-preview',fn(Request $request,array $parameters):Response=>$this->protected(function()use($request,$parameters){$this->requireCsrf($request,$request->headers['x-csrf-token']??null);$data=$this->jsonBody($request);$etag=trim((string)($request->headers['if-match']??''),'"');if($etag==='')return Response::json(['error'=>'If-Match-Header fehlt.'],428);return Response::json($this->offerService->previewImport($parameters['id'],$data,$etag));}));
+        $this->router->add('PUT','/api/offers/{id}/import',fn(Request $request,array $parameters):Response=>$this->protected(function()use($request,$parameters){$this->requireCsrf($request,$request->headers['x-csrf-token']??null);$data=$this->jsonBody($request);$etag=trim((string)($request->headers['if-match']??''),'"');if($etag==='')return Response::json(['error'=>'If-Match-Header fehlt.'],428);$new=$this->offerService->importExisting($parameters['id'],$data,$etag);return Response::json(['saved'=>true,'etag'=>$new],headers:['ETag'=>'"'.$new.'"']);}));
+        $this->router->add('POST','/api/offers/import',fn(Request $request):Response=>$this->protected(function()use($request){$this->requireCsrf($request,$request->headers['x-csrf-token']??null);$data=$this->jsonBody($request);$project=trim((string)($data['projectId']??''));$offer=$data['offer']??null;if($project===''||!is_array($offer))return Response::json(['error'=>'Projekt und Angebotsdokument sind erforderlich.'],422);$id=$this->offerService->importNew($project,$offer);return Response::json(['id'=>$id,'url'=>'/offers/'.rawurlencode($id)],201);}));
+        $this->router->add('POST','/api/offers/{id}/pdf',fn(Request $request,array $parameters):Response=>$this->protected(function()use($request,$parameters){$this->requireCsrf($request,$request->headers['x-csrf-token']??null);$offer=$this->jsonBody($request);$stored=$this->offerService->loadDraft($parameters['id'])['offer'];if(($offer['id']??null)!==$parameters['id']||($offer['projectId']??null)!==$stored['projectId'])return Response::json(['error'=>'Angebots- oder Projekt-ID stimmt nicht überein.'],422);$offer['offerNumber']=null;$offer['status']='draft';$pdf=$this->offerPdfService->render($offer);return new Response($pdf,200,['Content-Type'=>'application/pdf','Content-Disposition'=>'inline; filename="angebotsentwurf.pdf"','Cache-Control'=>'no-store']);}));
     }
+
+    /** @return array<string,mixed> */ private function jsonBody(Request $request):array{if(strlen($request->body)>5_000_000)throw new OfferValidationException(['JSON-Dateien dürfen höchstens 5 MB groß sein.']);try{$data=json_decode($request->body,true,flags:JSON_THROW_ON_ERROR);}catch(JsonException){throw new OfferValidationException(['Die Datei enthält kein gültiges JSON.']);}if(!is_array($data))throw new OfferValidationException(['Das JSON-Wurzelelement muss ein Objekt sein.']);return $data;}
 
     private function protected(callable $handler): Response
     {

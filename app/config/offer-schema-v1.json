@@ -81,6 +81,7 @@
                 "priceLocked": { "type": "boolean" },
                 "priceMode": { "enum": ["master", "locked", "manual"] },
                 "sourceArticleNumber": { "type": ["string", "null"] },
+                "salesPrice": { "type": "string" },
                 "masterDataSnapshot": { "type": ["object", "null"] }
             },
             "additionalProperties": false

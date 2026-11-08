@@ -9,6 +9,7 @@ use App\Infrastructure\Persistence\OfferJsonStore;
 use App\Infrastructure\Persistence\OfferRepository;
 use App\Infrastructure\Persistence\ProjectRepository;
 use App\Domain\Offer\OfferCalculator;
+use App\Domain\Offer\OfferValidator;
 use App\Support\Clock;
 use App\Support\Uuid;
 use PDO;
@@ -130,4 +131,36 @@ final readonly class OfferService
             throw $exception;
         }
     }
+
+    /** @return array<string,mixed> */
+    public function previewImport(string $offerId,array $imported,string $expectedEtag):array
+    {
+        $current=$this->loadDraft($offerId);if(!hash_equals($current['etag'],$expectedEtag))throw new OfferConflictException('Der Entwurf wurde zwischenzeitlich geändert. Bitte neu laden.');
+        $prepared=$this->prepareImport($imported,(string)$current['offer']['projectId'],$offerId,false,(string)$current['offer']['createdAt']);
+        return ['offer'=>$prepared,'changes'=>['title'=>['old'=>$current['offer']['title'],'new'=>$prepared['title']],'nodes'=>['old'=>$this->countNodes($current['offer']['nodes']),'new'=>$this->countNodes($prepared['nodes'])],'netTotal'=>['old'=>$current['offer']['calculation']['netTotal']??'0.00','new'=>$prepared['calculation']['netTotal']??'0.00']]];
+    }
+
+    /** @param array<string,mixed> $imported */
+    public function importExisting(string $offerId,array $imported,string $expectedEtag):string
+    {
+        $preview=$this->previewImport($offerId,$imported,$expectedEtag);return $this->saveDraft($offerId,$preview['offer'],$expectedEtag);
+    }
+
+    /** @param array<string,mixed> $imported */
+    public function importNew(string $projectId,array $imported):string
+    {
+        $id=Uuid::v4();$prepared=$this->prepareImport($imported,$projectId,$id,true,Clock::now());
+        if($this->projects->find($projectId)===null)throw new RuntimeException('Projekt wurde nicht gefunden.');
+        $etag=$this->store->saveDraft($projectId,$id,$prepared,null);
+        $this->offers->create($id,$projectId,$this->store->relativeDraftPath($projectId,$id),$etag);return $id;
+    }
+
+    /** @param array<string,mixed> $offer @return array<string,mixed> */
+    private function prepareImport(array $offer,string $projectId,string $offerId,bool $regenerateIds,string $createdAt):array
+    {
+        $offer['schemaVersion']=1;$offer['id']=$offerId;$offer['projectId']=$projectId;$offer['offerNumber']=null;$offer['revision']=0;$offer['status']='draft';$offer['createdAt']=$createdAt;$offer['updatedAt']=Clock::now();$validator=new OfferValidator();$validator->validate($offer);
+        if($regenerateIds)$this->regenerateIds($offer['nodes']);$offer=$this->calculator->calculate($offer);$validator->validate($offer);return $offer;
+    }
+    /** @param list<array<string,mixed>> $nodes */ private function regenerateIds(array &$nodes):void{foreach($nodes as &$node){$node['id']=Uuid::v4();if(($node['type']??'')==='title')$this->regenerateIds($node['children']);elseif(isset($node['components'])&&is_array($node['components']))foreach($node['components'] as &$component)$component['id']=Uuid::v4();}unset($node,$component);}
+    /** @param list<array<string,mixed>> $nodes */ private function countNodes(array $nodes):int{$count=count($nodes);foreach($nodes as $node)if(($node['type']??'')==='title')$count+=$this->countNodes($node['children']);return $count;}
 }

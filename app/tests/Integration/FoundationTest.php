@@ -28,7 +28,7 @@ final class FoundationTest extends TestCase
         try {
             $pdo = ConnectionFactory::create($temporary . '/app.sqlite');
             $migrator = new Migrator($pdo, $root . '/migrations');
-            $this->assertSame(['0001_foundation', '0002_master_data', '0003_service_component_price_mode', '0004_service_numbers_and_component_origin', '0005_remove_legacy_service_price_locked', '0006_service_template_number_range', '0007_customers_and_projects'], $migrator->migrate());
+            $this->assertSame(['0001_foundation', '0002_master_data', '0003_service_component_price_mode', '0004_service_numbers_and_component_origin', '0005_remove_legacy_service_price_locked', '0006_service_template_number_range', '0007_customers_and_projects', '0008_document_settings'], $migrator->migrate());
             $this->assertSame([], $migrator->migrate());
 
             $projects = new ProjectRepository($pdo);

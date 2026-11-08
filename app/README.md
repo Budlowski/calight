@@ -1,5 +1,7 @@
 # Kalkulationssoftware – Phase 0
 
+Weitere Dokumentation: [Angebots-JSON](../documents/offer-json-schema.md) · [PDF-Vorlagen](../documents/pdf-templates.md)
+
 Dieses Verzeichnis enthält das technische Fundament der Kalkulationssoftware. Daten werden ausschließlich in den zentral konfigurierten Containerpfaden gespeichert; unter `public/` liegen keine Datenbank-, Angebots- oder Dokumentdateien.
 
 ## Installation im bestehenden Container
@@ -11,6 +13,8 @@ docker exec -w /var/www/app kalkulationssoftware composer install --no-dev --opt
 docker exec -w /var/www/app kalkulationssoftware php bin/console migrate
 docker exec -it -w /var/www/app kalkulationssoftware php bin/console user:create fabi "Fabi"
 ```
+
+Die Migration `0008_document_settings` legt die zentrale Ein-Betrieb-Konfiguration für Firmendaten und PDF-Dokumente an. Angebotsformat und PDF-Erweiterung sind unter `documents/offer-json-schema.md` und `documents/pdf-templates.md` dokumentiert.
 
 Das Passwort wird verdeckt abgefragt und nicht als Kommandozeilenargument gespeichert. Es muss mindestens acht Zeichen lang sein.
 
