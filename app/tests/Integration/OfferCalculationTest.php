@@ -23,9 +23,13 @@ final class OfferCalculationTest extends TestCase
         [$service,$master,$temporary]=$this->service();
         try{
             $cost=$master->createCostItem(['articleNumber'=>'M-1','name'=>'Kabel','calculationType'=>'material','unit'=>'m','costPrice'=>'5.0000','markupPercent'=>'20.00']);
-            $template=$master->createService(['autoArticleNumber'=>true,'shortText'=>'Kabel verlegen','longText'=>'Liefern und verlegen','unit'=>'m','components'=>[['masterDataId'=>$cost['id'],'sourceArticleNumber'=>'M-1','name'=>'Kabel','calculationType'=>'material','unit'=>'m','quantity'=>'1.000','costPrice'=>'5.0000','markupPercent'=>'20.00','priceMode'=>'master']]]);
-            $library=$service->library();$this->assertSame(1,count($library['services']));$this->assertSame(1,count($library['costItems']));
-            $position=['id'=>Uuid::v4(),'type'=>'position','positionType'=>'normal','shortText'=>'Individuelle Kabelposition','longText'=>'','quantity'=>'2.000','unit'=>'m','manualUnitPrice'=>null,'sourceServiceId'=>$template['id'],'sourceServiceNumber'=>$template['articleNumber'],'components'=>array_map(function($c){$c['id']=Uuid::v4();return$c;},$template['components'])];
+            $trailingText = array_values(array_filter(
+                $master->overview()['trailingTexts'],
+                static fn (array $item): bool => $item['code'] === 'LM',
+            ))[0];
+            $template=$master->createService(['autoArticleNumber'=>true,'shortText'=>'Kabel verlegen','longText'=>'Liefern und verlegen','unit'=>'m','trailingTextId'=>$trailingText['id'],'components'=>[['masterDataId'=>$cost['id'],'sourceArticleNumber'=>'M-1','name'=>'Kabel','calculationType'=>'material','unit'=>'m','quantity'=>'1.000','costPrice'=>'5.0000','markupPercent'=>'20.00','priceMode'=>'master']]]);
+            $library=$service->library();$this->assertSame(1,count($library['services']));$this->assertSame(1,count($library['costItems']));$this->assertSame(5,count($library['trailingTexts']));
+            $position=['id'=>Uuid::v4(),'type'=>'position','positionType'=>'normal','shortText'=>'Individuelle Kabelposition','longText'=>'','trailingText'=>$template['trailingText'],'quantity'=>'2.000','unit'=>'m','manualUnitPrice'=>null,'sourceServiceId'=>$template['id'],'sourceServiceNumber'=>$template['articleNumber'],'components'=>array_map(function($c){$c['id']=Uuid::v4();return$c;},$template['components'])];
             $offer=['schemaVersion'=>1,'id'=>Uuid::v4(),'projectId'=>Uuid::v4(),'offerNumber'=>null,'revision'=>0,'status'=>'draft','title'=>'Test','createdAt'=>'2026-11-08T12:00:00+01:00','updatedAt'=>'2026-11-08T12:00:00+01:00','nodes'=>[$position]];
             $calculated=$service->calculate($offer);$this->assertSame('6.00',$calculated['nodes'][0]['calculation']['calculatedUnitPrice']);$this->assertSame('12.00',$calculated['nodes'][0]['calculation']['positionTotal']);
             $master->updateCostItem($cost['id'],['articleNumber'=>'M-1','name'=>'Kabel','calculationType'=>'material','unit'=>'m','costPrice'=>'6.0000','markupPercent'=>'20.00']);
@@ -33,7 +37,7 @@ final class OfferCalculationTest extends TestCase
             $preview=$service->previewPriceUpdates(['components'=>$position['components']]);$this->assertSame(1,count($preview['changes']));$this->assertSame('6.0000',$preview['updates'][0]['costPrice']);
             $locked=$position['components'];$locked[0]['priceMode']='locked';$this->assertSame(0,count($service->previewPriceUpdates(['components'=>$locked])['changes']));
             $manual=$position['components'];$manual[0]['priceMode']='manual';$this->assertSame(0,count($service->previewPriceUpdates(['components'=>$manual])['changes']));
-            $saved=$service->savePosition(['position'=>$position,'confirmDuplicate'=>true]);$this->assertSame('LP00002',$saved['saved']['articleNumber']);
+            $saved=$service->savePosition(['position'=>$position,'confirmDuplicate'=>true]);$this->assertSame('LP00002',$saved['saved']['articleNumber']);$this->assertSame('LM',$saved['saved']['trailingText']['code']);
             $duplicate=$service->savePosition(['position'=>$position]);$this->assertSame(null,$duplicate['saved']);$this->assertTrue(count($duplicate['duplicates'])>=1);
             $updated=$service->savePosition(['position'=>$position,'updateExistingId'=>$saved['saved']['id']]);
             $this->assertSame('LP00002',$updated['saved']['articleNumber']);

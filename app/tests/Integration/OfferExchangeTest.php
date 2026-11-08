@@ -19,6 +19,10 @@ use App\Support\Uuid;
 
 final class OfferExchangeTest extends TestCase
 {
+    public function testPersistentAndExportJsonContainNoCalculatedResults():void
+    {
+        $root=dirname(__DIR__,2);$tmp=sys_get_temp_dir().'/offer-persistent-'.bin2hex(random_bytes(8));mkdir($tmp,0770,true);try{$pdo=ConnectionFactory::create($tmp.'/db.sqlite');(new Migrator($pdo,$root.'/migrations'))->migrate();$projects=new ProjectRepository($pdo);$store=new OfferJsonStore($tmp.'/offers',new OfferValidator());$service=new OfferService($pdo,$projects,new OfferRepository($pdo),$store,new OfferCalculator(new PriceCalculator()));$project=$projects->create('Persistenz','Kunde','Ort');$id=$service->createDraft($project,'Persistenz');$loaded=$service->loadDraft($id);$loaded['offer']['nodes']=[['id'=>Uuid::v4(),'type'=>'title','name'=>'Titel','description'=>'','children'=>[['id'=>Uuid::v4(),'type'=>'position','positionType'=>'normal','shortText'=>'Arbeit','longText'=>'','trailingText'=>['id'=>null,'code'=>'X','name'=>'Importierter Snapshot'],'quantity'=>'1.000','unit'=>'Stk.','manualUnitPrice'=>'10.00','components'=>[]]]]];$service->saveDraft($id,$loaded['offer'],$loaded['etag']);$raw=$store->loadDraft($project,$id)['offer'];$export=$service->exportDraft($id)['offer'];$this->assertTrue(!isset($raw['calculation'])&&!isset($raw['nodes'][0]['calculation'])&&!isset($raw['nodes'][0]['children'][0]['calculation']));$this->assertTrue(!isset($export['calculation'])&&!isset($export['nodes'][0]['calculation']));$this->assertSame('Importierter Snapshot',$raw['nodes'][0]['children'][0]['trailingText']['name']);$calculated=$service->loadDraft($id)['offer'];$this->assertSame('10.00',$calculated['calculation']['netTotal']);}finally{$this->remove($tmp);}
+    }
     public function testExtendedOfferJsonRoundtrip():void
     {
         $root=dirname(__DIR__,2);$tmp=sys_get_temp_dir().'/offer-extended-'.bin2hex(random_bytes(8));mkdir($tmp,0770,true);

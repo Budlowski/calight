@@ -55,6 +55,31 @@ final class OfferValidatorTest extends TestCase
         (new OfferValidator())->validate($offer);$this->assertTrue(true);
     }
 
+    public function testAcceptsMissingNullAndUnresolvedTrailingTextSnapshots(): void
+    {
+        $position = [
+            'id' => Uuid::v4(),
+            'type' => 'position',
+            'positionType' => 'normal',
+            'shortText' => 'Montage',
+            'longText' => '',
+            'quantity' => '1.000',
+            'unit' => 'Stk.',
+            'manualUnitPrice' => null,
+            'components' => [],
+        ];
+        $offer = $this->offer();
+        $offer['nodes'] = [$position];
+        (new OfferValidator())->validate($offer);
+
+        $offer['nodes'][0]['trailingText'] = null;
+        (new OfferValidator())->validate($offer);
+
+        $offer['nodes'][0]['trailingText'] = ['code' => 'EXT', 'name' => 'Externer Snapshot'];
+        (new OfferValidator())->validate($offer);
+        $this->assertTrue(true);
+    }
+
     public function testRejectsUnknownManipulatedFields():void
     {
         $offer=$this->offer();$offer['serverPath']='/etc/passwd';

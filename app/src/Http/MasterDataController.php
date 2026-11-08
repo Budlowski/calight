@@ -29,6 +29,15 @@ final readonly class MasterDataController
         $router->add('POST', '/api/master-data/preview-master-price-updates', fn (Request $request): Response => $this->mutation(
             $request, fn (array $data): array => $this->service->previewMasterPriceUpdates($data)
         ));
+        $router->add('POST', '/api/master-data/trailing-texts', fn (Request $request): Response => $this->mutation(
+            $request, fn (array $data): array => $this->service->createTrailingText($data), 201
+        ));
+        $router->add('PUT', '/api/master-data/trailing-texts/{id}', fn (Request $request, array $parameters): Response => $this->mutation(
+            $request, fn (array $data): array => $this->service->updateTrailingText($parameters['id'], $data)
+        ));
+        $router->add('DELETE', '/api/master-data/trailing-texts/{id}', fn (Request $request, array $parameters): Response => $this->mutation(
+            $request, fn (array $_): array => $this->service->deleteTrailingText($parameters['id'])
+        ));
 
         $router->add('POST', '/api/master-data/categories', fn (Request $request): Response => $this->mutation(
             $request, fn (array $data): array => $this->service->createCategory($data), 201

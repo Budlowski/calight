@@ -31,6 +31,24 @@ final class OfferNormalizerTest extends TestCase
         $this->assertSame('2026-11-08T11:00:00Z',$result['createdAt']);
     }
 
+    public function testOmitsNullTrailingTextButKeepsIndependentSnapshot(): void
+    {
+        $offer = [
+            'nodes' => [
+                ['type' => 'position', 'trailingText' => null, 'components' => []],
+                [
+                    'type' => 'position',
+                    'trailingText' => ['code' => 'EXT', 'name' => 'Importierter Text'],
+                    'components' => [],
+                ],
+            ],
+        ];
+
+        $result = (new OfferNormalizer())->normalize($offer);
+        $this->assertTrue(!array_key_exists('trailingText', $result['nodes'][0]));
+        $this->assertSame('Importierter Text', $result['nodes'][1]['trailingText']['name']);
+    }
+
     /** @return array<string,mixed> */
     private function title(string $id):array
     {

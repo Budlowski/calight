@@ -69,12 +69,12 @@ final class DocumentSettingsTest extends TestCase
             $pdo=ConnectionFactory::create($tmp.'/db.sqlite');(new Migrator($pdo,$root.'/migrations'))->migrate();$repository=new DocumentSettingsRepository($pdo);$project=(new ProjectRepository($pdo))->create('Erweitert','Kunde','Ort');
             $position=static fn(string $text,string $price):array=>['id'=>Uuid::v4(),'type'=>'position','positionType'=>'normal','shortText'=>$text,'longText'=>'','quantity'=>'1.000','unit'=>'Stk.','manualUnitPrice'=>$price,'components'=>[]];
             $offer=['schemaVersion'=>1,'id'=>Uuid::v4(),'projectId'=>$project,'offerNumber'=>null,'revision'=>0,'status'=>'draft','title'=>'Erweitert','createdAt'=>'2026-11-08T12:00:00Z','updatedAt'=>'2026-11-08T12:00:00Z','offerAdjustment'=>['type'=>'discount','mode'=>'percentage','value'=>'10.00','label'=>'Projekt-Rabatt'],'nodes'=>[
-                $position('Regulaer','100.00'),
+                array_replace($position('Regulaer','100.00'),['trailingText'=>['id'=>null,'code'=>'LM','name'=>'Lieferung und Montage']]),
                 ['id'=>Uuid::v4(),'type'=>'text','title'=>'Technischer Hinweis','text'=>'Dieser Text steht frei zwischen den Positionen.'],
                 ['id'=>Uuid::v4(),'type'=>'title','titleType'=>'bedarf','name'=>'Optionale Arbeiten','description'=>'','children'=>[$position('Optional','50.00')]],
             ]];
             $pdf=(new OfferPdfService($pdo,$repository,new OfferValidator(),new OfferCalculator(new PriceCalculator())))->render($offer);
-            $this->assertTrue(str_contains($pdf,'Technischer Hinweis')&&str_contains($pdf,'Optionale Arbeiten'));
+            $this->assertTrue(str_contains($pdf,'Technischer Hinweis')&&str_contains($pdf,'Optionale Arbeiten')&&str_contains($pdf,'Lieferung und Montage'));
             $this->assertTrue(str_contains($pdf,'Projekt-Rabatt')&&str_contains($pdf,'90,00'));
             $this->assertTrue(str_contains($pdf,'Nicht in Angebotssumme enthalten'));
         }finally{$this->remove($tmp);}

@@ -5,7 +5,7 @@
     if (!root) return;
 
     const csrf = root.dataset.csrf;
-    const state = { categories: [], suppliers: [], costItems: [], services: [], components: [] };
+    const state = { categories: [], suppliers: [], costItems: [], services: [], trailingTexts: [], components: [] };
     const typeLabels = { material: 'Material', labor: 'Lohn', external: 'Fremdleistung', other: 'Sonstige Kosten' };
     const euro = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' });
     const number = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
@@ -15,6 +15,7 @@
     const categoryForm = document.querySelector('#category-form');
     const supplierForm = document.querySelector('#supplier-form');
     const serviceForm = document.querySelector('#service-form');
+    const trailingTextForm=document.querySelector('#trailing-text-form');
     const masterPricePreview = document.querySelector('#master-price-preview');
     let previewTimer = 0;
     let dirty = false;
@@ -74,6 +75,8 @@
         renderSuppliers();
         renderCostItems();
         renderServices();
+        renderTrailingTexts();
+        serviceForm.elements.trailingTextId.innerHTML='<option value="">Kein Schlepptext</option>'+state.trailingTexts.map(item=>`<option value="${item.id}">${escapeHtml(item.code)} · ${escapeHtml(item.name)}</option>`).join('');
         renderMasterComponentOptions();
     }
 
@@ -88,8 +91,14 @@
         });
     });
     showArchived.addEventListener('change', renderAll);
+
+    function renderTrailingTexts(){document.querySelector('#trailing-texts-body').innerHTML=state.trailingTexts.map(item=>`<tr><td><strong>${escapeHtml(item.code)}</strong></td><td>${escapeHtml(item.name)}</td><td><button class="table-action" data-trailing-edit="${item.id}">Bearbeiten</button> <button class="table-action danger-text" data-trailing-delete="${item.id}">Löschen</button></td></tr>`).join('')||'<tr><td colspan="3" class="muted">Keine Schlepptexte vorhanden.</td></tr>';}
+    function openTrailingText(item=null){dirty=false;trailingTextForm.reset();trailingTextForm.elements.id.value=item?.id||'';trailingTextForm.elements.code.value=item?.code||'';trailingTextForm.elements.name.value=item?.name||'';trailingTextForm.hidden=false;trailingTextForm.elements.code.focus();}
+    document.querySelector('#new-trailing-text').addEventListener('click',()=>openTrailingText());
+    document.querySelector('#trailing-texts-body').addEventListener('click',async event=>{const edit=event.target.closest('[data-trailing-edit]'),remove=event.target.closest('[data-trailing-delete]');if(edit)return openTrailingText(state.trailingTexts.find(item=>item.id===edit.dataset.trailingEdit));if(remove&&confirm('Schlepptext wirklich löschen?'))await mutate(`/api/master-data/trailing-texts/${remove.dataset.trailingDelete}`,{},'Schlepptext gelöscht.','DELETE');});
+    trailingTextForm.addEventListener('submit',async event=>{event.preventDefault();const id=trailingTextForm.elements.id.value,saved=await mutate(id?`/api/master-data/trailing-texts/${id}`:'/api/master-data/trailing-texts',{code:trailingTextForm.elements.code.value,name:trailingTextForm.elements.name.value},id?'Schlepptext gespeichert.':'Schlepptext angelegt.',id?'PUT':'POST');if(saved){dirty=false;trailingTextForm.hidden=true;}});
     root.addEventListener('input', (event) => {
-        if (event.target.closest('#cost-item-form, #category-form, #supplier-form, #service-form')) dirty = true;
+        if (event.target.closest('#cost-item-form, #category-form, #supplier-form, #service-form, #trailing-text-form')) dirty = true;
     });
     window.addEventListener('beforeunload', (event) => {
         if (!dirty) return;
@@ -374,6 +383,7 @@
         serviceForm.elements.shortText.value = item?.shortText || '';
         serviceForm.elements.longText.value = item?.longText || '';
         serviceForm.elements.unit.value = item?.unit || '';
+        serviceForm.elements.trailingTextId.value=item?.trailingTextId||'';
         state.components = structuredClone(item?.components || []);
         masterPricePreview.hidden = true;
         pendingPriceUpdates = [];
@@ -518,6 +528,7 @@
             autoArticleNumber: serviceForm.elements.autoArticleNumber.checked,
             longText: serviceForm.elements.longText.value,
             unit: serviceForm.elements.unit.value,
+            trailingTextId:serviceForm.elements.trailingTextId.value||null,
             components: normalizedComponents(),
         }, id ? 'Stammposition gespeichert.' : 'Stammposition angelegt.', id ? 'PUT' : 'POST');
         if (!saved) return;
@@ -592,6 +603,7 @@
     }
     root.querySelectorAll('[data-close-form]').forEach((button) => button.addEventListener('click', () => closeEditor(button.closest('form'))));
     root.querySelectorAll('[data-close-service]').forEach((button) => button.addEventListener('click', () => closeEditor(serviceForm)));
+    trailingTextForm.querySelector('[data-close-trailing-text]').addEventListener('click', () => closeEditor(trailingTextForm));
 
     load();
 })();

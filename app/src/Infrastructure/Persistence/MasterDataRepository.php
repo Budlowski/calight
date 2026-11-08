@@ -13,6 +13,51 @@ final readonly class MasterDataRepository
     }
 
     /** @return list<array<string,mixed>> */
+    public function trailingTexts(): array
+    {
+        return $this->pdo->query('SELECT * FROM trailing_texts ORDER BY code COLLATE NOCASE')->fetchAll();
+    }
+
+    /** @return array<string,mixed>|null */
+    public function trailingText(string $id): ?array
+    {
+        return $this->one('SELECT * FROM trailing_texts WHERE id = :id', ['id' => $id]);
+    }
+
+    /** @param array<string,mixed> $data */
+    public function createTrailingText(array $data): void
+    {
+        $this->execute(
+            'INSERT INTO trailing_texts (id, code, name, created_at, updated_at)
+             VALUES (:id, :code, :name, :created_at, :updated_at)',
+            $data,
+        );
+    }
+
+    /** @param array<string,mixed> $data */
+    public function updateTrailingText(array $data): bool
+    {
+        return $this->execute(
+            'UPDATE trailing_texts SET code = :code, name = :name, updated_at = :updated_at WHERE id = :id',
+            $data,
+        ) === 1;
+    }
+
+    public function deleteTrailingText(string $id): bool
+    {
+        return $this->execute('DELETE FROM trailing_texts WHERE id = :id', ['id' => $id]) === 1;
+    }
+
+    public function trailingTextReferenced(string $id): bool
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT EXISTS(SELECT 1 FROM service_templates WHERE trailing_text_id = :id)'
+        );
+        $statement->execute(['id' => $id]);
+        return (bool) $statement->fetchColumn();
+    }
+
+    /** @return list<array<string,mixed>> */
     public function categories(bool $includeArchived = true): array
     {
         $sql = 'SELECT * FROM master_categories';
@@ -200,8 +245,8 @@ final readonly class MasterDataRepository
     public function createServiceTemplate(array $data): void
     {
         $this->execute(
-            'INSERT INTO service_templates (id, article_number, short_text, long_text, unit, copied_from_id, created_at, updated_at)
-             VALUES (:id, :article_number, :short_text, :long_text, :unit, :copied_from_id, :created_at, :updated_at)',
+            'INSERT INTO service_templates (id, article_number, short_text, long_text, unit, trailing_text_id, copied_from_id, created_at, updated_at)
+             VALUES (:id, :article_number, :short_text, :long_text, :unit, :trailing_text_id, :copied_from_id, :created_at, :updated_at)',
             $data,
         );
     }
@@ -211,7 +256,7 @@ final readonly class MasterDataRepository
     {
         return $this->execute(
             'UPDATE service_templates SET article_number = :article_number, short_text = :short_text, long_text = :long_text,
-             unit = :unit, updated_at = :updated_at WHERE id = :id',
+             unit = :unit, trailing_text_id=:trailing_text_id, updated_at = :updated_at WHERE id = :id',
             $data,
         ) === 1;
     }

@@ -88,6 +88,16 @@
                 "positionType": { "enum": ["normal", "bedarf", "alternative"] },
                 "shortText": { "type": "string", "minLength": 1 },
                 "longText": { "type": "string" },
+                "trailingText": {
+                    "type": ["object", "null"],
+                    "properties": {
+                        "id": { "type": ["string", "null"], "format": "uuid" },
+                        "code": { "type": "string", "minLength": 1 },
+                        "name": { "type": "string", "minLength": 1 }
+                    },
+                    "required": ["code", "name"],
+                    "additionalProperties": false
+                },
                 "quantity": { "type": "string", "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]{1,3})?$" },
                 "unit": { "type": "string", "minLength": 1 },
                 "manualUnitPrice": {

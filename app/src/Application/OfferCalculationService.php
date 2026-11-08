@@ -16,8 +16,12 @@ final readonly class OfferCalculationService
 
     public function library(): array
     {
-        $data=$this->masterData->overview(false);
-        return ['costItems'=>$data['costItems'],'services'=>$data['services']];
+        $data = $this->masterData->overview(false);
+        return [
+            'costItems' => $data['costItems'],
+            'services' => $data['services'],
+            'trailingTexts' => $data['trailingTexts'],
+        ];
     }
 
     public function calculate(array $offer): array
@@ -47,8 +51,13 @@ final readonly class OfferCalculationService
             'quantity'=>$component['quantity']??'','costPrice'=>$component['costPrice']??'','markupPercent'=>$component['markupPercent']??'',
             'priceMode'=>$component['priceMode']??(($component['masterDataId']??null)===null?'manual':'locked'),
         ];}
+        $trailingId = $position['trailingText']['id'] ?? null;
+        $knownTrailing = array_filter(
+            $this->masterData->overview(false)['trailingTexts'],
+            static fn (array $item): bool => $item['id'] === $trailingId,
+        );
         $payload=['articleNumber'=>null,'autoArticleNumber'=>true,'shortText'=>$shortText,'longText'=>$position['longText']??'',
-            'unit'=>$position['unit']??'','components'=>$components];
+            'unit'=>$position['unit']??'','trailingTextId'=>$knownTrailing!==[] ? $trailingId : null,'components'=>$components];
         $updateId=trim((string)($input['updateExistingId']??''));
         if($updateId!==''){
             $existing=array_values(array_filter($allServices,static fn(array $service):bool=>$service['id']===$updateId));

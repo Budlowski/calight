@@ -107,7 +107,7 @@ final class OfferValidator
             $errors[] = $path . '.type muss title, position oder text sein.';
             return;
         }
-        $this->rejectUnknown($node,['id','type','positionType','shortText','longText','quantity','unit','manualUnitPrice','components','sourceServiceId','sourceServiceNumber','calculation'],$path,$errors);
+        $this->rejectUnknown($node,['id','type','positionType','shortText','longText','trailingText','quantity','unit','manualUnitPrice','components','sourceServiceId','sourceServiceNumber','calculation'],$path,$errors);
 
         if (!in_array($node['positionType'] ?? null, ['normal', 'bedarf', 'alternative'], true)) {
             $errors[] = $path . '.positionType ist ungueltig.';
@@ -115,6 +115,23 @@ final class OfferValidator
         foreach (['shortText', 'unit'] as $field) {
             if (!is_string($node[$field] ?? null) || trim($node[$field]) === '') {
                 $errors[] = $path . '.' . $field . ' darf nicht leer sein.';
+            }
+        }
+        if (array_key_exists('trailingText', $node) && $node['trailingText'] !== null) {
+            $trailing = $node['trailingText'];
+            if (!is_array($trailing)) {
+                $errors[] = $path . '.trailingText muss ein Objekt oder null sein.';
+            } else {
+                $this->rejectUnknown($trailing, ['id', 'code', 'name'], $path . '.trailingText', $errors);
+                if (($trailing['id'] ?? null) !== null
+                    && (!is_string($trailing['id']) || !Uuid::isValid($trailing['id']))) {
+                    $errors[] = $path . '.trailingText.id ist ungültig.';
+                }
+                foreach (['code', 'name'] as $field) {
+                    if (!is_string($trailing[$field] ?? null) || trim($trailing[$field]) === '') {
+                        $errors[] = $path . '.trailingText.' . $field . ' darf nicht leer sein.';
+                    }
+                }
             }
         }
         try {

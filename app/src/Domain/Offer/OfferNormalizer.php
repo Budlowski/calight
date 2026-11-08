@@ -43,6 +43,9 @@ final class OfferNormalizer
                 continue;
             }
             if (($node['type'] ?? null) === 'text') continue;
+            if (array_key_exists('trailingText', $node) && $node['trailingText'] === null) {
+                unset($node['trailingText']);
+            }
             if (isset($node['quantity'])) $node['quantity'] = $this->decimal($node['quantity'], Decimal::QUANTITY_SCALE, 'Menge');
             if (array_key_exists('manualUnitPrice', $node) && $node['manualUnitPrice'] !== null && $node['manualUnitPrice'] !== '') {
                 $node['manualUnitPrice'] = $this->decimal($node['manualUnitPrice'], Decimal::MONEY_SCALE, 'Manueller Verkaufspreis');

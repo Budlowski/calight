@@ -32,11 +32,48 @@ final readonly class MasterDataService
         $categories = array_map($this->mapCategory(...), $this->repository->categories($includeArchived));
         $suppliers = array_map($this->mapSupplier(...), $this->repository->suppliers($includeArchived));
         $costItems = array_map($this->mapCostItem(...), $this->repository->costItems($includeArchived));
+        $trailingTexts = array_map($this->mapTrailingText(...), $this->repository->trailingTexts());
         $services = [];
         foreach ($this->repository->serviceTemplates($includeArchived) as $service) {
             $services[] = $this->mapService($service, $this->repository->serviceComponents((string) $service['id']));
         }
-        return compact('categories', 'suppliers', 'costItems', 'services');
+        return compact('categories', 'suppliers', 'costItems', 'services', 'trailingTexts');
+    }
+
+    /** @param array<string,mixed> $input @return array<string,mixed> */
+    public function createTrailingText(array $input): array
+    {
+        $data = $this->trailingTextData($input);
+        $data['id'] = Uuid::v4();
+        $data['created_at'] = $data['updated_at'] = Clock::now();
+        $this->write(fn () => $this->repository->createTrailingText($data));
+        return $this->mapTrailingText($this->repository->trailingText($data['id']));
+    }
+
+    /** @param array<string,mixed> $input @return array<string,mixed> */
+    public function updateTrailingText(string $id, array $input): array
+    {
+        if ($this->repository->trailingText($id) === null) {
+            throw new MasterDataValidationException(['Schlepptext wurde nicht gefunden.']);
+        }
+        $data = $this->trailingTextData($input) + ['id' => $id, 'updated_at' => Clock::now()];
+        $this->write(fn () => $this->repository->updateTrailingText($data));
+        return $this->mapTrailingText($this->repository->trailingText($id));
+    }
+
+    /** @return array{deleted: true, id: string} */
+    public function deleteTrailingText(string $id): array
+    {
+        if ($this->repository->trailingText($id) === null) {
+            throw new MasterDataValidationException(['Schlepptext wurde nicht gefunden.']);
+        }
+        if ($this->repository->trailingTextReferenced($id)) {
+            throw new MasterDataValidationException([
+                'Schlepptext ist noch mindestens einer Stammposition zugeordnet und kann nicht gelöscht werden.',
+            ]);
+        }
+        $this->write(fn () => $this->repository->deleteTrailingText($id));
+        return ['deleted' => true, 'id' => $id];
     }
 
     /** @param array<string,mixed> $input @return array<string,mixed> */
@@ -315,6 +352,7 @@ final readonly class MasterDataService
             'short_text' => 'Kopie von ' . $source['short_text'],
             'long_text' => $source['long_text'],
             'unit' => $source['unit'],
+            'trailing_text_id' => $source['trailing_text_id'],
             'copied_from_id' => $id,
             'created_at' => $now,
             'updated_at' => $now,
@@ -471,6 +509,7 @@ final readonly class MasterDataService
             'short_text' => $this->requiredText($input, 'shortText', 'Kurztext', 250),
             'long_text' => $this->optionalText($input, 'longText', 10000),
             'unit' => $this->requiredText($input, 'unit', 'Einheit', 40),
+            'trailing_text_id' => $this->validatedTrailingTextId($input['trailingTextId'] ?? null),
         ], $validated];
     }
 
@@ -553,11 +592,40 @@ final readonly class MasterDataService
         }
         $calculation = $this->calculator->calculatePosition('1.000', $calculationInput);
         $calculation['markupTotal'] = $calculation['contributionMargin'];
+        $trailing = $row['trailing_text_id'] !== null
+            ? $this->repository->trailingText((string) $row['trailing_text_id'])
+            : null;
         return [
             'id' => $row['id'], 'articleNumber' => $row['article_number'], 'shortText' => $row['short_text'], 'longText' => $row['long_text'],
             'unit' => $row['unit'], 'active' => (bool) $row['active'], 'copiedFromId' => $row['copied_from_id'],
+            'trailingTextId' => $row['trailing_text_id'],
+            'trailingText' => $trailing !== null ? $this->mapTrailingText($trailing) : null,
             'components' => $mappedComponents, 'calculation' => $calculation,
         ];
+    }
+
+    /** @param array<string,mixed> $input @return array<string,mixed> */
+    private function trailingTextData(array $input): array
+    {
+        return [
+            'code' => $this->requiredText($input, 'code', 'Kürzel', 30),
+            'name' => $this->requiredText($input, 'name', 'Bezeichnung', 500),
+        ];
+    }
+
+    /** @param array<string,mixed> $row @return array<string,mixed> */
+    private function mapTrailingText(array $row): array
+    {
+        return ['id' => $row['id'], 'code' => $row['code'], 'name' => $row['name']];
+    }
+
+    private function validatedTrailingTextId(mixed $value): ?string
+    {
+        $id = $this->nullableUuid($value, 'Schlepptext');
+        if ($id !== null && $this->repository->trailingText($id) === null) {
+            throw new MasterDataValidationException(['Schlepptext wurde nicht gefunden.']);
+        }
+        return $id;
     }
 
     /** @return array<string,mixed> */
@@ -650,6 +718,9 @@ final readonly class MasterDataService
     {
         if ($exception instanceof MasterDataValidationException) throw $exception;
         if ($exception instanceof PDOException && str_contains($exception->getMessage(), 'UNIQUE constraint failed')) {
+            if (str_contains($exception->getMessage(), 'trailing_texts.code')) {
+                throw new MasterDataValidationException(['Dieses Schlepptext-Kürzel wird bereits verwendet.']);
+            }
             throw new MasterDataValidationException(['Bezeichnung oder Nummer wird im gewählten Bereich bereits verwendet.']);
         }
         throw $exception;

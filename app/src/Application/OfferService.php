@@ -85,7 +85,17 @@ final readonly class OfferService
         if (!hash_equals((string) $metadata['draft_etag'], $draft['etag'])) {
             throw new RuntimeException('Angebotsdatei und Datenbankstand stimmen nicht ueberein.');
         }
-        return ['metadata' => $metadata, 'offer' => $draft['offer'], 'etag' => $draft['etag']];
+        return ['metadata' => $metadata, 'offer' => $this->calculator->calculate($draft['offer']), 'etag' => $draft['etag']];
+    }
+
+    /** @return array{offer: array<string,mixed>, etag: string} */
+    public function exportDraft(string $offerId): array
+    {
+        $draft = $this->loadDraft($offerId);
+        return [
+            'offer' => (new OfferNormalizer())->normalize($draft['offer']),
+            'etag' => $draft['etag'],
+        ];
     }
 
     /** @param array<string,mixed> $offer */
@@ -105,8 +115,8 @@ final readonly class OfferService
         try {
             $offer = (new OfferNormalizer())->normalize($offer);
             $offer['updatedAt'] = Clock::now();
-            $offer = $this->calculator->calculate($offer);
             (new OfferValidator())->validate($offer);
+            $this->calculator->calculate($offer); // Fachliche Berechnung einschließlich negativer Nettosumme prüfen.
             $newEtag = $this->store->saveDraft((string) $metadata['project_id'], $offerId, $offer, $expectedEtag);
             if (!$this->offers->updateEtag($offerId, $expectedEtag, $newEtag)) {
                 throw new OfferConflictException('Der Entwurf wurde zwischenzeitlich geaendert. Bitte neu laden.');
@@ -141,8 +151,8 @@ final readonly class OfferService
     public function previewImport(string $offerId,array $imported,string $expectedEtag):array
     {
         $current=$this->loadDraft($offerId);if(!hash_equals($current['etag'],$expectedEtag))throw new OfferConflictException('Der Entwurf wurde zwischenzeitlich geändert. Bitte neu laden.');
-        $prepared=$this->prepareImport($imported,(string)$current['offer']['projectId'],$offerId,(string)$current['offer']['createdAt']);
-        return ['offer'=>$prepared,'changes'=>['title'=>['old'=>$current['offer']['title'],'new'=>$prepared['title']],'nodes'=>['old'=>$this->countNodes($current['offer']['nodes']),'new'=>$this->countNodes($prepared['nodes'])],'netTotal'=>['old'=>$current['offer']['calculation']['netTotal']??'0.00','new'=>$prepared['calculation']['netTotal']??'0.00']]];
+        $prepared=$this->prepareImport($imported,(string)$current['offer']['projectId'],$offerId,(string)$current['offer']['createdAt']);$calculated=$this->calculator->calculate($prepared);
+        return ['offer'=>$calculated,'changes'=>['title'=>['old'=>$current['offer']['title'],'new'=>$prepared['title']],'nodes'=>['old'=>$this->countNodes($current['offer']['nodes']),'new'=>$this->countNodes($prepared['nodes'])],'netTotal'=>['old'=>$current['offer']['calculation']['netTotal']??'0.00','new'=>$calculated['calculation']['netTotal']??'0.00']]];
     }
 
     /** @param array<string,mixed> $imported */
@@ -165,7 +175,7 @@ final readonly class OfferService
     {
         $offer['schemaVersion']=1;$offer['id']=$offerId;$offer['projectId']=$projectId;$offer['offerNumber']=null;$offer['revision']=0;$offer['status']='draft';$offer['createdAt']=$createdAt;$offer['updatedAt']=Clock::now();
         $offer=(new OfferNormalizer())->normalize($offer,true);$validator=new OfferValidator();$validator->validate($offer);
-        $offer=$this->calculator->calculate($offer);$validator->validate($offer);return $offer;
+        $this->calculator->calculate($offer);return $offer;
     }
     /** @param list<array<string,mixed>> $nodes */ private function countNodes(array $nodes):int{$count=count($nodes);foreach($nodes as $node)if(($node['type']??'')==='title')$count+=$this->countNodes($node['children']);return $count;}
 }

@@ -15,6 +15,10 @@ use App\Tests\TestCase;
 
 final class MasterDataTest extends TestCase
 {
+    public function testTrailingTextCrudUniquenessAndServiceReference():void
+    {
+        [$service,$temporary]=$this->service();try{$defaults=$service->overview()['trailingTexts'];$this->assertSame(5,count($defaults));$text=$service->createTrailingText(['code'=>'IB','name'=>'Inbetriebnahme']);$updated=$service->updateTrailingText($text['id'],['code'=>'IBN','name'=>'Inbetriebnahme und Nachweis']);$this->assertSame('IBN',$updated['code']);$this->assertThrows(MasterDataValidationException::class,fn()=>$service->createTrailingText(['code'=>'ibn','name'=>'Doppelt']));$position=$service->createService(['shortText'=>'Prüfung','unit'=>'Stk.','trailingTextId'=>$text['id'],'components'=>[]]);$this->assertSame('Inbetriebnahme und Nachweis',$position['trailingText']['name']);$this->assertThrows(MasterDataValidationException::class,fn()=>$service->deleteTrailingText($text['id']));$free=$service->createTrailingText(['code'=>'F','name'=>'Frei']);$this->assertSame(true,$service->deleteTrailingText($free['id'])['deleted']);}finally{$this->removeTree($temporary);}
+    }
     public function testCategoryHierarchyCrudAndCycleProtection(): void
     {
         [$service, $temporary] = $this->service();

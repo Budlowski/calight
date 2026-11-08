@@ -16,6 +16,7 @@ $contentClass = 'content-wide';
     <nav class="tabs" aria-label="Stammdatenbereiche">
         <button class="tab-button active" type="button" data-tab="cost-items">Artikelstamm</button>
         <button class="tab-button" type="button" data-tab="services">Positionsstamm</button>
+        <button class="tab-button" type="button" data-tab="trailing-texts">Schlepptexte</button>
         <button class="tab-button" type="button" data-tab="categories">Kategorien</button>
         <button class="tab-button" type="button" data-tab="suppliers">Lieferanten</button>
     </nav>
@@ -55,6 +56,11 @@ $contentClass = 'content-wide';
         </div>
     </section>
 
+    <section class="tab-panel" data-panel="trailing-texts" hidden>
+        <div class="master-toolbar"><button class="button" type="button" id="new-trailing-text">Neuer Schlepptext</button></div>
+        <div class="master-split"><div class="table-wrap"><table><thead><tr><th>Kürzel</th><th>Bezeichnung</th><th></th></tr></thead><tbody id="trailing-texts-body"></tbody></table></div><form id="trailing-text-form" class="card form-stack master-editor" hidden><input type="hidden" name="id"><div class="editor-heading"><h2>Schlepptext</h2></div><label>Kürzel<input name="code" maxlength="30" required></label><label>Bezeichnung und Ausgabetext<input name="name" maxlength="500" required></label><div class="form-actions"><button class="button" type="submit">Speichern</button><button class="button button-light" type="button" data-close-trailing-text>Abbrechen</button></div></form></div>
+    </section>
+
     <section class="tab-panel" data-panel="services" hidden>
         <div class="master-toolbar">
             <input id="service-search" type="search" placeholder="Positionsnummer oder Bezeichnung durchsuchen" aria-label="Positionsstamm durchsuchen">
@@ -75,6 +81,7 @@ $contentClass = 'content-wide';
                 </div>
                 <label>Kurztext<input name="shortText" maxlength="250" required></label>
                 <label>Einheit<input name="unit" maxlength="40" required></label>
+                <label>Schlepptext<select name="trailingTextId"><option value="">Kein Schlepptext</option></select></label>
             </div>
             <label>Langtext<textarea name="longText" rows="4" maxlength="10000"></textarea></label>
             <details class="components-panel" open>
