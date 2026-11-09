@@ -118,7 +118,7 @@ Die folgenden Funktionen sind geplant und teilweise noch nicht implementiert.
 
 Die Reihenfolge und der Funktionsumfang können sich während der Entwicklung ändern.
 
-Weitere technische und fachliche Details sind in [docs/ROADMAP.md](docs/ROADMAP.md) dokumentiert.
+Weitere technische und fachliche Details sind in [ROADMAP.md](ROADMAP.md) dokumentiert.
 
 ## Keine Buchhaltungssoftware
 
