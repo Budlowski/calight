@@ -335,6 +335,14 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .offer-document-meta { display: flex; min-width: 330px; flex-direction: column; align-items: flex-end; color: var(--muted); font-size: 11px; line-height: 1.35; }
 .offer-save-area { display: flex; min-width: 0; flex-direction: column; align-items: flex-end; gap: var(--space-1); }
 .offer-document-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
+.context-menu { position: relative; }
+.context-menu > summary { list-style: none; }
+.context-menu > summary::-webkit-details-marker { display: none; }
+.context-menu[open] > summary { border-color: var(--primary); background: #edf4f8; }
+.context-menu-panel { position: absolute; z-index: 30; top: calc(100% + 4px); right: 0; display: grid; width: max-content; min-width: 210px; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); background: white; box-shadow: 0 8px 22px rgb(16 36 54 / 18%); }
+.context-menu-panel > a, .context-menu-panel > button { display: flex; min-height: 34px; align-items: center; gap: var(--space-2); padding: 7px 10px; border: 0; border-bottom: 1px solid #e5eaed; border-radius: 0; background: white; color: var(--text); cursor: pointer; font: inherit; text-align: left; text-decoration: none; }
+.context-menu-panel > :last-child { border-bottom: 0; }
+.context-menu-panel > a:hover, .context-menu-panel > button:hover { background: #edf4f8; }
 .offer-save-area #save-status:empty { display: none; }
 .offer-tree-toolbar { margin: var(--space-2) 0; }
 .toolbar-spacer { flex: 1 1 auto; }
@@ -382,6 +390,44 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .offer-progress { display: grid; min-width: 190px; gap: 3px; color: var(--muted); font-size: 11px; text-align: right; white-space: nowrap; }
 .offer-progress-track { display: block; height: 4px; overflow: hidden; border-radius: 3px; background: #dfe5e9; }
 .offer-progress-track i { display: block; height: 100%; border-radius: inherit; background: #4d9255; transition: width .2s ease; }
+.offer-summary-footer { margin-top: var(--space-3); }
+.offer-summary-footer .offer-net-total { margin-top: 0; }
+.offer-calculation-overview { border: 1px solid var(--border); border-top: 0; background: white; }
+.offer-calculation-overview > summary { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: 9px 12px; cursor: pointer; color: var(--primary); font-weight: 700; }
+.offer-calculation-overview > summary small { color: var(--muted); font-weight: 400; }
+.offer-calculation-overview[open] > summary { border-bottom: 1px solid var(--border); background: #f5f8fa; }
+.offer-analysis-content { display: grid; gap: var(--space-4); padding: var(--space-4); }
+.offer-analysis-grid, .offer-analysis-charts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
+.offer-analysis-grid > section, .offer-analysis-charts > section { min-width: 0; padding: var(--space-3); border: 1px solid #e0e6ea; border-radius: var(--radius); background: #fbfcfd; }
+.offer-analysis-grid h3, .offer-analysis-charts h3 { margin: 0 0 var(--space-2); color: #34566d; }
+.offer-analysis-metric { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); padding: 4px 0; border-bottom: 1px solid #e7ebee; }
+.offer-analysis-metric span { color: var(--muted); font-size: var(--font-small); }
+.offer-analysis-metric strong { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.offer-analysis-metric.is-total { margin-top: 2px; border-top: 2px solid #aebfca; font-size: 15px; }
+.offer-analysis-metric.is-negative strong { color: var(--danger); }
+.offer-analysis-metric.is-warning strong { color: #866500; }
+.offer-analysis-bar-row { display: grid; grid-template-columns: 105px minmax(80px, 1fr) minmax(120px, auto); align-items: center; gap: var(--space-2); padding: 4px 0; font-size: var(--font-small); }
+.offer-analysis-bar-row > strong { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.offer-analysis-bar-row small { color: var(--muted); font-weight: 400; }
+.offer-analysis-bar, .offer-economy-bar, .offer-status-stack { display: flex; height: 12px; overflow: hidden; border-radius: 6px; background: #e5eaed; }
+.offer-analysis-bar i { display: block; height: 100%; min-width: 0; }
+.offer-analysis-bar .material { background: #397da6; }
+.offer-analysis-bar .labor { background: #9b6a32; }
+.offer-analysis-bar .external { background: #6d5c9c; }
+.offer-analysis-bar .other { background: #6c7b84; }
+.offer-economy-bar { height: 18px; margin: 10px 0; }
+.offer-economy-bar .costs, .offer-analysis-legend i.costs { background: #65869a; }
+.offer-economy-bar .margin, .offer-analysis-legend i.margin { background: #4d9255; }
+.offer-analysis-legend { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); color: var(--muted); font-size: 11px; }
+.offer-analysis-legend > span, .offer-analysis-legend > button { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: inherit; font: inherit; }
+.offer-analysis-legend > button { padding: 2px; cursor: pointer; }
+.offer-analysis-legend i { width: 9px; height: 9px; border-radius: 2px; }
+.offer-analysis-legend .negative { color: var(--danger); }
+.offer-status-stack { height: 18px; margin: 10px 0; }
+.offer-status-stack button { min-width: 0; padding: 0; border: 0; cursor: pointer; }
+.offer-status-stack .open, .offer-analysis-legend i.open { background: #aeb8bf; }
+.offer-status-stack .progress, .offer-analysis-legend i.progress { background: #dfb62f; }
+.offer-status-stack .done, .offer-analysis-legend i.done { background: #4d9255; }
 .offer-level-label { width: fit-content; padding: 2px 6px; border: 1px solid #9fb5c4; border-radius: 9px; color: #385d76; background: #f6fafc; font-size: 10px; font-weight: 750; letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; }
 .position-label { border-color: #c4cdd3; color: #586670; background: #f4f6f7; }
 .offer-node-actions { opacity: .7; transition: opacity .15s ease; }
@@ -492,6 +538,8 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
     .offer-children { margin-left: 3px; padding-left: 9px; }
     .offer-children > .offer-node::before { left: -9px; width: 9px; }
     .offer-progress { text-align: left; }
+    .offer-analysis-grid, .offer-analysis-charts { grid-template-columns: 1fr; }
+    .offer-calculation-overview > summary { align-items: flex-start; flex-direction: column; }
     .project-detail-head, .project-facts, .project-offer-layout, .compact-action-form { grid-template-columns: 1fr; }
     .offer-detail-row { grid-template-columns: 1fr auto; }
     .offer-detail-row time { grid-column: 1; }

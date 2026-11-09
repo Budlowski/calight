@@ -40,7 +40,48 @@ final class OfferCalculatorTest extends TestCase
         $this->assertSame('75.00',$result['nodes'][0]['calculation']['subtotal']);
         $this->assertSame('325.00',$result['nodes'][0]['calculation']['calculatedSubtotal']);
         $this->assertSame('75.00',$result['calculation']['netTotal']);
+        $this->assertSame('30.00',$result['calculation']['analysis']['materialCosts']);
+        $this->assertSame('30.00',$result['calculation']['analysis']['laborCosts']);
+        $this->assertSame('60.00',$result['calculation']['analysis']['totalCosts']);
+        $this->assertSame('0.500',$result['calculation']['analysis']['laborHours']);
+        $this->assertSame(false,$result['calculation']['analysis']['complete']);
+        $this->assertSame(1,$result['calculation']['analysis']['includedIncompleteCount']);
+        $this->assertSame(null,$result['calculation']['analysis']['contributionMargin']);
         $this->assertSame(null,$result['nodes'][1]['calculation']);
+    }
+
+    public function testAnalysisUsesIncludedCostsManualSalesPriceAndOfferDiscount(): void
+    {
+        $included = [
+            'id'=>'included','type'=>'position','positionType'=>'normal','workStatus'=>'done','shortText'=>'Montage','longText'=>'',
+            'quantity'=>'2.000','unit'=>'Stk.','manualUnitPrice'=>'20.00','components'=>[
+                ['calculationType'=>'material','quantity'=>'1.000','costPrice'=>'10.0000','markupPercent'=>'25.00'],
+                ['calculationType'=>'labor','quantity'=>'0.500','costPrice'=>'60.0000','markupPercent'=>'0.00'],
+            ],
+        ];
+        $excluded = [
+            'id'=>'excluded','type'=>'position','positionType'=>'normal','workStatus'=>'open','shortText'=>'Option','longText'=>'',
+            'quantity'=>'1.000','unit'=>'Stk.','manualUnitPrice'=>'1000.00','components'=>[
+                ['calculationType'=>'material','quantity'=>'1.000','costPrice'=>'500.0000','markupPercent'=>'0.00'],
+            ],
+        ];
+        $offer=['offerAdjustment'=>['type'=>'discount','mode'=>'percentage','value'=>'10.00','label'=>null],'nodes'=>[
+            $included,
+            ['id'=>'optional','type'=>'title','titleType'=>'bedarf','name'=>'Option','description'=>'','children'=>[$excluded]],
+        ]];
+        $analysis=(new OfferCalculator(new PriceCalculator()))->calculate($offer)['calculation']['analysis'];
+        $this->assertSame('20.00',$analysis['materialCosts']);
+        $this->assertSame('60.00',$analysis['laborCosts']);
+        $this->assertSame('80.00',$analysis['totalCosts']);
+        $this->assertSame('1.000',$analysis['laborHours']);
+        $this->assertSame('-44.00',$analysis['contributionMargin']);
+        $this->assertSame('-122.22',$analysis['contributionMarginPercent']);
+        $this->assertSame('-55.00',$analysis['costMarkupPercent']);
+        $this->assertSame(2,$analysis['positionCount']);
+        $this->assertSame(1,$analysis['statusDone']);
+        $this->assertSame(1,$analysis['statusOpen']);
+        $this->assertSame(2,$analysis['manualPriceCount']);
+        $this->assertSame(true,$analysis['complete']);
     }
 
     public function testNestedTitleTypesTextNodesAndAdjustments():void

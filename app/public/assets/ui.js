@@ -47,6 +47,14 @@
         if (node instanceof Element) decorateIcons(node);
     }))).observe(document.body, {childList: true, subtree: true});
 
+    // Globales Aktionsmenü: Auswahl, Außenklick und Escape schließen offene Menüs.
+    document.addEventListener('click', event => document.querySelectorAll('details.context-menu[open]').forEach(menu => {
+        if (!menu.contains(event.target) || event.target.closest('.context-menu-panel a, .context-menu-panel button')) menu.removeAttribute('open');
+    }));
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') document.querySelectorAll('details.context-menu[open]').forEach(menu => menu.removeAttribute('open'));
+    });
+
     // Alle destruktiven Aktionen laufen zentral durch dieselbe Sicherheitsabfrage.
     // Der Text-Fallback erfasst auch serverseitig gerenderte Löschbuttons, während
     // die Datenattribute dynamisch erzeugte Editor-Aktionen eindeutig markieren.
