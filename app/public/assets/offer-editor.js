@@ -451,7 +451,7 @@
                         `<option value="${v}" ${c.calculationType === v ? "selected" : ""}>${l}</option>`,
                     )
                     .join("")}</select></label>
-                  <label>Preisquelle<select data-component-field="priceMode" ${c.masterDataId ? "" : "disabled"}>${c.masterDataId ? `<option value="master" ${c.priceMode === "master" ? "selected" : ""}>Aus Artikelstamm ${esc(componentReference(c))}</option>` : ""}<option value="manual" ${c.priceMode === "manual" || !c.masterDataId ? "selected" : ""}>${c.masterDataId ? `Eigener Preis · Artikelstamm ${esc(componentReference(c))}` : "Eigener Preis"}</option></select></label>
+                  <label>Preisquelle<select data-component-field="priceMode" ${c.masterDataId ? "" : "disabled"}>${c.masterDataId ? `<option value="master" ${c.priceMode === "master" ? "selected" : ""}>Artikelstamm</option>` : ""}<option value="manual" ${c.priceMode === "manual" || !c.masterDataId ? "selected" : ""}>Eigener Preis</option></select></label>
                   <div class="component-controls-actions">
                     <button class="table-action" type="button" data-component-up title="Nach oben" aria-label="Nach oben" ${i === 0 ? "disabled" : ""}>↑</button>
                     <button class="table-action" type="button" data-component-down title="Nach unten" aria-label="Nach unten" ${i === p.components.length - 1 ? "disabled" : ""}>↓</button>
@@ -1094,13 +1094,13 @@
     const quoted = disposition.match(/filename="([^"]+)"/i);
     return quoted?.[1] || "Angebot.pdf";
   }
-  async function pdf(download) {
+  async function pdf(download, internal = false) {
     if (!offer) return;
     status.textContent = "PDF wird erzeugt …";
     try {
       offer.title = titleInput.value.trim();
       const response = await fetch(
-        `/api/offers/${encodeURIComponent(root.dataset.offerId)}/pdf`,
+        `/api/offers/${encodeURIComponent(root.dataset.offerId)}/${internal ? "calculation-pdf" : "pdf"}`,
         {
           method: "POST",
           credentials: "same-origin",
@@ -1136,6 +1136,8 @@
   }
   document.querySelector("[data-pdf-preview]").onclick = () => pdf(false);
   document.querySelector("[data-pdf-download]").onclick = () => pdf(true);
+  document.querySelector("[data-calculation-pdf]").onclick = () =>
+    pdf(true, true);
   costItemDialog
     ?.querySelectorAll("[data-dialog-close]")
     .forEach((button) =>

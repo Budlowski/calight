@@ -68,6 +68,7 @@ final readonly class Bootstrap
             new OfferCalculationController(new OfferCalculationService($masterDataService,new OfferValidator(),$offerCalculator)),
             new SettingsController($view,$settingsService),
             new OfferPdfService($this->pdo,$documentSettingsRepository,new OfferValidator(),$offerCalculator),
+            new InternalCalculationPdfService($this->pdo,$documentSettingsRepository,new OfferValidator(),$offerCalculator),
         );
     }
 }
