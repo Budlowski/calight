@@ -605,6 +605,17 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .compact-dialog form { padding: var(--space-5); }
 .dialog-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
 .dialog-heading h2, .dialog-heading p { margin: 0; }
+.global-modal { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); background: white; box-shadow: 0 18px 50px rgba(20,35,45,.25); }
+.global-modal::backdrop { background: rgba(20,35,45,.42); }
+.global-modal-panel { display: grid; max-height: calc(100vh - 34px); grid-template-rows: auto minmax(0, 1fr) auto; }
+.global-modal-panel > header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border); }
+.global-modal-panel > header h2 { margin: 0; font-size: 19px; }
+.global-modal-content { overflow: auto; padding: var(--space-5); }
+.global-modal-content form { display: grid; gap: var(--space-3); }
+.global-modal-panel > footer { display: flex; justify-content: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-5); border-top: 1px solid var(--border); background: #f7f9fa; }
+.global-modal-summary { margin: 0; padding: var(--space-3); border-left: 3px solid var(--primary); background: #edf5fa; }
+.global-modal-selection { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.global-modal-selection .span-all { grid-column: 1 / -1; }
 .component-master-dialog-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
 .component-empty { margin: 0; padding: 12px; border: 1px dashed #b9c6ce; background: #fafcfd; text-align: center; }
 .offer-calculation-totals { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
@@ -724,4 +735,6 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 @media (max-width: 700px) {
     #offer-editor .offer-adjustment-panel, #offer-editor .offer-text-editor, #offer-editor .offer-title-edit-row { grid-template-columns: 1fr; }
     #offer-editor .offer-search { grid-template-columns: 1fr; align-items: stretch; }
+    .global-modal-selection { grid-template-columns: 1fr; }
+    .global-modal-selection .span-all { grid-column: auto; }
 }

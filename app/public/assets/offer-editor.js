@@ -906,17 +906,32 @@
     Object.assign(library, current);
     return current;
   }
-  function confirmMasterChanges(heading, changes) {
+  async function confirmMasterChanges(heading, changes) {
     if (changes.length === 0) {
       status.textContent = `${heading}: keine Änderungen gefunden.`;
       return false;
     }
     const visible = changes.slice(0, 20),
       more = changes.length - visible.length,
-      text = visible.map((change) => `• ${change}`).join("\n");
-    return confirm(
-      `${heading}\n\n${text}${more ? `\n• … und ${more} weitere` : ""}\n\nÄnderungen übernehmen? Sie werden erst mit „Entwurf speichern“ dauerhaft gespeichert.`,
-    );
+      content = document.createElement("div");
+    content.innerHTML = `<p class="global-modal-summary"><strong>${changes.length} Änderung${changes.length === 1 ? "" : "en"}</strong> gefunden. Die Übernahme wird erst mit „Entwurf speichern“ dauerhaft gespeichert.</p>`;
+    const list = document.createElement("ul");
+    for (const change of visible) {
+      const item = document.createElement("li");
+      item.textContent = change;
+      list.append(item);
+    }
+    if (more) {
+      const item = document.createElement("li");
+      item.textContent = `… und ${more} weitere`;
+      list.append(item);
+    }
+    content.append(list);
+    return CalightModal.confirm({
+      title: heading,
+      content,
+      confirmLabel: "Änderungen übernehmen",
+    });
   }
   async function refreshArticleMasterData() {
     try {
@@ -951,10 +966,10 @@
             });
         }
       if (
-        !confirmMasterChanges(
+        !(await confirmMasterChanges(
           "Artikelstammdaten aktualisieren",
           updates.map((update) => update.label),
-        )
+        ))
       )
         return;
       updates.forEach((update) => Object.assign(update.component, update.next));
@@ -1015,10 +1030,10 @@
           });
       }
       if (
-        !confirmMasterChanges(
+        !(await confirmMasterChanges(
           "Positionsstammdaten aktualisieren",
           updates.map((update) => update.label),
-        )
+        ))
       )
         return;
       for (const { position, next } of updates) {
@@ -1032,10 +1047,158 @@
       status.textContent = error.message;
     }
   }
+  function titleScopeOptions() {
+    const numbers = numbering(offer.nodes),
+      options = ['<option value="">Alle</option>'];
+    function add(nodes, depth = 0) {
+      for (const node of nodes) {
+        if (node.type !== "title") continue;
+        options.push(
+          `<option value="${esc(node.id)}">${"&nbsp;".repeat(depth * 4)}${esc(numbers.get(node.id))} · ${esc(node.name)}</option>`,
+        );
+        add(node.children, depth + 1);
+      }
+    }
+    add(offer.nodes);
+    return options.join("");
+  }
+  function positionsInScope(titleId) {
+    if (!titleId) return positions();
+    const title = find(titleId),
+      result = [];
+    if (title?.type === "title")
+      walk(title.children, (node) => {
+        if (node.type === "position") result.push(node);
+      });
+    return result;
+  }
+  function modalForm(html) {
+    const form = document.createElement("form");
+    form.noValidate = false;
+    form.innerHTML = html;
+    return form;
+  }
+  async function overwriteMarkups() {
+    const form = modalForm(
+      `<div class="global-modal-selection"><label>Neuer Aufschlag (%)<input name="markup" inputmode="decimal" required placeholder="z. B. 25,00 oder -5,00"></label><label>Kalkulationstyp<select name="type"><option value="">Alle</option><option value="material">Material</option><option value="labor">Lohn</option><option value="external">Fremdleistung</option><option value="other">Sonstige Kosten</option></select></label><label class="span-all">Titel<select name="title">${titleScopeOptions()}</select></label></div><p class="global-modal-summary" data-bulk-count>Bitte einen gültigen Aufschlag eingeben.</p>`,
+    );
+    const markup = form.elements.markup,
+      type = form.elements.type,
+      title = form.elements.title,
+      output = form.querySelector("[data-bulk-count]");
+    const matching = () => {
+      const raw = markup.value.trim(),
+        valid = /^-?(?:0|[1-9]\d*)(?:[.,]\d{1,2})?$/.test(raw);
+      markup.setCustomValidity(
+        valid ? "" : "Bitte einen gültigen Aufschlag eingeben.",
+      );
+      const components = valid
+        ? positionsInScope(title.value).flatMap((position) =>
+            position.components.filter(
+              (component) =>
+                !type.value || component.calculationType === type.value,
+            ),
+          )
+        : [];
+      output.textContent = valid
+        ? `${components.length} Kalkulationsbaustein${components.length === 1 ? " wird" : "e werden"} überschrieben.`
+        : "Bitte einen gültigen Aufschlag eingeben.";
+      return { components, value: raw.replace(",", ".") };
+    };
+    form.addEventListener("input", matching);
+    form.addEventListener("change", matching);
+    matching();
+    const proceed = await CalightModal.open({
+      title: "Aufschläge überschreiben",
+      content: form,
+      actions: [
+        { label: "Abbrechen", value: false },
+        {
+          label: "Weiter zur Bestätigung",
+          value: true,
+          primary: true,
+          validate: true,
+        },
+      ],
+      initialFocus: '[name="markup"]',
+    });
+    if (!proceed) return;
+    const { components, value } = matching();
+    if (!components.length) {
+      status.textContent = "Keine passenden Kalkulationsbausteine gefunden.";
+      return;
+    }
+    const confirmed = await CalightModal.confirm({
+      title: "Aufschläge überschreiben",
+      content: `${components.length} Kalkulationsbaustein${components.length === 1 ? " erhält" : "e erhalten"} den Aufschlag ${value.replace(".", ",")} %. Alle übrigen Kalkulationswerte bleiben unverändert.`,
+      confirmLabel: "Aufschläge überschreiben",
+    });
+    if (!confirmed) return;
+    for (const component of components) component.markupPercent = value;
+    markDirty();
+    render();
+    status.textContent = `${components.length} Kalkulationsbaustein${components.length === 1 ? " wurde" : "e wurden"} aktualisiert.`;
+  }
+  async function overwriteWorkStatus() {
+    const form = modalForm(
+      `<div class="global-modal-selection"><label class="span-all">Titel<select name="title">${titleScopeOptions()}</select></label><label class="span-all">Neuer Status<select name="status"><option value="open">Offen</option><option value="in_progress">In Bearbeitung</option><option value="done">Fertig</option></select></label></div><p class="global-modal-summary" data-bulk-count></p>`,
+    );
+    const title = form.elements.title,
+      workStatus = form.elements.status,
+      output = form.querySelector("[data-bulk-count]");
+    const matching = () => {
+      const selected = positionsInScope(title.value).filter(
+        (position) =>
+          CalightOfferStatus.normalized(position.workStatus) !==
+          workStatus.value,
+      );
+      output.textContent = `${selected.length} Position${selected.length === 1 ? " wird" : "en werden"} geändert.`;
+      return selected;
+    };
+    form.addEventListener("change", matching);
+    matching();
+    const proceed = await CalightModal.open({
+      title: "Bearbeitungsstatus überschreiben",
+      content: form,
+      actions: [
+        { label: "Abbrechen", value: false },
+        {
+          label: "Weiter zur Bestätigung",
+          value: true,
+          primary: true,
+          validate: true,
+        },
+      ],
+      initialFocus: '[name="title"]',
+    });
+    if (!proceed) return;
+    const selected = matching();
+    if (!selected.length) {
+      status.textContent = "Keine Position benötigt eine Statusänderung.";
+      return;
+    }
+    const label = {
+      open: "Offen",
+      in_progress: "In Bearbeitung",
+      done: "Fertig",
+    }[workStatus.value];
+    const confirmed = await CalightModal.confirm({
+      title: "Bearbeitungsstatus überschreiben",
+      content: `${selected.length} Position${selected.length === 1 ? " erhält" : "en erhalten"} den Status „${label}“. Die Titelstatus werden anschließend automatisch neu aggregiert.`,
+      confirmLabel: "Status überschreiben",
+    });
+    if (!confirmed) return;
+    for (const position of selected) position.workStatus = workStatus.value;
+    markDirty();
+    render();
+    status.textContent = `${selected.length} Position${selected.length === 1 ? " wurde" : "en wurden"} aktualisiert.`;
+  }
   document.querySelector("[data-refresh-article-master]").onclick =
     refreshArticleMasterData;
   document.querySelector("[data-refresh-position-master]").onclick =
     refreshPositionMasterData;
+  document.querySelector("[data-bulk-markup]").onclick = overwriteMarkups;
+  document.querySelector("[data-bulk-status]").onclick = overwriteWorkStatus;
   const importFile = document.querySelector("[data-import-file]");
   document.querySelector("[data-import-json]").onclick = () =>
     importFile.click();
