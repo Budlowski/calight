@@ -14,7 +14,7 @@ final class OfferCalculatorTest extends TestCase
     public function testManualPricesPositionTypesAndRecursiveSums(): void
     {
         $component=fn(string $type,string $quantity,string $cost,string $markup):array=>['calculationType'=>$type,'quantity'=>$quantity,'costPrice'=>$cost,'markupPercent'=>$markup];
-        $position=fn(string $id,string $kind,string $quantity,?string $manual,array $components):array=>['id'=>$id,'type'=>'position','positionType'=>$kind,'shortText'=>$id,'longText'=>'','quantity'=>$quantity,'unit'=>'Stk.','manualUnitPrice'=>$manual,'components'=>$components];
+        $position=fn(string $id,string $kind,string $quantity,?string $manual,array $components):array=>['id'=>$id,'type'=>'position','positionType'=>$kind,'workStatus'=>'done','shortText'=>$id,'longText'=>'','quantity'=>$quantity,'unit'=>'Stk.','manualUnitPrice'=>$manual,'components'=>$components];
         $offer=['nodes'=>[
             ['id'=>'t1','type'=>'title','name'=>'T1','description'=>'','children'=>[
                 $position('normal','normal','3.000','15.00',[$component('material','2.000','5.0000','20.00')]),
@@ -34,6 +34,7 @@ final class OfferCalculatorTest extends TestCase
         $this->assertSame('15.00',$normal['calculation']['effectiveUnitPrice']);
         $this->assertSame('3.00',$normal['calculation']['priceDeviation']);
         $this->assertSame('45.00',$normal['calculation']['positionTotal']);
+        $this->assertSame('done',$normal['workStatus']);
         $this->assertSame('30.00',$sub['calculation']['subtotal']);
         $this->assertSame('280.00',$sub['calculation']['calculatedSubtotal']);
         $this->assertSame('75.00',$result['nodes'][0]['calculation']['subtotal']);

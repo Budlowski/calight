@@ -9,8 +9,10 @@
         <details class="offer-compact-details offer-document-terms"><summary>Angebotsbedingungen individuell überschreiben</summary><p class="muted">Leere Textfelder verwenden den globalen Standard aus den Einstellungen.</p><div class="form-grid"><label>Gültigkeit<select id="offer-validity-mode"><option value="default">Globalen Standard verwenden</option><option value="duration">Individuelle Gültigkeitsdauer</option><option value="date">Individuelles Datum</option></select></label><label>Gültigkeitsdauer in Tagen<input id="offer-validity-days" type="number" min="1" max="3650"></label><label>Gültig bis<input id="offer-validity-date" type="date"></label></div><label>Einleitung<textarea id="offer-intro-text" rows="2" placeholder="Globalen Standard verwenden"></textarea></label><label>Schlusstext<textarea id="offer-closing-text" rows="2" placeholder="Globalen Standard verwenden"></textarea></label><label>Zahlungsbedingungen<textarea id="offer-payment-terms" rows="2" placeholder="Globalen Standard verwenden"></textarea></label><label>Zusätzliche Bedingungen / Hinweise<textarea id="offer-additional-terms" rows="2" placeholder="Globalen Standard verwenden"></textarea></label></details>
     </section>
     <div class="offer-tree-toolbar"><button class="button" type="button" data-icon="plus" data-add-root-title>Titel hinzufügen</button><button class="button button-light" type="button" data-icon="plus" data-add-root-position>Position hinzufügen</button><button class="button button-light" type="button" data-icon="chevrons-down" data-expand-all>Alle aufklappen</button><button class="button button-light" type="button" data-icon="chevrons-up" data-collapse-all>Alle einklappen</button><span class="toolbar-spacer"></span><button class="button button-light" type="button" data-icon="refresh-cw" data-refresh-article-master>Artikelstammdaten aktualisieren</button><button class="button button-light" type="button" data-icon="refresh-cw" data-refresh-position-master>Positionsstammdaten aktualisieren</button></div>
-    <div class="offer-list-header" aria-hidden="true"><span>Position / Bezeichnung</span><span>Art / Preisquelle</span><span>Menge / Einheit</span><span>EP netto</span><span>GP netto</span><span>Aktionen</span></div>
-    <div id="offer-tree" class="offer-tree" aria-live="polite"></div>
+    <div class="offer-structure-scroll">
+        <div class="offer-list-header" aria-hidden="true"><span>Position / Bezeichnung</span><span>Art / Status / Preisquelle</span><span>Alternativ / Menge</span><span>Bedarf / EP netto</span><span>Regulär / GP netto</span><span>Aktionen</span></div>
+        <div id="offer-tree" class="offer-tree" aria-live="polite"></div>
+    </div>
     <dialog id="cost-item-dialog" class="compact-dialog">
         <form method="dialog" id="cost-item-dialog-form" class="form-stack">
             <div class="dialog-heading"><div><h2>In Artikelstamm speichern</h2><p class="muted">Der Angebotsbaustein bleibt unverändert.</p></div><button class="icon-button" type="button" data-dialog-close aria-label="Schließen">×</button></div>
@@ -21,4 +23,5 @@
     </dialog>
 </div>
 <script src="/assets/offer-search.js?v=<?= $escape((string)filemtime(dirname(__DIR__,2).'/public/assets/offer-search.js')) ?>" defer></script>
+<script src="/assets/offer-status.js?v=<?= $escape((string)filemtime(dirname(__DIR__,2).'/public/assets/offer-status.js')) ?>" defer></script>
 <script src="/assets/offer-editor.js?v=<?= $escape((string)filemtime(dirname(__DIR__,2).'/public/assets/offer-editor.js')) ?>" defer></script>

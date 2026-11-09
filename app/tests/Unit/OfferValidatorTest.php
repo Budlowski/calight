@@ -23,6 +23,7 @@ final class OfferValidatorTest extends TestCase
                 'id' => Uuid::v4(),
                 'type' => 'position',
                 'positionType' => 'alternative',
+                'workStatus' => 'in_progress',
                 'shortText' => 'Steckdose',
                 'longText' => '',
                 'quantity' => '10.000',
@@ -34,6 +35,21 @@ final class OfferValidatorTest extends TestCase
 
         (new OfferValidator())->validate($offer);
         $this->assertTrue(true);
+    }
+
+    public function testRejectsInvalidWorkStatusButAcceptsLegacyPositionWithoutIt(): void
+    {
+        $position = [
+            'id' => Uuid::v4(), 'type' => 'position', 'positionType' => 'normal',
+            'shortText' => 'Prüfposition', 'longText' => '', 'quantity' => '1.000',
+            'unit' => 'Stk.', 'manualUnitPrice' => null, 'components' => [],
+        ];
+        $offer = $this->offer();
+        $offer['nodes'] = [$position];
+        (new OfferValidator())->validate($offer);
+
+        $offer['nodes'][0]['workStatus'] = 'unbekannt';
+        $this->assertThrows(OfferValidationException::class, fn () => (new OfferValidator())->validate($offer));
     }
 
     public function testRejectsDuplicateNodeIds(): void

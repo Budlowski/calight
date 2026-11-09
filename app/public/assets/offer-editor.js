@@ -23,6 +23,7 @@
     stateRevision = 0,
     calculationRequest = 0,
     searchQuery = "",
+    workStatusFilter = "",
     searchPreviousOpen = null,
     titlePositionCounts = new Map();
   const openNodes = new Set(),
@@ -49,6 +50,7 @@
         }).format(Number(v));
   const dec = (v, fallback = "0") => String(v ?? fallback).replace(".", ",");
   const toolbar = root.querySelector(".offer-tree-toolbar");
+  const structureScroll = root.querySelector(".offer-structure-scroll");
   const costItemDialog = document.querySelector("#cost-item-dialog"),
     costItemDialogForm = document.querySelector("#cost-item-dialog-form"),
     costItemDialogError = costItemDialog?.querySelector(
@@ -63,15 +65,17 @@
     );
   toolbar.insertAdjacentHTML(
     "beforebegin",
-    '<div class="offer-search"><label><span class="visually-hidden">Angebot durchsuchen</span><input type="search" data-offer-search placeholder="Titel und Positionen durchsuchen"></label><span data-search-count>Keine Suche</span><div class="offer-search-results" data-search-results hidden></div></div>',
+    '<div class="offer-search"><label><span class="visually-hidden">Angebot durchsuchen</span><input type="search" data-offer-search placeholder="Titel und Positionen durchsuchen"></label><label class="offer-status-filter"><span class="visually-hidden">Bearbeitungsstatus filtern</span><select data-work-status-filter><option value="">Alle Bearbeitungsstatus</option><option value="open">Offen</option><option value="in_progress">In Bearbeitung</option><option value="done">Fertig</option></select></label><span data-search-count>Keine Suche</span><div class="offer-progress" data-offer-progress></div><div class="offer-search-results" data-search-results hidden></div></div>',
   );
-  tree.insertAdjacentHTML(
+  structureScroll.insertAdjacentHTML(
     "afterend",
     '<section class="offer-adjustment-panel"><strong>Angebotsanpassung</strong><label>Art<select data-adjustment="type"><option value="none">Keine</option><option value="discount">Rabatt</option><option value="surcharge">Aufschlag</option></select></label><label>Berechnung<select data-adjustment="mode"><option value="percentage">Prozentual</option><option value="absolute">Absolut</option></select></label><label>Wert<input data-adjustment="value" inputmode="decimal"></label><label>Bezeichnung<input data-adjustment="label" placeholder="Optional"></label></section>',
   );
   const adjustmentPanel = root.querySelector(".offer-adjustment-panel"),
     searchInput = root.querySelector("[data-offer-search]"),
+    statusFilter = root.querySelector("[data-work-status-filter]"),
     searchCount = root.querySelector("[data-search-count]"),
+    progressOutput = root.querySelector("[data-offer-progress]"),
     searchResults = root.querySelector("[data-search-results]");
   function uuid() {
     if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
@@ -141,6 +145,7 @@
       id: uuid(),
       type: "position",
       positionType: "normal",
+      workStatus: "open",
       shortText: "Neue Position",
       longText: "",
       quantity: "1.000",
@@ -185,6 +190,7 @@
       if (node.type !== "position") return;
       node.sourceServiceId ??= null;
       node.sourceServiceNumber ??= null;
+      node.workStatus = CalightOfferStatus.normalized(node.workStatus);
       node.components ??= [];
       node.components.forEach((c) => {
         c.sourceArticleNumber ??= c.masterDataSnapshot?.articleNumber ?? null;
@@ -335,7 +341,10 @@
     return p.components.length
       ? p.components
           .map(
-            (c, i) => `<details class="component-row" data-component-index="${i}" data-component-type="${esc(c.calculationType)}">
+            (
+              c,
+              i,
+            ) => `<details class="component-row" data-component-index="${i}" data-component-type="${esc(c.calculationType)}">
               <summary class="component-summary">
                 <span class="component-identity" title="${esc(c.name)}"><strong data-component-compact-name>${esc(c.name)}</strong><small data-component-compact-source>${esc(componentSource(c))}</small></span>
                 <span class="component-type-badge" data-component-compact-type>${esc(typeLabel(c.calculationType))}</span>
@@ -348,18 +357,16 @@
                 <div class="component-primary-grid">
                   <label>Bezeichnung<input data-component-field="name" value="${esc(c.name)}"></label>
                   <label>Typ<select data-component-field="calculationType">${[
-                ["material", "Material"],
-                ["labor", "Lohn"],
-                ["external", "Fremdleistung"],
-                ["other", "Sonstige Kosten"],
-              ]
-                .map(
-                  ([v, l]) =>
-                    `<option value="${v}" ${c.calculationType === v ? "selected" : ""}>${l}</option>`,
-                )
-                .join(
-                  "",
-                )}</select></label>
+                    ["material", "Material"],
+                    ["labor", "Lohn"],
+                    ["external", "Fremdleistung"],
+                    ["other", "Sonstige Kosten"],
+                  ]
+                    .map(
+                      ([v, l]) =>
+                        `<option value="${v}" ${c.calculationType === v ? "selected" : ""}>${l}</option>`,
+                    )
+                    .join("")}</select></label>
                   <label>Preisquelle<select data-component-field="priceMode" ${c.masterDataId ? "" : "disabled"}>${c.masterDataId ? `<option value="master" ${c.priceMode === "master" ? "selected" : ""}>Aus Artikelstamm ${esc(componentReference(c))}</option>` : ""}<option value="manual" ${c.priceMode === "manual" || !c.masterDataId ? "selected" : ""}>${c.masterDataId ? `Eigener Preis · Artikelstamm ${esc(componentReference(c))}` : "Eigener Preis"}</option></select></label>
                   <div class="component-controls-actions">
                     <button class="table-action" type="button" data-component-up title="Nach oben" aria-label="Nach oben" ${i === 0 ? "disabled" : ""}>↑</button>
@@ -408,8 +415,9 @@
     return `<section class="offer-editor-section position-data-section"><div class="offer-section-heading"><span class="offer-section-step">1</span><div><strong>Positionsdaten</strong><small>Leistung, Menge und Positionsart</small></div></div><div class="offer-position-grid"><label>Kurztext<input data-field="shortText" value="${esc(p.shortText)}"></label><label>Positionsart<select data-field="positionType"><option value="normal" ${p.positionType === "normal" ? "selected" : ""}>Normalposition</option><option value="bedarf" ${p.positionType === "bedarf" ? "selected" : ""}>Bedarfsposition</option><option value="alternative" ${p.positionType === "alternative" ? "selected" : ""}>Alternativposition</option></select></label><label>Menge<input data-field="quantity" inputmode="decimal" value="${esc(dec(p.quantity, "1.000"))}"></label><label>Einheit<input data-field="unit" value="${esc(p.unit)}"></label></div><details class="offer-compact-details" ${p.longText ? "open" : ""}><summary>Langtext ${p.longText ? "bearbeiten" : "ergänzen"}</summary><label><span class="visually-hidden">Langtext</span><textarea data-field="longText" rows="3" placeholder="Optionale ausführliche Leistungsbeschreibung">${esc(p.longText)}</textarea></label></details><details class="offer-compact-details offer-template-panel"><summary>Aus Positionsstamm übernehmen</summary><div class="offer-template-row"><label>Stammposition<input list="services-${p.id}" data-service-choice placeholder="Positionsnummer oder Bezeichnung"><datalist id="services-${p.id}">${library.services.map((s) => `<option value="${esc(serviceLabel(s))}"></option>`).join("")}</datalist></label><button class="button button-light" type="button" data-take-service>Übernehmen</button></div></details></section><section class="offer-editor-section calculation-section"><div class="offer-section-heading"><span class="offer-section-step">2</span><div><strong>Preisermittlung</strong><small>${manual ? "Einheitspreis" : "Kalkulation aus " + p.components.length + " Baustein" + (p.components.length === 1 ? "" : "en")}</small></div></div><div class="price-method-row"><label>Preisermittlung<select data-price-method><option value="calculation" ${manual ? "" : "selected"}>Kalkulation</option><option value="unit-price" ${manual ? "selected" : ""}>Einheitspreis</option></select></label>${manual ? `<label>Einheitspreis netto<input data-manual-price inputmode="decimal" value="${esc(dec(p.manualUnitPrice))}"></label><p class="muted">Die Kalkulationsbausteine bleiben zur Dokumentation erhalten, bestimmen aber nicht den verwendeten Einheitspreis.</p>` : ""}</div>${calculationEditor}</section><section class="offer-editor-section price-section"><div class="offer-section-heading"><span class="offer-section-step">3</span><div><strong>Preisübersicht</strong><small>Kosten, Zuschläge und Verkaufspreis</small></div></div><div data-position-totals>${totals(p)}</div>${previewHtml(p)}<div class="offer-master-result" data-master-result></div><details class="offer-compact-details secondary-actions-panel"><summary>Weitere Aktionen</summary><div class="form-actions"><button class="button button-light" type="button" data-preview-prices>Preise aktualisieren</button><button class="button button-light" type="button" data-save-master>Im Positionsstamm speichern</button></div></details></section>`;
   }
   function renderNodes(nodes, parent, numbers, depth = 0) {
-    let html = dropZone(parent, 0);
+    let html = workStatusFilter ? "" : dropZone(parent, 0);
     nodes.forEach((n, i) => {
+      if (!CalightOfferStatus.visible(n, workStatusFilter)) return;
       const no = numbers.get(n.id),
         level = depth === 0 ? "Titel" : "Untertitel",
         open = openNodes.has(n.id) ? "open" : "";
@@ -421,15 +429,25 @@
                 ? "Bedarf"
                 : "Alternative",
           excluded = n.titleType !== "normal";
-        html += `<details class="offer-node offer-title-node offer-kind-${esc(n.titleType)}" data-node-id="${n.id}" data-depth="${depth}" ${open}><summary>${dragHandle(n, no)}<span class="offer-level-label">${level}</span><span class="offer-title-name-summary"><strong data-node-label>${esc(n.name)}</strong><small>${positionCountLabel(n.id)}</small></span><span class="offer-position-kind">${kind}</span><span class="offer-title-total">${titleTotalText(n)}</span>${controls(n, i, nodes.length)}</summary><div class="offer-node-editor offer-title-editor"><div class="offer-title-edit-row"><label class="offer-title-name"><span>${level}bezeichnung</span><input data-field="name" value="${esc(n.name)}"></label><label><span>Titelart</span><select data-field="titleType"><option value="normal" ${n.titleType === "normal" ? "selected" : ""}>Normal</option><option value="bedarf" ${n.titleType === "bedarf" ? "selected" : ""}>Bedarf</option><option value="alternative" ${n.titleType === "alternative" ? "selected" : ""}>Alternative</option></select></label><label class="offer-title-description"><span>Beschreibung</span><textarea data-field="description" rows="1" placeholder="Optionale Beschreibung">${esc(n.description)}</textarea></label><div class="offer-child-toolbar"><button class="button button-light" type="button" data-icon="plus" data-add-child-title>Untertitel</button><button class="button button-light" type="button" data-icon="plus" data-add-child-position>Position</button><button class="button button-light" type="button" data-icon="plus" data-add-child-text>Text</button></div></div>${excluded ? '<div class="offer-excluded-note">Nicht in Angebotssumme enthalten</div>' : ""}<div class="offer-children">${renderNodes(n.children, n.id, numbers, depth + 1)}</div></div></details>`;
+        const derived = CalightOfferStatus.derived(n.children);
+        html += `<details class="offer-node offer-title-node offer-kind-${esc(n.titleType)}" data-node-id="${n.id}" data-depth="${depth}" ${open}><summary>${dragHandle(n, no)}<span class="offer-level-label">${level}</span><span class="offer-title-name-summary"><strong data-node-label>${esc(n.name)}</strong><small>${positionCountLabel(n.id)}</small></span><span class="offer-position-meta"><span class="offer-position-kind">${kind}</span>${workStatusBadge(derived)}</span><span class="offer-title-total">${titleTotalText(n)}</span>${controls(n, i, nodes.length)}</summary><div class="offer-node-editor offer-title-editor"><div class="offer-title-edit-row"><label class="offer-title-name"><span>${level}bezeichnung</span><input data-field="name" value="${esc(n.name)}"></label><label><span>Titelart</span><select data-field="titleType"><option value="normal" ${n.titleType === "normal" ? "selected" : ""}>Normal</option><option value="bedarf" ${n.titleType === "bedarf" ? "selected" : ""}>Bedarf</option><option value="alternative" ${n.titleType === "alternative" ? "selected" : ""}>Alternative</option></select></label><label class="offer-title-description"><span>Beschreibung</span><textarea data-field="description" rows="1" placeholder="Optionale Beschreibung">${esc(n.description)}</textarea></label><div class="offer-child-toolbar"><button class="button button-light" type="button" data-icon="plus" data-add-child-title>Untertitel</button><button class="button button-light" type="button" data-icon="plus" data-add-child-position>Position</button><button class="button button-light" type="button" data-icon="plus" data-add-child-text>Text</button></div></div>${excluded ? '<div class="offer-excluded-note">Nicht in Angebotssumme enthalten</div>' : ""}<div class="offer-children">${renderNodes(n.children, n.id, numbers, depth + 1)}</div></div></details>`;
       } else if (n.type === "text") {
         html += `<details class="offer-node offer-text-node" data-node-id="${n.id}" data-depth="${depth}" ${open}><summary>${dragHandle(n)}<span class="offer-level-label text-label">Text</span><strong data-node-label>${esc(n.title || n.text)}</strong>${controls(n, i, nodes.length)}</summary><div class="offer-node-editor offer-text-editor"><label>Optionale Überschrift<input data-field="title" value="${esc(n.title)}"></label><label>Text<textarea data-field="text" rows="4">${esc(n.text)}</textarea></label></div></details>`;
       } else {
-        html += `<details class="offer-node offer-position-node offer-kind-${esc(n.positionType)}" data-node-id="${n.id}" data-depth="${depth}" ${open}><summary>${dragHandle(n, no)}<span class="offer-level-label position-label">Position</span><span class="offer-position-name"><strong data-node-label>${esc(n.shortText)}</strong>${trailingTextBadge(n)}</span><span class="offer-position-meta"><span class="offer-position-kind">${n.positionType === "normal" ? "Normal" : n.positionType === "bedarf" ? "Bedarf" : "Alternative"}</span><span class="offer-price-source">${n.manualUnitPrice !== null ? "Eigener EP" : "Kalkuliert"}</span></span><span class="offer-position-summary">${esc(dec(n.quantity))} ${esc(n.unit)}</span><span class="offer-unit-price">${euro(n.calculation?.effectiveUnitPrice)}</span><strong class="offer-gross-price">${euro(n.calculation?.positionTotal)}</strong>${controls(n, i, nodes.length)}</summary><div class="offer-node-editor offer-position-editor">${positionEditor(n)}</div></details>`;
+        html += `<details class="offer-node offer-position-node offer-kind-${esc(n.positionType)}" data-node-id="${n.id}" data-depth="${depth}" ${open}><summary>${dragHandle(n, no)}<span class="offer-level-label position-label">Position</span><span class="offer-position-name"><strong data-node-label>${esc(n.shortText)}</strong>${trailingTextBadge(n)}</span><span class="offer-position-meta"><span class="offer-position-kind">${n.positionType === "normal" ? "Normal" : n.positionType === "bedarf" ? "Bedarf" : "Alternative"}</span><span class="offer-price-source">${n.manualUnitPrice !== null ? "Eigener EP" : "Kalkuliert"}</span><select class="offer-work-status work-status-${esc(n.workStatus)}" data-work-status aria-label="Bearbeitungsstatus"><option value="open" ${n.workStatus === "open" ? "selected" : ""}>Offen</option><option value="in_progress" ${n.workStatus === "in_progress" ? "selected" : ""}>In Bearbeitung</option><option value="done" ${n.workStatus === "done" ? "selected" : ""}>Fertig</option></select></span><span class="offer-position-summary">${esc(dec(n.quantity))} ${esc(n.unit)}</span><span class="offer-unit-price">${euro(n.calculation?.effectiveUnitPrice)}</span><strong class="offer-gross-price">${euro(n.calculation?.positionTotal)}</strong>${controls(n, i, nodes.length)}</summary><div class="offer-node-editor offer-position-editor">${positionEditor(n)}</div></details>`;
       }
-      html += dropZone(parent, i + 1);
+      if (!workStatusFilter) html += dropZone(parent, i + 1);
     });
     return html;
+  }
+  function workStatusBadge(value) {
+    const labels = {
+      open: "Offen",
+      in_progress: "In Bearbeitung",
+      done: "Fertig",
+      neutral: "Leer",
+    };
+    return `<span class="offer-work-status-badge work-status-${esc(value)}">${labels[value]}</span>`;
   }
   function positionCountLabel(id) {
     const count = titlePositionCounts.get(id) ?? 0;
@@ -456,9 +474,12 @@
   function render() {
     if (!offer) return;
     titlePositionCounts = CalightOfferSearch.positionCounts(offer.nodes);
-    tree.innerHTML = offer.nodes.length
+    const rendered = offer.nodes.length
       ? renderNodes(offer.nodes, "", numbering(offer.nodes))
-      : '<div class="card offer-empty"><strong>Noch keine Angebotsstruktur.</strong></div>';
+      : "";
+    tree.innerHTML =
+      rendered ||
+      `<div class="card offer-empty"><strong>${workStatusFilter ? "Keine Position mit diesem Bearbeitungsstatus." : "Noch keine Angebotsstruktur."}</strong></div>`;
     tree
       .querySelectorAll("[data-depth]")
       .forEach((row) =>
@@ -480,7 +501,12 @@
       }
     });
     applySearchHighlights();
+    updateProgress();
     updateOfferTotal();
+  }
+  function updateProgress() {
+    const progress = CalightOfferStatus.progress(offer.nodes);
+    progressOutput.innerHTML = `<span>${progress.done} von ${progress.total} Positionen fertig</span><span class="offer-progress-track" aria-hidden="true"><i style="width:${progress.percent}%"></i></span>`;
   }
   function updateOfferTotal() {
     let out = document.querySelector("#offer-net-total");
@@ -488,7 +514,7 @@
       out = document.createElement("div");
       out.id = "offer-net-total";
       out.className = "offer-net-total";
-      tree.after(out);
+      structureScroll.after(out);
     }
     const c = offer?.calculation ?? {},
       a = offer?.offerAdjustment ?? { type: "none" },
@@ -665,6 +691,10 @@
     openNodes.clear();
     render();
   };
+  statusFilter.addEventListener("change", () => {
+    workStatusFilter = statusFilter.value;
+    render();
+  });
   function positions() {
     const result = [];
     walk(offer.nodes, (node) => {
@@ -1049,6 +1079,12 @@
       return;
     }
     if (p.type !== "position") return;
+    if (e.target.matches("[data-work-status]")) {
+      p.workStatus = CalightOfferStatus.normalized(e.target.value);
+      markDirty();
+      render();
+      return;
+    }
     if (e.target.matches("[data-price-method]")) {
       p.manualUnitPrice =
         e.target.value === "unit-price"
@@ -1065,6 +1101,10 @@
   tree.addEventListener(
     "click",
     (event) => {
+      if (event.target.closest("[data-work-status]")) {
+        event.stopPropagation();
+        return;
+      }
       const row = event.target.closest("[data-node-id]"),
         node = row && find(row.dataset.nodeId);
       if (!row || node?.type !== "position") return;
@@ -1323,6 +1363,10 @@
     const button = event.target.closest("[data-search-target]");
     if (!button) return;
     const id = button.dataset.searchTarget;
+    if (workStatusFilter) {
+      workStatusFilter = "";
+      statusFilter.value = "";
+    }
     openAncestors(id);
     openNodes.add(id);
     render();

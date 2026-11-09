@@ -50,6 +50,7 @@ final class OfferNormalizer
                 continue;
             }
             if (($node['type'] ?? null) === 'text') continue;
+            $node['workStatus'] ??= 'open';
             if (array_key_exists('trailingText', $node) && $node['trailingText'] === null) {
                 unset($node['trailingText']);
             }

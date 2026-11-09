@@ -86,6 +86,7 @@
                 "id": { "type": "string", "format": "uuid" },
                 "type": { "const": "position" },
                 "positionType": { "enum": ["normal", "bedarf", "alternative"] },
+                "workStatus": { "enum": ["open", "in_progress", "done"] },
                 "shortText": { "type": "string", "minLength": 1 },
                 "longText": { "type": "string" },
                 "trailingText": {

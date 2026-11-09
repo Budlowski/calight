@@ -31,6 +31,7 @@ final class OfferNormalizerTest extends TestCase
         $this->assertTrue(!isset($position['calculation'])&&!isset($text['calculation'])&&!isset($position['components'][0]['salesPrice'])&&!isset($result['calculation']));
         $this->assertSame('normal',$result['nodes'][0]['titleType']);
         $this->assertSame('manual',$position['components'][0]['priceMode']);
+        $this->assertSame('open',$position['workStatus']);
         $this->assertSame('ALT-1',$position['components'][0]['sourceArticleNumber']);
         $this->assertTrue(!isset($position['components'][0]['priceLocked'])&&!isset($position['components'][0]['masterDataSnapshot']));
         $this->assertSame('2026-11-08T11:00:00Z',$result['createdAt']);
@@ -65,6 +66,16 @@ final class OfferNormalizerTest extends TestCase
         $this->assertSame($masterId,$component['masterDataId']);
         $this->assertSame('ALT-42',$component['sourceArticleNumber']);
         $this->assertSame('12.3456',$component['costPrice']);
+    }
+
+    public function testKeepsExplicitWorkStatusAndDefaultsLegacyPositionsToOpen(): void
+    {
+        $result = (new OfferNormalizer())->normalize(['nodes' => [
+            ['type' => 'position', 'workStatus' => 'done', 'components' => []],
+            ['type' => 'position', 'components' => []],
+        ]]);
+        $this->assertSame('done', $result['nodes'][0]['workStatus']);
+        $this->assertSame('open', $result['nodes'][1]['workStatus']);
     }
 
     public function testInvalidTimestampAndDecimalBecomeValidationErrors(): void

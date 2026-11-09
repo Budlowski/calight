@@ -125,10 +125,13 @@ final class OfferValidator
             $errors[] = $path . '.type muss title, position oder text sein.';
             return;
         }
-        $this->rejectUnknown($node,['id','type','positionType','shortText','longText','trailingText','quantity','unit','manualUnitPrice','components','sourceServiceId','sourceServiceNumber','calculation'],$path,$errors);
+        $this->rejectUnknown($node,['id','type','positionType','workStatus','shortText','longText','trailingText','quantity','unit','manualUnitPrice','components','sourceServiceId','sourceServiceNumber','calculation'],$path,$errors);
 
         if (!in_array($node['positionType'] ?? null, ['normal', 'bedarf', 'alternative'], true)) {
             $errors[] = $path . '.positionType ist ungueltig.';
+        }
+        if (!in_array($node['workStatus'] ?? 'open', ['open', 'in_progress', 'done'], true)) {
+            $errors[] = $path . '.workStatus ist ungueltig.';
         }
         foreach (['shortText', 'unit'] as $field) {
             if (!is_string($node[$field] ?? null) || trim($node[$field]) === '') {
