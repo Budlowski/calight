@@ -342,7 +342,7 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 /* Angebotseditor: klare Ebenen von Gliederung, Position und Kalkulation. */
 .offer-node > summary { min-height: 40px; }
 .offer-structure-scroll { max-width: 100%; }
-.offer-header-scroll { position: sticky; z-index: 12; top: 0; max-width: 100%; overflow: hidden; background: #f4f7f9; }
+.offer-header-scroll { position: sticky; z-index: 12; top: -18px; max-width: 100%; overflow: hidden; background: #f4f7f9; }
 .offer-tree-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
 .offer-header-scroll > .offer-list-header, .offer-tree-scroll > .offer-tree { min-width: 1140px; }
 .offer-position-node > summary, .offer-title-node > summary, .offer-list-header { display: grid; grid-template-columns: 70px 66px minmax(230px, 1fr) 230px 116px 108px 122px 122px; align-items: center; gap: var(--space-2); }
@@ -463,6 +463,7 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
     .sidebar a { white-space: nowrap; }
     .sidebar .sidebar-settings { margin-top: 0; margin-left: auto; }
     .content { padding: var(--space-4); }
+    .offer-header-scroll { top: calc(-1 * var(--space-4)); }
     .grid-two { grid-template-columns: 1fr; }
     .page-heading { display: block; }
     .master-toolbar, [data-panel="services"] .master-toolbar, [data-panel="categories"] .master-toolbar, [data-panel="suppliers"] .master-toolbar { grid-template-columns: 1fr; }
