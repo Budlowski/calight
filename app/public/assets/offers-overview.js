@@ -29,7 +29,7 @@
   const labels = {
     draft: "Entwurf",
     submitted: "Abgegeben",
-    commissioned: "Beauftragt",
+    commissioned: "Angenommen",
     rejected: "Abgelehnt",
   };
   const date = (v) =>
@@ -98,7 +98,7 @@
       ? rows
           .map(
             (o) =>
-              `<article class="service-list-item management-card"><div class="service-list-main"><div class="management-card-head"><span class="service-number">${esc(o.offerNumber || "Entwurf ohne Angebotsnummer")}</span><span class="status-badge status-${esc(o.status)}">${labels[o.status] || esc(o.status)}</span></div><strong>${esc(o.title)}</strong><span class="muted">${esc(o.projectNumber || "Ohne Projektnummer")} · ${esc(o.projectName)}</span><span class="management-card-total">${euro(o.netTotal)} netto</span><span class="muted">Zuletzt geändert ${date(o.updatedAt)}</span></div><div class="service-list-actions"><a class="button button-light button-small" data-icon="file-text" href="/offers/${encodeURIComponent(o.id)}">Öffnen</a><a class="button button-light button-small" data-icon="folder-kanban" href="/projects/${encodeURIComponent(o.projectId)}">Projekt</a><button class="button button-light button-small" type="button" data-icon="copy" data-copy-offer="${o.id}">Kopieren</button>${o.status === "draft" ? `<button class="button button-light button-small button-danger-light" type="button" data-icon="trash" data-delete-offer="${o.id}" data-confirm-message="Angebotsentwurf ${esc(o.title)} endgültig löschen?">Löschen</button>` : ""}</div></article>`,
+              `<article class="service-list-item management-card"><div class="service-list-main"><div class="management-card-head"><span class="service-number">${esc(o.offerNumber || "Entwurf ohne Angebotsnummer")}</span><span class="status-badge status-${esc(o.status)}">${labels[o.status] || esc(o.status)}</span></div><strong>${esc(o.title)}</strong><span class="muted">${esc(o.projectNumber || "Ohne Projektnummer")} · ${esc(o.projectName)}</span><span class="management-card-total">${euro(o.netTotal)} netto</span><span class="muted">${o.status === "draft" || !o.submittedAt ? `Zuletzt geändert ${date(o.updatedAt)}` : `Abgegeben ${date(o.submittedAt)}`}</span></div><div class="service-list-actions"><a class="button button-light button-small" data-icon="file-text" href="/offers/${encodeURIComponent(o.id)}">${o.status === "draft" ? "Öffnen" : "Ansehen"}</a><a class="button button-light button-small" data-icon="folder-kanban" href="/projects/${encodeURIComponent(o.projectId)}">Projekt</a><button class="button button-light button-small" type="button" data-icon="copy" data-copy-offer="${o.id}">Kopieren</button>${o.status === "draft" ? `<button class="button button-light button-small button-danger-light" type="button" data-icon="trash" data-delete-offer="${o.id}" data-confirm-message="Angebotsentwurf ${esc(o.title)} endgültig löschen?">Löschen</button>` : ""}</div></article>`,
           )
           .join("")
       : '<p class="card muted">Keine Angebote gefunden.</p>';

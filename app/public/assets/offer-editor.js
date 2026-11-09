@@ -17,6 +17,7 @@
     };
   let offer = null,
     etag = root.dataset.etag,
+    lifecycleStatus = root.dataset.lifecycleStatus || "draft",
     dirty = false,
     draggedId = null,
     calcTimer = 0,
@@ -29,6 +30,7 @@
     filteredNodeIds = new Set(),
     savedHistoryState = "",
     historyGroupTimer = 0;
+  const isReadOnly = () => lifecycleStatus !== "draft";
   const openNodes = new Set(),
     pricePreviews = new Map(),
     library = { services: [], costItems: [], trailingTexts: [] },
@@ -164,6 +166,7 @@
     status.textContent = dirty ? message : "Gespeichert";
   }
   function markDirty(options = {}) {
+    if (isReadOnly()) return;
     history.record(historySnapshot(), options.group ?? null);
     clearTimeout(historyGroupTimer);
     if (options.group)
@@ -192,9 +195,11 @@
     scheduleCalculation();
   }
   function undo() {
+    if (isReadOnly()) return;
     restoreHistory(history.undo());
   }
   function redo() {
+    if (isReadOnly()) return;
     restoreHistory(history.redo());
   }
   function inputHistoryGroup(input, row = null) {
@@ -618,6 +623,28 @@
     applySearchHighlights();
     updateProgress();
     updateOfferTotal();
+    applyReadOnlyState();
+  }
+  function applyReadOnlyState() {
+    root.classList.toggle("offer-readonly", isReadOnly());
+    if (!isReadOnly()) return;
+    titleInput.readOnly = true;
+    Object.values(termFields).forEach((field) => (field.disabled = true));
+    adjustmentPanel
+      .querySelectorAll("input, select, textarea, button")
+      .forEach((field) => (field.disabled = true));
+    tree
+      .querySelectorAll("input, select, textarea, button")
+      .forEach((field) => (field.disabled = true));
+    tree
+      .querySelectorAll("[draggable]")
+      .forEach((handle) => handle.removeAttribute("draggable"));
+    toolbar
+      .querySelectorAll("[data-add-root-title], [data-add-root-position], [data-add-root-text], details.context-menu")
+      .forEach((control) => (control.hidden = true));
+    saveButton.hidden = true;
+    undoButton.hidden = true;
+    redoButton.hidden = true;
   }
   function updateProgress() {
     const progress = CalightOfferStatus.progress(offer.nodes);
@@ -745,11 +772,12 @@
     if (focus) tree.querySelector(`[data-node-id="${focus}"] input`)?.focus();
   }
   function scheduleCalculation() {
+    if (isReadOnly()) return;
     clearTimeout(calcTimer);
     calcTimer = setTimeout(calculate, 250);
   }
   async function calculate() {
-    if (!offer) return;
+    if (!offer || isReadOnly()) return;
     const revision = stateRevision,
       request = ++calculationRequest,
       payload = structuredClone(offer);
@@ -1199,10 +1227,10 @@
     refreshPositionMasterData;
   document.querySelector("[data-bulk-markup]").onclick = overwriteMarkups;
   document.querySelector("[data-bulk-status]").onclick = overwriteWorkStatus;
-  const importFile = document.querySelector("[data-import-file]");
-  document.querySelector("[data-import-json]").onclick = () =>
-    importFile.click();
-  importFile.onchange = async () => {
+  const importFile = document.querySelector("[data-import-file]"),
+    importButton = document.querySelector("[data-import-json]");
+  if (importButton) importButton.onclick = () => importFile.click();
+  if (importFile) importFile.onchange = async () => {
     const file = importFile.files[0];
     if (!file) return;
     if (file.size > 5_000_000) {
@@ -1257,6 +1285,151 @@
       importFile.value = "";
     }
   };
+  function localDateValue() {
+    const now = new Date(), offset = now.getTimezoneOffset() * 60000;
+    return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+  }
+  async function submitOffer() {
+    if (dirty) {
+      await CalightModal.open({
+        title: "Ungespeicherte Änderungen",
+        content:
+          "Bitte speichern Sie den aktuellen Entwurf, bevor Sie das Angebot verbindlich abgeben.",
+        actions: [{ label: "Verstanden", value: null, primary: true }],
+      });
+      return;
+    }
+    const form = modalForm(
+      `<div class="global-modal-selection"><label>Dokumentdatum<input name="documentDate" type="date" value="${localDateValue()}" required></label><label>Nummernvergabe<select name="numberMode"><option value="auto">Automatisch</option><option value="manual">Manuell</option></select></label><label class="span-all" data-manual-number hidden>Angebotsnummer<input name="offerNumber" maxlength="100" autocomplete="off"></label></div><p class="notice">Der Angebotsstand wird einschließlich Preisen und Kalkulation unveränderlich gespeichert. Spätere Änderungen sind nur über eine zukünftige Revision möglich.</p>`,
+    );
+    const mode = form.elements.numberMode,
+      manualRow = form.querySelector("[data-manual-number]"),
+      manualInput = form.elements.offerNumber;
+    mode.addEventListener("change", () => {
+      const manual = mode.value === "manual";
+      manualRow.hidden = !manual;
+      manualInput.required = manual;
+      if (manual) manualInput.focus();
+    });
+    const proceed = await CalightModal.open({
+      title: "Angebot verbindlich abgeben",
+      content: form,
+      actions: [
+        { label: "Abbrechen", value: false },
+        { label: "Angebot abgeben", value: true, primary: true, validate: true },
+      ],
+      initialFocus: '[name="documentDate"]',
+    });
+    if (!proceed) return;
+    const payload = {
+      documentDate: form.elements.documentDate.value,
+      offerNumber: mode.value === "manual" ? manualInput.value.trim() : null,
+      confirmIncomplete: false,
+    };
+    await performSubmission(payload);
+  }
+  async function performSubmission(payload) {
+    status.textContent = "Angebot wird verbindlich abgeschlossen …";
+    try {
+      const response = await fetch(
+          `/api/offers/${encodeURIComponent(root.dataset.offerId)}/submit`,
+          {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRF-Token": root.dataset.csrf,
+              "If-Match": `"${etag}"`,
+            },
+            body: JSON.stringify(payload),
+          },
+        ),
+        result = await responsePayload(response);
+      if (response.status === 409 && result.warning?.code === "incomplete_calculation") {
+        const content = document.createElement("div");
+        const intro = document.createElement("p");
+        intro.className = "notice notice-warning";
+        intro.textContent = `${result.warning.count} regulär enthaltene Position${result.warning.count === 1 ? " besitzt" : "en besitzen"} keine vollständige Kostenbasis.`;
+        const list = document.createElement("ul");
+        for (const position of result.warning.positions || []) {
+          const item = document.createElement("li");
+          item.textContent = position.shortText;
+          list.append(item);
+        }
+        const note = document.createElement("p");
+        note.textContent = "Die Verkaufspreise werden nicht verändert. Möchten Sie das Angebot dennoch verbindlich abgeben?";
+        content.append(intro, list, note);
+        const confirmed = await CalightModal.confirm({
+          title: "Unvollständige Kalkulation bestätigen",
+          content,
+          confirmLabel: "Trotzdem abgeben",
+        });
+        if (confirmed)
+          await performSubmission({ ...payload, confirmIncomplete: true });
+        else status.textContent = "Abschluss abgebrochen";
+        return;
+      }
+      if (!response.ok)
+        throw new Error(
+          (result.details || []).join(" ") ||
+            result.error ||
+            "Angebot konnte nicht abgeschlossen werden.",
+        );
+      location.reload();
+    } catch (error) {
+      status.textContent = error.message;
+    }
+  }
+  async function changeLifecycleStatus(nextStatus) {
+    const labels = { commissioned: "Angenommen", rejected: "Abgelehnt" },
+      confirmed = await CalightModal.confirm({
+        title: "Angebotsstatus ändern",
+        content: `Den Geschäftsstatus dieses unveränderlichen Angebots auf „${labels[nextStatus]}“ setzen? Snapshot und archivierte PDF bleiben unverändert.`,
+        confirmLabel: `Als ${labels[nextStatus].toLowerCase()} markieren`,
+      });
+    if (!confirmed) return;
+    try {
+      const response = await fetch(
+          `/api/offers/${encodeURIComponent(root.dataset.offerId)}/status`,
+          {
+            method: "PATCH",
+            credentials: "same-origin",
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRF-Token": root.dataset.csrf,
+            },
+            body: JSON.stringify({
+              expectedStatus: lifecycleStatus,
+              status: nextStatus,
+            }),
+          },
+        ),
+        result = await responsePayload(response);
+      if (!response.ok)
+        throw new Error((result.details || []).join(" ") || result.error);
+      location.reload();
+    } catch (error) {
+      status.textContent = error.message || "Status konnte nicht geändert werden.";
+    }
+  }
+  async function copyCurrentOffer() {
+    try {
+      const response = await fetch(
+          `/api/offers/${encodeURIComponent(root.dataset.offerId)}/copy`,
+          { method: "POST", credentials: "same-origin", headers: { "X-CSRF-Token": root.dataset.csrf } },
+        ),
+        result = await responsePayload(response);
+      if (!response.ok) throw new Error(result.error || "Angebot konnte nicht kopiert werden.");
+      location.assign(result.url);
+    } catch (error) {
+      status.textContent = error.message;
+    }
+  }
+  root.querySelector("[data-submit-offer]")?.addEventListener("click", submitOffer);
+  root.querySelector("[data-copy-current]")?.addEventListener("click", copyCurrentOffer);
+  root.querySelectorAll("[data-change-status]").forEach((button) =>
+    button.addEventListener("click", () => changeLifecycleStatus(button.dataset.changeStatus)),
+  );
   function responseFileName(response) {
     const disposition = response.headers.get("Content-Disposition") || "";
     const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i);
@@ -1269,16 +1442,19 @@
     status.textContent = "PDF wird erzeugt …";
     try {
       offer.title = titleInput.value.trim();
-      const response = await fetch(
-        `/api/offers/${encodeURIComponent(root.dataset.offerId)}/${internal ? "calculation-pdf" : "pdf"}`,
+      const archivedCustomerPdf = isReadOnly() && !internal,
+        response = await fetch(
+        archivedCustomerPdf
+          ? `/api/offers/${encodeURIComponent(root.dataset.offerId)}/submitted-pdf`
+          : `/api/offers/${encodeURIComponent(root.dataset.offerId)}/${internal ? "calculation-pdf" : "pdf"}`,
         {
-          method: "POST",
+          method: archivedCustomerPdf ? "GET" : "POST",
           credentials: "same-origin",
-          headers: {
+          headers: archivedCustomerPdf ? {} : {
             "Content-Type": "application/json",
             "X-CSRF-Token": root.dataset.csrf,
           },
-          body: JSON.stringify(offer),
+          ...(archivedCustomerPdf ? {} : { body: JSON.stringify(offer) }),
         },
       );
       if (!response.ok) {
@@ -1368,6 +1544,7 @@
     true,
   );
   tree.addEventListener("input", (e) => {
+    if (isReadOnly()) return;
     const row = e.target.closest("[data-node-id]"),
       node = row && find(row.dataset.nodeId);
     if (!node) return;
@@ -1427,6 +1604,7 @@
     }
   });
   tree.addEventListener("change", (e) => {
+    if (isReadOnly()) return;
     const row = e.target.closest("[data-node-id]"),
       p = row && find(row.dataset.nodeId);
     if (!p) return;
@@ -1494,6 +1672,7 @@
     true,
   );
   tree.addEventListener("click", async (e) => {
+    if (isReadOnly()) return;
     if (e.target.closest(".offer-node-actions")) e.preventDefault();
     const row = e.target.closest("[data-node-id]"),
       node = row && find(row.dataset.nodeId),
@@ -1664,6 +1843,7 @@
       .forEach((zone) => zone.classList.remove("active"));
   }
   tree.addEventListener("dragstart", (e) => {
+    if (isReadOnly()) return e.preventDefault();
     const h = e.target.closest("[data-drag-id]");
     if (!h) return;
     draggedId = h.dataset.dragId;
@@ -1684,6 +1864,7 @@
   });
   tree.addEventListener("dragend", clearDragState);
   tree.addEventListener("drop", (e) => {
+    if (isReadOnly()) return;
     const z = e.target.closest("[data-drop-parent]");
     if (!z || !draggedId) return;
     e.preventDefault();
@@ -1762,6 +1943,7 @@
     }
   });
   saveButton.onclick = async () => {
+    if (isReadOnly()) return;
     calculationRequest++;
     offer.title = titleInput.value.trim();
     titleInput.value = offer.title;
@@ -1818,6 +2000,7 @@
     .then(([draft, lib]) => {
       offer = draft.offer;
       etag = draft.etag;
+      lifecycleStatus = draft.lifecycleStatus || offer.status || lifecycleStatus;
       Object.assign(library, lib);
       normalize();
       titleInput.value = offer.title;
@@ -1827,8 +2010,8 @@
       history.reset(historySnapshot());
       savedHistoryState = comparableHistoryState();
       updateHistoryControls();
-      saveButton.disabled = false;
-      status.textContent = "";
+      saveButton.disabled = isReadOnly();
+      status.textContent = isReadOnly() ? "Schreibgeschützter Angebotsstand" : "";
       scheduleCalculation();
     })
     .catch((x) => (status.textContent = x.message));

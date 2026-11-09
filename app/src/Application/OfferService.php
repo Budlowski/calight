@@ -105,7 +105,8 @@ final readonly class OfferService
             $calculated=$this->loadDraft((string)$metadata['id'])['offer'];
             $result[]=['id'=>$metadata['id'],'projectId'=>$metadata['project_id'],'projectName'=>$metadata['project_name'],
                 'projectNumber'=>$metadata['project_number'],'offerNumber'=>$metadata['offer_number'],'status'=>$metadata['status'],
-                'title'=>$calculated['title'],'updatedAt'=>$metadata['updated_at'],'netTotal'=>$calculated['calculation']['netTotal']??'0.00'];
+                'title'=>$calculated['title'],'updatedAt'=>$metadata['updated_at'],'submittedAt'=>$metadata['submitted_at']??null,
+                'documentDate'=>$metadata['document_date']??null,'netTotal'=>$calculated['calculation']['netTotal']??'0.00'];
         }
         return $result;
     }

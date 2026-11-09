@@ -309,6 +309,27 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .project-facts small { display: block; margin-top: 2px; color: var(--muted); font-weight: 400; }
 .status-badge { display: inline-flex; width: fit-content; align-items: center; align-self: start; padding: 2px 7px; border-radius: 10px; background: #e8eef2; color: #425463; font-size: var(--font-small); font-weight: 700; white-space: nowrap; }
 .status-active, .status-commissioned { background: #dff1e5; color: #205d34; }
+
+.offer-final-number {
+  color: var(--color-primary, #155f8f);
+  font-variant-numeric: tabular-nums;
+}
+
+.offer-readonly .offer-drop-zone,
+.offer-readonly .offer-child-toolbar,
+.offer-readonly .offer-node-actions,
+.offer-readonly .offer-template-row,
+.offer-readonly .secondary-actions-panel {
+  display: none !important;
+}
+
+.offer-readonly input:disabled,
+.offer-readonly select:disabled,
+.offer-readonly textarea:disabled {
+  color: inherit;
+  background: #f4f7f9;
+  opacity: 1;
+}
 .status-completed, .status-submitted { background: #e2edf7; color: #22577c; }
 .status-archived, .status-rejected { background: #eceeef; color: #5d646a; }
 .project-offer-layout { display: grid; grid-template-columns: minmax(300px, .55fr) minmax(520px, 1.45fr); align-items: start; gap: var(--space-4); margin-top: var(--space-4); }
