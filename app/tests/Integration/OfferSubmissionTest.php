@@ -45,11 +45,15 @@ final class OfferSubmissionTest extends TestCase
             $metadata=$offers->find($id);$this->assertSame('submitted',$metadata['status']);$this->assertSame('2026-11-09',$metadata['document_date']);
             $this->assertTrue(is_file($tmp.'/offers/'.$project.'/'.$id.'/snapshot.json'));
             $this->assertTrue(is_file($tmp.'/offers/'.$project.'/'.$id.'/submitted.pdf'));
+            $snapshotPath=$tmp.'/offers/'.$project.'/'.$id.'/snapshot.json';$pdfPath=$tmp.'/offers/'.$project.'/'.$id.'/submitted.pdf';
+            $snapshotHash=hash_file('sha256',$snapshotPath);$pdfHash=hash_file('sha256',$pdfPath);
             $final=$service->loadDraft($id);$this->assertSame('submitted',$final['offer']['status']);$this->assertSame('50.00',$final['offer']['calculation']['netTotal']);
             $this->assertThrows(\RuntimeException::class,fn()=>$service->saveDraft($id,$final['offer'],$final['etag']));
             $repeat=$service->submitOffer($id,$etag,null,'2026-11-09',true);$this->assertSame(true,$repeat['idempotent']);$this->assertSame($result['offerNumber'],$repeat['offerNumber']);
             $this->assertSame('commissioned',$service->changeStatus($id,'submitted','commissioned')['status']);
             $this->assertSame('rejected',$service->changeStatus($id,'commissioned','rejected')['status']);
+            $this->assertSame($snapshotHash,hash_file('sha256',$snapshotPath),'Wiederholte Abgabe oder Statuswechsel hat den Snapshot verändert.');
+            $this->assertSame($pdfHash,hash_file('sha256',$pdfPath),'Wiederholte Abgabe oder Statuswechsel hat die archivierte PDF verändert.');
             $archive=$service->submittedPdf($id);$this->assertTrue(str_starts_with($archive['pdf'],'%PDF-1.4'));
             $collision=$service->createDraft($project,'Nummernkollision');$collisionDraft=$service->loadDraft($collision);
             $collisionOffer=$collisionDraft['offer'];$collisionOffer['nodes']=[[
@@ -58,7 +62,7 @@ final class OfferSubmissionTest extends TestCase
             $collisionEtag=$service->saveDraft($collision,$collisionOffer,$collisionDraft['etag']);
             $this->assertThrows(OfferValidationException::class,fn()=>$service->submitOffer($collision,$collisionEtag,$result['offerNumber'],'2026-11-09',true));
             $this->assertSame('draft',$offers->find($collision)['status']);
-            chmod($tmp.'/offers/'.$project.'/'.$id.'/snapshot.json',0640);file_put_contents($tmp.'/offers/'.$project.'/'.$id.'/snapshot.json',"\n",FILE_APPEND);
+            chmod($snapshotPath,0640);file_put_contents($snapshotPath,"\n",FILE_APPEND);
             $this->assertThrows(\RuntimeException::class,fn()=>$service->loadDraft($id));
         }finally{$this->remove($tmp);}
     }

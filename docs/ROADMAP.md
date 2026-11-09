@@ -228,7 +228,7 @@ Auftragsdetails bündeln Übersicht, Leistungen, Bautagesberichte, Aufmaße/Rapp
 
 ## Technische Leitlinien
 
-- Bestehender Stack: **PHP, Apache, SQLite, HTML/CSS/Vanilla JavaScript, JSON und mPDF**.
+- Bestehender Stack: **PHP, Apache, SQLite, HTML/CSS/Vanilla JavaScript, JSON und die projekteigene PDF-Infrastruktur**.
 - Self-Hosting ohne Cloudzwang; Docker als derzeit primärer Betriebsweg.
 - Vorhandene Kalkulationslogik, Datenmodelle und PDF-Infrastruktur wiederverwenden.
 - Änderungen klein, testbar und migrationssicher halten; keine unnötigen Frameworks oder Microservices.

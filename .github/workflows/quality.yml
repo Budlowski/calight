@@ -1,0 +1,37 @@
+name: Quality
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP 8.4 einrichten
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: iconv, mbstring, pdo_sqlite, sqlite3
+          coverage: none
+      - name: Composer-Abhängigkeiten installieren
+        working-directory: app
+        run: composer install --no-interaction --no-progress --prefer-dist
+      - name: Composer-Konfiguration prüfen
+        working-directory: app
+        run: composer validate --strict
+      - name: PHP-Syntax prüfen
+        run: find app -path app/vendor -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: PHP-Tests ausführen
+        working-directory: app
+        run: composer test
+      - name: JavaScript-Syntax prüfen
+        run: find app/public/assets -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Docker-Konfiguration prüfen
+        run: docker compose config --quiet
+      - name: Docker-Image bauen
+        run: docker build --tag calight-ci .

@@ -136,7 +136,7 @@ Rechnungen werden weiterhin extern erstellt. Geplant ist lediglich die Möglichk
 | Webserver | Apache |
 | Datenbank | SQLite |
 | Frontend | HTML, CSS, Vanilla JavaScript |
-| PDF-Erzeugung | mPDF |
+| PDF-Erzeugung | Projekteigene PDF-Infrastruktur (`SimplePdf`) |
 | Angebotsdaten | JSON |
 | Bereitstellung | Docker / Self-Hosting |
 | Lizenz | AGPL-3.0 |
@@ -145,13 +145,65 @@ Calight setzt bewusst auf einen einfachen, wartbaren Technologie-Stack ohne umfa
 
 Die Anwendung ist für den eigenständigen Betrieb auf einem Server oder NAS konzipiert. Eine externe Cloud ist nicht erforderlich.
 
-### Installation
+### Voraussetzungen
 
-Calight wird derzeit hauptsächlich als Docker-Anwendung entwickelt und betrieben.
+- Docker mit Docker Compose oder PHP 8.4 mit Apache
+- PHP-Erweiterungen `iconv`, `json`, `mbstring`, `PDO` und `pdo_sqlite`
+- Composer 2 für eine Installation ohne Docker
+- Schreibbarer, dauerhaft gesicherter Datenpfad für SQLite, Angebots-JSON, Dokumente und Vorlagen
 
-Eine allgemein dokumentierte Installation sowie mögliche Unterstützung für klassisches PHP-Webhosting sind Gegenstand der weiteren Entwicklung.
+Calight verwendet derzeit **nicht mPDF**, sondern die im Projekt enthaltene PDF-Implementierung `SimplePdf`. `iconv` ist für Dateinamen und PDF-Texte zwingend erforderlich.
 
-Vor einem produktiven Einsatz sollten insbesondere Datensicherung, Dateiberechtigungen, HTTPS und der Schutz der gespeicherten Kunden- und Angebotsdaten berücksichtigt werden.
+### Installation mit Docker
+
+```bash
+cp .env.example .env
+docker compose build
+docker compose up -d
+docker compose exec calight php bin/console migrate
+docker compose exec calight php bin/console user:create admin "Administrator"
+```
+
+Die Anwendung ist anschließend standardmäßig unter `http://localhost:8085` erreichbar. Anwendungsdaten liegen im benannten Docker-Volume `calight-data`. Vor Updates sollte dieses Volume gesichert werden.
+
+Für den Betrieb hinter HTTPS muss `APP_SECURE_COOKIES=1` in der lokalen, von Git ignorierten `.env` gesetzt werden. Dort kann bei Bedarf auch der Host-Port über `CALIGHT_PORT` geändert werden. Zugangsdaten gehören nicht in Compose-Dateien oder das Git-Repository.
+
+### Installation ohne Docker
+
+Der Document-Root des Webservers muss auf `app/public` zeigen. Anschließend:
+
+```bash
+cd app
+composer install --no-dev --classmap-authoritative
+export APP_DATABASE_PATH=/absoluter/pfad/database/app.sqlite
+export APP_OFFERS_PATH=/absoluter/pfad/offers
+export APP_DOCUMENTS_PATH=/absoluter/pfad/documents
+export APP_TEMPLATES_PATH=/absoluter/pfad/templates
+php bin/console migrate
+php bin/console user:create admin "Administrator"
+```
+
+Alle konfigurierten Verzeichnisse müssen für den Webserver-Benutzer schreibbar sein. Im produktiven Betrieb sind HTTPS, sichere Cookies, regelmäßige Backups und restriktive Dateiberechtigungen erforderlich.
+
+### Tests
+
+Die Tests verwenden ausschließlich temporäre, isolierte SQLite-Datenbanken und verändern weder die konfigurierte Produktivdatenbank noch bestehende Angebotsdateien.
+
+```bash
+cd app
+composer install
+composer validate --strict
+composer test
+```
+
+PHP-Syntax und JavaScript-Syntax können zusätzlich geprüft werden:
+
+```bash
+find app -path app/vendor -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+find app/public/assets -name '*.js' -print0 | xargs -0 -n1 node --check
+```
+
+Dieselben Prüfungen laufen über den GitHub-Actions-Workflow `Quality`.
 
 ## Entwicklung
 

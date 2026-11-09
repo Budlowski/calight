@@ -1,0 +1,7 @@
+.git
+.github
+data
+database
+app/vendor
+app/var/*
+!app/var/.gitkeep

@@ -1,9 +1,11 @@
 {
     "name": "handwerk/kalkulationssoftware",
     "description": "Selbst gehostete Kalkulationssoftware fuer einen Elektrohandwerksbetrieb",
+    "license": "AGPL-3.0-only",
     "type": "project",
     "require": {
         "php": "^8.4",
+        "ext-iconv": "*",
         "ext-json": "*",
         "ext-mbstring": "*",
         "ext-pdo": "*",

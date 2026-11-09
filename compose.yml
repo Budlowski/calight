@@ -1,0 +1,20 @@
+services:
+  calight:
+    build:
+      context: .
+    restart: unless-stopped
+    ports:
+      - "${CALIGHT_PORT:-8085}:80"
+    environment:
+      APP_DATABASE_PATH: /var/www/data/database/app.sqlite
+      APP_OFFERS_PATH: /var/www/data/offers
+      APP_DOCUMENTS_PATH: /var/www/data/documents
+      APP_TEMPLATES_PATH: /var/www/data/templates
+      APP_SESSION_NAME: calight_session
+      APP_SECURE_COOKIES: "${APP_SECURE_COOKIES:-0}"
+      APP_TIMEZONE: "${APP_TIMEZONE:-Europe/Berlin}"
+    volumes:
+      - calight-data:/var/www/data
+
+volumes:
+  calight-data:
