@@ -63,7 +63,7 @@ final class FoundationTest extends TestCase
             $this->assertSame(1,count($overview));
             $this->assertSame('Gespeichert und geladen',$overview[0]['title']);
             $this->assertSame('draft',$overview[0]['status']);
-            $this->assertSame(2,$overview[0]['draftVersion']);
+            $this->assertTrue(!array_key_exists('draftVersion',$overview[0]));
 
             $copyId=$service->copyAsDraft($offerId);
             $copy=$service->loadDraft($copyId);

@@ -112,7 +112,8 @@ final readonly class OfferCalculator
             $positionType=$node['positionType']??'normal';
             $incomplete=$components===[];
             $totals['positionCount']++;
-            $status=in_array($node['workStatus']??'open',['open','in_progress','done'],true)?$node['workStatus']:'open';
+            $status=(string)($node['workStatus']??'open');
+            if(!in_array($status,['open','in_progress','done'],true))$status='open';
             $totals[$status==='done'?'statusDone':($status==='in_progress'?'statusInProgress':'statusOpen')]++;
             if($manual!==null)$totals['manualPriceCount']++;
             if($incomplete){$totals['incompleteCount']++;if($positionType==='normal')$totals['includedIncomplete']++;}
