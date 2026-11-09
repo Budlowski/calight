@@ -387,6 +387,7 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .offer-position-node > summary { border-left: 3px solid #c1ccd3; background: white; }
 .offer-position-node[open] { margin-top: 0; margin-bottom: 50px; }
 .offer-position-node[open] > summary { border-left-color: #7c97a8; background: #f8fafb; }
+.offer-position-node.offer-calculation-incomplete > summary { box-shadow: inset 4px 0 #d3a52a; }
 .offer-status-filter select { min-height: var(--control-height); }
 .offer-progress { display: grid; min-width: 190px; gap: 3px; color: var(--muted); font-size: 11px; text-align: right; white-space: nowrap; }
 .offer-progress-track { display: block; height: 4px; overflow: hidden; border-radius: 3px; background: #dfe5e9; }
@@ -407,11 +408,15 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .offer-analysis-metric.is-total { margin-top: 2px; border-top: 2px solid #aebfca; font-size: 15px; }
 .offer-analysis-metric.is-negative strong { color: var(--danger); }
 .offer-analysis-metric.is-warning strong { color: #866500; }
+.analysis-filter-link { padding: 0; border: 0; border-bottom: 1px dotted currentColor; background: transparent; color: #866500; cursor: pointer; font: inherit; font-weight: 700; }
+.offer-incomplete-filter { width: 100%; cursor: pointer; text-align: left; }
+.offer-incomplete-filter strong, .offer-incomplete-filter span { display: block; }
+.offer-incomplete-filter span { margin-top: 2px; font-size: var(--font-small); }
 .offer-analysis-bar-row { display: grid; grid-template-columns: 105px minmax(80px, 1fr) minmax(120px, auto); align-items: center; gap: var(--space-2); padding: 4px 0; font-size: var(--font-small); }
 .offer-analysis-bar-row > strong { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .offer-analysis-bar-row small { color: var(--muted); font-weight: 400; }
 .offer-analysis-bar, .offer-economy-bar, .offer-status-stack { display: flex; height: 12px; overflow: hidden; border-radius: 6px; background: #e5eaed; }
-.offer-analysis-bar i { display: block; height: 100%; min-width: 0; }
+.offer-analysis-bar i, .offer-economy-bar i { display: block; height: 100%; min-width: 0; flex: 0 0 auto; }
 .offer-analysis-bar .material { background: #397da6; }
 .offer-analysis-bar .labor { background: #9b6a32; }
 .offer-analysis-bar .external { background: #6d5c9c; }
@@ -419,16 +424,119 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .offer-economy-bar { height: 18px; margin: 10px 0; }
 .offer-economy-bar .costs, .offer-analysis-legend i.costs { background: #65869a; }
 .offer-economy-bar .margin, .offer-analysis-legend i.margin { background: #4d9255; }
+.offer-economy-bar .unknown, .offer-analysis-legend i.unknown { background: repeating-linear-gradient(135deg, #d9dfe3 0, #d9dfe3 5px, #eef1f3 5px, #eef1f3 10px); }
 .offer-analysis-legend { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); color: var(--muted); font-size: 11px; }
 .offer-analysis-legend > span, .offer-analysis-legend > button { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: inherit; font: inherit; }
 .offer-analysis-legend > button { padding: 2px; cursor: pointer; }
 .offer-analysis-legend i { width: 9px; height: 9px; border-radius: 2px; }
 .offer-analysis-legend .negative { color: var(--danger); }
 .offer-status-stack { height: 18px; margin: 10px 0; }
-.offer-status-stack button { min-width: 0; padding: 0; border: 0; cursor: pointer; }
+.offer-status-stack button { min-width: 0; flex: 0 0 auto; padding: 0; border: 0; cursor: pointer; }
 .offer-status-stack .open, .offer-analysis-legend i.open { background: #aeb8bf; }
 .offer-status-stack .progress, .offer-analysis-legend i.progress { background: #dfb62f; }
 .offer-status-stack .done, .offer-analysis-legend i.done { background: #4d9255; }
+/* CSP-sichere Balkenbreiten: keine geblockten Inline-Styles im Angebotseditor. */
+.bar-pct-0 { width: 0%; flex-basis: 0%; }
+.bar-pct-1 { width: 1%; flex-basis: 1%; }
+.bar-pct-2 { width: 2%; flex-basis: 2%; }
+.bar-pct-3 { width: 3%; flex-basis: 3%; }
+.bar-pct-4 { width: 4%; flex-basis: 4%; }
+.bar-pct-5 { width: 5%; flex-basis: 5%; }
+.bar-pct-6 { width: 6%; flex-basis: 6%; }
+.bar-pct-7 { width: 7%; flex-basis: 7%; }
+.bar-pct-8 { width: 8%; flex-basis: 8%; }
+.bar-pct-9 { width: 9%; flex-basis: 9%; }
+.bar-pct-10 { width: 10%; flex-basis: 10%; }
+.bar-pct-11 { width: 11%; flex-basis: 11%; }
+.bar-pct-12 { width: 12%; flex-basis: 12%; }
+.bar-pct-13 { width: 13%; flex-basis: 13%; }
+.bar-pct-14 { width: 14%; flex-basis: 14%; }
+.bar-pct-15 { width: 15%; flex-basis: 15%; }
+.bar-pct-16 { width: 16%; flex-basis: 16%; }
+.bar-pct-17 { width: 17%; flex-basis: 17%; }
+.bar-pct-18 { width: 18%; flex-basis: 18%; }
+.bar-pct-19 { width: 19%; flex-basis: 19%; }
+.bar-pct-20 { width: 20%; flex-basis: 20%; }
+.bar-pct-21 { width: 21%; flex-basis: 21%; }
+.bar-pct-22 { width: 22%; flex-basis: 22%; }
+.bar-pct-23 { width: 23%; flex-basis: 23%; }
+.bar-pct-24 { width: 24%; flex-basis: 24%; }
+.bar-pct-25 { width: 25%; flex-basis: 25%; }
+.bar-pct-26 { width: 26%; flex-basis: 26%; }
+.bar-pct-27 { width: 27%; flex-basis: 27%; }
+.bar-pct-28 { width: 28%; flex-basis: 28%; }
+.bar-pct-29 { width: 29%; flex-basis: 29%; }
+.bar-pct-30 { width: 30%; flex-basis: 30%; }
+.bar-pct-31 { width: 31%; flex-basis: 31%; }
+.bar-pct-32 { width: 32%; flex-basis: 32%; }
+.bar-pct-33 { width: 33%; flex-basis: 33%; }
+.bar-pct-34 { width: 34%; flex-basis: 34%; }
+.bar-pct-35 { width: 35%; flex-basis: 35%; }
+.bar-pct-36 { width: 36%; flex-basis: 36%; }
+.bar-pct-37 { width: 37%; flex-basis: 37%; }
+.bar-pct-38 { width: 38%; flex-basis: 38%; }
+.bar-pct-39 { width: 39%; flex-basis: 39%; }
+.bar-pct-40 { width: 40%; flex-basis: 40%; }
+.bar-pct-41 { width: 41%; flex-basis: 41%; }
+.bar-pct-42 { width: 42%; flex-basis: 42%; }
+.bar-pct-43 { width: 43%; flex-basis: 43%; }
+.bar-pct-44 { width: 44%; flex-basis: 44%; }
+.bar-pct-45 { width: 45%; flex-basis: 45%; }
+.bar-pct-46 { width: 46%; flex-basis: 46%; }
+.bar-pct-47 { width: 47%; flex-basis: 47%; }
+.bar-pct-48 { width: 48%; flex-basis: 48%; }
+.bar-pct-49 { width: 49%; flex-basis: 49%; }
+.bar-pct-50 { width: 50%; flex-basis: 50%; }
+.bar-pct-51 { width: 51%; flex-basis: 51%; }
+.bar-pct-52 { width: 52%; flex-basis: 52%; }
+.bar-pct-53 { width: 53%; flex-basis: 53%; }
+.bar-pct-54 { width: 54%; flex-basis: 54%; }
+.bar-pct-55 { width: 55%; flex-basis: 55%; }
+.bar-pct-56 { width: 56%; flex-basis: 56%; }
+.bar-pct-57 { width: 57%; flex-basis: 57%; }
+.bar-pct-58 { width: 58%; flex-basis: 58%; }
+.bar-pct-59 { width: 59%; flex-basis: 59%; }
+.bar-pct-60 { width: 60%; flex-basis: 60%; }
+.bar-pct-61 { width: 61%; flex-basis: 61%; }
+.bar-pct-62 { width: 62%; flex-basis: 62%; }
+.bar-pct-63 { width: 63%; flex-basis: 63%; }
+.bar-pct-64 { width: 64%; flex-basis: 64%; }
+.bar-pct-65 { width: 65%; flex-basis: 65%; }
+.bar-pct-66 { width: 66%; flex-basis: 66%; }
+.bar-pct-67 { width: 67%; flex-basis: 67%; }
+.bar-pct-68 { width: 68%; flex-basis: 68%; }
+.bar-pct-69 { width: 69%; flex-basis: 69%; }
+.bar-pct-70 { width: 70%; flex-basis: 70%; }
+.bar-pct-71 { width: 71%; flex-basis: 71%; }
+.bar-pct-72 { width: 72%; flex-basis: 72%; }
+.bar-pct-73 { width: 73%; flex-basis: 73%; }
+.bar-pct-74 { width: 74%; flex-basis: 74%; }
+.bar-pct-75 { width: 75%; flex-basis: 75%; }
+.bar-pct-76 { width: 76%; flex-basis: 76%; }
+.bar-pct-77 { width: 77%; flex-basis: 77%; }
+.bar-pct-78 { width: 78%; flex-basis: 78%; }
+.bar-pct-79 { width: 79%; flex-basis: 79%; }
+.bar-pct-80 { width: 80%; flex-basis: 80%; }
+.bar-pct-81 { width: 81%; flex-basis: 81%; }
+.bar-pct-82 { width: 82%; flex-basis: 82%; }
+.bar-pct-83 { width: 83%; flex-basis: 83%; }
+.bar-pct-84 { width: 84%; flex-basis: 84%; }
+.bar-pct-85 { width: 85%; flex-basis: 85%; }
+.bar-pct-86 { width: 86%; flex-basis: 86%; }
+.bar-pct-87 { width: 87%; flex-basis: 87%; }
+.bar-pct-88 { width: 88%; flex-basis: 88%; }
+.bar-pct-89 { width: 89%; flex-basis: 89%; }
+.bar-pct-90 { width: 90%; flex-basis: 90%; }
+.bar-pct-91 { width: 91%; flex-basis: 91%; }
+.bar-pct-92 { width: 92%; flex-basis: 92%; }
+.bar-pct-93 { width: 93%; flex-basis: 93%; }
+.bar-pct-94 { width: 94%; flex-basis: 94%; }
+.bar-pct-95 { width: 95%; flex-basis: 95%; }
+.bar-pct-96 { width: 96%; flex-basis: 96%; }
+.bar-pct-97 { width: 97%; flex-basis: 97%; }
+.bar-pct-98 { width: 98%; flex-basis: 98%; }
+.bar-pct-99 { width: 99%; flex-basis: 99%; }
+.bar-pct-100 { width: 100%; flex-basis: 100%; }
 .offer-level-label { width: fit-content; padding: 2px 6px; border: 1px solid #9fb5c4; border-radius: 9px; color: #385d76; background: #f6fafc; font-size: 10px; font-weight: 750; letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; }
 .position-label { border-color: #c4cdd3; color: #586670; background: #f4f6f7; }
 .offer-node-actions { opacity: .7; transition: opacity .15s ease; }

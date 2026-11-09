@@ -45,7 +45,13 @@ final class OfferCalculatorTest extends TestCase
         $this->assertSame('60.00',$result['calculation']['analysis']['totalCosts']);
         $this->assertSame('0.500',$result['calculation']['analysis']['laborHours']);
         $this->assertSame(false,$result['calculation']['analysis']['complete']);
+        $this->assertSame(5,$result['calculation']['analysis']['positionCount']);
+        $this->assertSame(3,$result['calculation']['analysis']['includedPositionCount']);
+        $this->assertSame(2,$result['calculation']['analysis']['optionalPositionCount']);
+        $this->assertSame(3,$result['calculation']['analysis']['incompleteCount']);
         $this->assertSame(1,$result['calculation']['analysis']['includedIncompleteCount']);
+        $this->assertSame(2,$result['calculation']['analysis']['optionalIncompleteCount']);
+        $this->assertSame('80.00',$result['calculation']['analysis']['costShareOfNetPercent']);
         $this->assertSame(null,$result['calculation']['analysis']['contributionMargin']);
         $this->assertSame(null,$result['nodes'][1]['calculation']);
     }
@@ -78,9 +84,29 @@ final class OfferCalculatorTest extends TestCase
         $this->assertSame('-122.22',$analysis['contributionMarginPercent']);
         $this->assertSame('-55.00',$analysis['costMarkupPercent']);
         $this->assertSame(2,$analysis['positionCount']);
+        $this->assertSame(1,$analysis['includedPositionCount']);
+        $this->assertSame(1,$analysis['optionalPositionCount']);
         $this->assertSame(1,$analysis['statusDone']);
         $this->assertSame(1,$analysis['statusOpen']);
         $this->assertSame(2,$analysis['manualPriceCount']);
+        $this->assertSame(true,$analysis['complete']);
+    }
+
+    public function testIncompletePositionBelowOptionalTitleDoesNotInvalidateRegularEconomics(): void
+    {
+        $offer=['nodes'=>[[
+            'id'=>'optional','type'=>'title','titleType'=>'alternative','name'=>'Option','description'=>'','children'=>[[
+                'id'=>'position','type'=>'position','positionType'=>'normal','workStatus'=>'open','shortText'=>'Option','longText'=>'',
+                'quantity'=>'1.000','unit'=>'Stk.','manualUnitPrice'=>'100.00','components'=>[],
+            ]],
+        ]]];
+        $analysis=(new OfferCalculator(new PriceCalculator()))->calculate($offer)['calculation']['analysis'];
+        $this->assertSame(1,$analysis['positionCount']);
+        $this->assertSame(0,$analysis['includedPositionCount']);
+        $this->assertSame(1,$analysis['optionalPositionCount']);
+        $this->assertSame(1,$analysis['incompleteCount']);
+        $this->assertSame(0,$analysis['includedIncompleteCount']);
+        $this->assertSame(1,$analysis['optionalIncompleteCount']);
         $this->assertSame(true,$analysis['complete']);
     }
 

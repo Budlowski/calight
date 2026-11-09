@@ -49,15 +49,18 @@ final readonly class OfferCalculator
                 'laborCostPercent'=>$costs->isZero()?'0.00':$this->percent($totals['laborCosts'],$costs),
                 'externalCostPercent'=>$costs->isZero()?'0.00':$this->percent($totals['externalCosts'],$costs),
                 'otherCostPercent'=>$costs->isZero()?'0.00':$this->percent($totals['otherCosts'],$costs),
-                'costShareOfNetPercent'=>$complete&&!$net->isZero()?$this->percent($costs,$net):null,
+                'costShareOfNetPercent'=>!$net->isZero()?$this->percent($costs,$net):null,
                 'contributionShareOfNetPercent'=>$contribution!==null&&!$net->isZero()?$this->percent($contribution,$net):null,
                 'positionCount'=>$totals['positionCount'],
+                'includedPositionCount'=>$totals['includedPositionCount'],
+                'optionalPositionCount'=>$totals['positionCount']-$totals['includedPositionCount'],
                 'statusOpen'=>$totals['statusOpen'],
                 'statusInProgress'=>$totals['statusInProgress'],
                 'statusDone'=>$totals['statusDone'],
                 'manualPriceCount'=>$totals['manualPriceCount'],
                 'incompleteCount'=>$totals['incompleteCount'],
                 'includedIncompleteCount'=>$totals['includedIncomplete'],
+                'optionalIncompleteCount'=>$totals['incompleteCount']-$totals['includedIncomplete'],
             ],
         ];
         return $offer;
@@ -83,6 +86,7 @@ final readonly class OfferCalculator
                     $contribution[$titleType==='bedarf'?'demand':'alternative']=$childTotals['calculated'];
                     $contribution['included']=BigDecimal::zero();
                     foreach(['materialCosts','laborCosts','externalCosts','otherCosts','laborHours'] as $key)$contribution[$key]=BigDecimal::zero();
+                    $contribution['includedPositionCount']=0;
                     $contribution['includedIncomplete']=0;
                 }
                 $node['calculation']=[
@@ -95,7 +99,7 @@ final readonly class OfferCalculator
                 ];
                 $totals['calculated']=$totals['calculated']->plus($childTotals['calculated']);
                 foreach(['included','regular','demand','alternative','materialCosts','laborCosts','externalCosts','otherCosts','laborHours'] as $key)$totals[$key]=$totals[$key]->plus($contribution[$key]);
-                foreach(['positionCount','statusOpen','statusInProgress','statusDone','manualPriceCount','incompleteCount','includedIncomplete'] as $key)$totals[$key]+=$contribution[$key];
+                foreach(['positionCount','includedPositionCount','statusOpen','statusInProgress','statusDone','manualPriceCount','incompleteCount','includedIncomplete'] as $key)$totals[$key]+=$contribution[$key];
                 continue;
             }
             if(($node['type']??null)==='text'){$node['calculation']=null;continue;}
@@ -112,6 +116,7 @@ final readonly class OfferCalculator
             $totals[$status==='done'?'statusDone':($status==='in_progress'?'statusInProgress':'statusOpen')]++;
             if($manual!==null)$totals['manualPriceCount']++;
             if($incomplete){$totals['incompleteCount']++;if($positionType==='normal')$totals['includedIncomplete']++;}
+            if($positionType==='normal')$totals['includedPositionCount']++;
             if($components===[]&&$manual===null){$node['calculation']=null;continue;}
             $unit=$this->calculator->calculatePosition('1.000',$components,$manual);
             $position=$this->calculator->calculatePosition((string)$node['quantity'],$components,$manual);
@@ -145,7 +150,7 @@ final readonly class OfferCalculator
         return[
             'calculated'=>BigDecimal::zero(),'included'=>BigDecimal::zero(),'regular'=>BigDecimal::zero(),'demand'=>BigDecimal::zero(),'alternative'=>BigDecimal::zero(),
             'materialCosts'=>BigDecimal::zero(),'laborCosts'=>BigDecimal::zero(),'externalCosts'=>BigDecimal::zero(),'otherCosts'=>BigDecimal::zero(),'laborHours'=>BigDecimal::zero(),
-            'positionCount'=>0,'statusOpen'=>0,'statusInProgress'=>0,'statusDone'=>0,'manualPriceCount'=>0,'incompleteCount'=>0,'includedIncomplete'=>0,
+            'positionCount'=>0,'includedPositionCount'=>0,'statusOpen'=>0,'statusInProgress'=>0,'statusDone'=>0,'manualPriceCount'=>0,'incompleteCount'=>0,'includedIncomplete'=>0,
         ];
     }
 

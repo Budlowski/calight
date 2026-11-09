@@ -38,5 +38,17 @@
     return false;
   }
 
-  globalThis.CalightOfferStatus = { normalized, derived, progress, visible };
+  function percentageClass(value) {
+    const numeric = Number(value) || 0;
+    const rounded = numeric > 0 && numeric < 1 ? 1 : Math.round(numeric);
+    return `bar-pct-${Math.max(0, Math.min(100, rounded))}`;
+  }
+
+  globalThis.CalightOfferStatus = {
+    normalized,
+    derived,
+    progress,
+    visible,
+    percentageClass,
+  };
 })();

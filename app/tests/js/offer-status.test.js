@@ -46,5 +46,21 @@ assert(
   !CalightOfferStatus.visible(nodes[0].children[1], "done"),
   "Titel ohne passende Position bleibt im Filter sichtbar.",
 );
+assert(
+  CalightOfferStatus.percentageClass(0) === "bar-pct-0",
+  "Nullanteil erhält eine falsche Balkenklasse.",
+);
+assert(
+  CalightOfferStatus.percentageClass(0.2) === "bar-pct-1",
+  "Sehr kleine Anteile bleiben unsichtbar.",
+);
+assert(
+  CalightOfferStatus.percentageClass(54.4) === "bar-pct-54",
+  "Prozentanteil wird falsch gerundet.",
+);
+assert(
+  CalightOfferStatus.percentageClass(140) === "bar-pct-100",
+  "Balkenbreite wird nicht begrenzt.",
+);
 
 console.log("offer status tests passed");

@@ -26,6 +26,7 @@
     workStatusFilter = "",
     searchPreviousOpen = null,
     titlePositionCounts = new Map(),
+    filteredNodeIds = new Set(),
     savedHistoryState = "",
     historyGroupTimer = 0;
   const openNodes = new Set(),
@@ -82,7 +83,7 @@
     );
   toolbar.insertAdjacentHTML(
     "beforebegin",
-    '<div class="offer-search"><label><span class="visually-hidden">Angebot durchsuchen</span><input type="search" data-offer-search placeholder="Titel und Positionen durchsuchen"></label><label class="offer-status-filter"><span class="visually-hidden">Bearbeitungsstatus filtern</span><select data-work-status-filter><option value="">Alle Bearbeitungsstatus</option><option value="open">Offen</option><option value="in_progress">In Bearbeitung</option><option value="done">Fertig</option></select></label><span data-search-count>Keine Suche</span><div class="offer-progress" data-offer-progress></div><div class="offer-search-results" data-search-results hidden></div></div>',
+    '<div class="offer-search"><label><span class="visually-hidden">Angebot durchsuchen</span><input type="search" data-offer-search placeholder="Titel und Positionen durchsuchen"></label><label class="offer-status-filter"><span class="visually-hidden">Positionen filtern</span><select data-work-status-filter><option value="">Alle Positionen</option><optgroup label="Bearbeitungsstatus"><option value="open">Offen</option><option value="in_progress">In Bearbeitung</option><option value="done">Fertig</option></optgroup><optgroup label="Kalkulationsqualität"><option value="incomplete">Kostenbasis unvollständig</option><option value="incomplete_included">Unvollständig und regulär enthalten</option></optgroup></select></label><span data-search-count>Keine Suche</span><div class="offer-progress" data-offer-progress></div><div class="offer-search-results" data-search-results hidden></div></div>',
   );
   structureScroll.insertAdjacentHTML(
     "afterend",
@@ -500,7 +501,7 @@
   function renderNodes(nodes, parent, numbers, depth = 0) {
     let html = workStatusFilter ? "" : dropZone(parent, 0);
     nodes.forEach((n, i) => {
-      if (!CalightOfferStatus.visible(n, workStatusFilter)) return;
+      if (workStatusFilter && !filteredNodeIds.has(n.id)) return;
       const no = numbers.get(n.id),
         level = depth === 0 ? "Titel" : "Untertitel",
         open = openNodes.has(n.id) ? "open" : "";
@@ -517,7 +518,7 @@
       } else if (n.type === "text") {
         html += `<details class="offer-node offer-text-node" data-node-id="${n.id}" data-depth="${depth}" ${open}><summary>${dragHandle(n)}<span class="offer-level-label text-label">Text</span><strong data-node-label>${esc(n.title || n.text)}</strong>${controls(n, i, nodes.length)}</summary><div class="offer-node-editor offer-text-editor"><label>Optionale Überschrift<input data-field="title" value="${esc(n.title)}"></label><label>Text<textarea data-field="text" rows="4">${esc(n.text)}</textarea></label></div></details>`;
       } else {
-        html += `<details class="offer-node offer-position-node offer-kind-${esc(n.positionType)}" data-node-id="${n.id}" data-depth="${depth}" ${open}><summary>${dragHandle(n, no)}<span class="offer-level-label position-label">Position</span><span class="offer-position-name"><strong data-node-label>${esc(n.shortText)}</strong>${trailingTextBadge(n)}</span><span class="offer-position-meta"><span class="offer-position-kind">${n.positionType === "normal" ? "Normal" : n.positionType === "bedarf" ? "Bedarf" : "Alternative"}</span><span class="offer-price-source">${n.manualUnitPrice !== null ? "Eigener EP" : "Kalkuliert"}</span><select class="offer-work-status work-status-${esc(n.workStatus)}" data-work-status aria-label="Bearbeitungsstatus"><option value="open" ${n.workStatus === "open" ? "selected" : ""}>Offen</option><option value="in_progress" ${n.workStatus === "in_progress" ? "selected" : ""}>In Bearbeitung</option><option value="done" ${n.workStatus === "done" ? "selected" : ""}>Fertig</option></select></span><span class="offer-position-summary">${esc(dec(n.quantity))} ${esc(n.unit)}</span><span class="offer-unit-price">${euro(n.calculation?.effectiveUnitPrice)}</span><strong class="offer-gross-price">${euro(n.calculation?.positionTotal)}</strong>${controls(n, i, nodes.length)}</summary><div class="offer-node-editor offer-position-editor">${positionEditor(n)}</div></details>`;
+        html += `<details class="offer-node offer-position-node offer-kind-${esc(n.positionType)}${n.components.length === 0 ? " offer-calculation-incomplete" : ""}" data-node-id="${n.id}" data-depth="${depth}" ${open}><summary>${dragHandle(n, no)}<span class="offer-level-label position-label">Position</span><span class="offer-position-name"><strong data-node-label>${esc(n.shortText)}</strong>${trailingTextBadge(n)}</span><span class="offer-position-meta"><span class="offer-position-kind">${n.positionType === "normal" ? "Normal" : n.positionType === "bedarf" ? "Bedarf" : "Alternative"}</span><span class="offer-price-source">${n.manualUnitPrice !== null ? "Eigener EP" : "Kalkuliert"}</span><select class="offer-work-status work-status-${esc(n.workStatus)}" data-work-status aria-label="Bearbeitungsstatus"><option value="open" ${n.workStatus === "open" ? "selected" : ""}>Offen</option><option value="in_progress" ${n.workStatus === "in_progress" ? "selected" : ""}>In Bearbeitung</option><option value="done" ${n.workStatus === "done" ? "selected" : ""}>Fertig</option></select></span><span class="offer-position-summary">${esc(dec(n.quantity))} ${esc(n.unit)}</span><span class="offer-unit-price">${euro(n.calculation?.effectiveUnitPrice)}</span><strong class="offer-gross-price">${euro(n.calculation?.positionTotal)}</strong>${controls(n, i, nodes.length)}</summary><div class="offer-node-editor offer-position-editor">${positionEditor(n)}</div></details>`;
       }
       if (!workStatusFilter) html += dropZone(parent, i + 1);
     });
@@ -554,15 +555,46 @@
         current && library.trailingTexts.some((item) => item.id === current.id);
     return `<option value="">Kein Schlepptext</option>${library.trailingTexts.map((item) => `<option value="${item.id}" ${current?.id === item.id ? "selected" : ""}>${esc(item.code)} · ${esc(item.name)}</option>`).join("")}${current && !known ? `<option value="__snapshot" selected>${esc(current.code)} · ${esc(current.name)} (Snapshot)</option>` : ""}`;
   }
+  function filteredIds(nodes, inheritedIncluded = true) {
+    const ids = new Set();
+    for (const node of nodes) {
+      if (node.type === "position") {
+        const included = inheritedIncluded && node.positionType === "normal";
+        const matches =
+          workStatusFilter === "incomplete"
+            ? node.components.length === 0
+            : workStatusFilter === "incomplete_included"
+              ? included && node.components.length === 0
+              : CalightOfferStatus.normalized(node.workStatus) ===
+                workStatusFilter;
+        if (matches) ids.add(node.id);
+        continue;
+      }
+      if (node.type !== "title") continue;
+      const nested = filteredIds(
+        node.children,
+        inheritedIncluded && node.titleType === "normal",
+      );
+      if (nested.size) ids.add(node.id);
+      for (const id of nested) ids.add(id);
+    }
+    return ids;
+  }
   function render() {
     if (!offer) return;
     titlePositionCounts = CalightOfferSearch.positionCounts(offer.nodes);
+    filteredNodeIds = workStatusFilter ? filteredIds(offer.nodes) : new Set();
+    if (workStatusFilter.startsWith("incomplete"))
+      walk(offer.nodes, (node) => {
+        if (node.type === "title" && filteredNodeIds.has(node.id))
+          openNodes.add(node.id);
+      });
     const rendered = offer.nodes.length
       ? renderNodes(offer.nodes, "", numbering(offer.nodes))
       : "";
     tree.innerHTML =
       rendered ||
-      `<div class="card offer-empty"><strong>${workStatusFilter ? "Keine Position mit diesem Bearbeitungsstatus." : "Noch keine Angebotsstruktur."}</strong></div>`;
+      `<div class="card offer-empty"><strong>${workStatusFilter ? "Keine Position entspricht diesem Filter." : "Noch keine Angebotsstruktur."}</strong></div>`;
     tree
       .querySelectorAll("[data-depth]")
       .forEach((row) =>
@@ -589,7 +621,7 @@
   }
   function updateProgress() {
     const progress = CalightOfferStatus.progress(offer.nodes);
-    progressOutput.innerHTML = `<span>${progress.done} von ${progress.total} Positionen fertig</span><span class="offer-progress-track" aria-hidden="true"><i style="width:${progress.percent}%"></i></span>`;
+    progressOutput.innerHTML = `<span>${progress.done} von ${progress.total} Positionen fertig</span><span class="offer-progress-track" aria-hidden="true"><i class="${percentClass(progress.percent)}"></i></span>`;
   }
   function updateOfferTotal() {
     let out = document.querySelector("#offer-summary-footer");
@@ -613,9 +645,11 @@
   function metric(label, value, css = "") {
     return `<div class="offer-analysis-metric ${css}"><span>${label}</span><strong>${value}</strong></div>`;
   }
+  function percentClass(value) {
+    return CalightOfferStatus.percentageClass(value);
+  }
   function costBar(label, value, percent, css) {
-    const width = Math.max(0, Math.min(100, Number(percent) || 0));
-    return `<div class="offer-analysis-bar-row"><span>${label}</span><span class="offer-analysis-bar"><i class="${css}" style="width:${width}%"></i></span><strong>${euro(value)} <small>${number(percent)} %</small></strong></div>`;
+    return `<div class="offer-analysis-bar-row"><span>${label}</span><span class="offer-analysis-bar"><i class="${css} ${percentClass(percent)}"></i></span><strong>${euro(value)} <small>${number(percent)} %</small></strong></div>`;
   }
   function calculationOverview(calculation, open = false) {
     const analysis = calculation.analysis;
@@ -628,22 +662,34 @@
         : 0,
       complete = analysis.complete === true,
       contribution = Number(analysis.contributionMargin ?? 0),
-      costsShare = Math.max(
-        0,
-        Math.min(100, Number(analysis.costShareOfNetPercent) || 0),
-      ),
-      contributionShare = Math.max(
-        0,
-        Math.min(100, Number(analysis.contributionShareOfNetPercent) || 0),
-      );
+      costsShare = Number(analysis.costShareOfNetPercent) || 0,
+      contributionShare = Number(analysis.contributionShareOfNetPercent) || 0,
+      incomplete = Number(analysis.incompleteCount) || 0,
+      includedIncomplete = Number(analysis.includedIncompleteCount) || 0,
+      optionalIncomplete = Number(analysis.optionalIncompleteCount) || 0,
+      capturedCostLabel = complete
+        ? "Gesamte kalkulierte Kosten"
+        : "Bisher erfasste kalkulierte Kosten";
     const finance = complete
       ? `${metric("Deckungsbeitrag", euro(analysis.contributionMargin), contribution < 0 ? "is-negative" : "")}${metric("Deckungsbeitragsquote", `${number(analysis.contributionMarginPercent)} %`, contribution < 0 ? "is-negative" : "")}${metric("Aufschlag auf Kosten", analysis.costMarkupPercent === null ? "–" : `${number(analysis.costMarkupPercent)} %`, contribution < 0 ? "is-negative" : "")}`
       : `${metric("Deckungsbeitrag", "Nicht belastbar", "is-warning")}${metric("Deckungsbeitragsquote", "–")}${metric("Aufschlag auf Kosten", "–")}`;
-    const economyBar =
-      complete && Number(calculation.netTotal) > 0
-        ? `<div class="offer-economy-bar" aria-label="Kosten und Deckungsbeitrag"><i class="costs" style="width:${costsShare}%"></i>${contribution >= 0 ? `<i class="margin" style="width:${contributionShare}%"></i>` : ""}</div><div class="offer-analysis-legend"><span><i class="costs"></i>Kosten ${number(analysis.costShareOfNetPercent)} %</span>${contribution >= 0 ? `<span><i class="margin"></i>Deckungsbeitrag ${number(analysis.contributionShareOfNetPercent)} %</span>` : '<span class="negative">Kosten übersteigen die Angebotssumme</span>'}</div>`
-        : '<p class="muted">Wirtschaftlichkeitsbalken erst bei vollständiger Kostenbasis und positiver Angebotssumme verfügbar.</p>';
-    return `<details class="offer-calculation-overview" ${open ? "open" : ""}><summary><span>Kalkulationsübersicht</span><small>Interne Kosten, Wirtschaftlichkeit und Bearbeitungsstand</small></summary><div class="offer-analysis-content">${!complete ? `<div class="notice">${analysis.includedIncompleteCount} enthaltene Position${Number(analysis.includedIncompleteCount) === 1 ? " besitzt" : "en besitzen"} keine vollständige Kostenbasis. Wirtschaftlichkeitskennzahlen werden deshalb nicht ausgewiesen.</div>` : ""}<div class="offer-analysis-grid"><section><h3>Kostenübersicht</h3>${metric("Material-Einkaufskosten", euro(analysis.materialCosts))}${metric("Kalkulierte Lohnkosten", euro(analysis.laborCosts))}${metric("Fremdleistungskosten", euro(analysis.externalCosts))}${metric("Sonstige Kosten", euro(analysis.otherCosts))}${metric("Gesamte kalkulierte Kosten", euro(analysis.totalCosts), "is-total")}${metric("Kalkulierte Arbeitsstunden", `${number(analysis.laborHours, 3)} h`)}</section><section><h3>Wirtschaftlichkeit</h3>${metric("Positionssumme netto", euro(calculation.subtotalNet))}${metric("Rabatt / Zuschlag", euro(calculation.adjustmentSigned))}${metric("Angebotssumme netto", euro(calculation.netTotal), "is-total")}${metric("Gesamte kalkulierte Kosten", euro(analysis.totalCosts))}${finance}${Number(calculation.demandSubtotal) || Number(calculation.alternativeSubtotal) ? metric("Optionales Angebotsvolumen", euro(Number(calculation.demandSubtotal || 0) + Number(calculation.alternativeSubtotal || 0))) : ""}</section><section><h3>Kalkulationsqualität</h3>${metric("Positionen gesamt", analysis.positionCount)}${metric("Offen / In Bearbeitung / Fertig", `${analysis.statusOpen} / ${analysis.statusInProgress} / ${analysis.statusDone}`)}${metric("Manueller Verkaufspreis", analysis.manualPriceCount)}${metric("Unvollständige Kalkulation", analysis.incompleteCount, Number(analysis.incompleteCount) ? "is-warning" : "")}${metric("Fertigstellungsgrad", `${number(donePercent)} %`, "is-total")}</section></div><div class="offer-analysis-charts"><section><h3>Kostenverteilung</h3>${costBar("Material", analysis.materialCosts, analysis.materialCostPercent, "material")}${costBar("Lohn", analysis.laborCosts, analysis.laborCostPercent, "labor")}${costBar("Fremdleistungen", analysis.externalCosts, analysis.externalCostPercent, "external")}${costBar("Sonstige", analysis.otherCosts, analysis.otherCostPercent, "other")}</section><section><h3>Wirtschaftlichkeit</h3>${economyBar}</section><section><h3>Bearbeitungsfortschritt</h3><div class="offer-status-stack"><button class="open" style="width:${openPercent}%" data-summary-status="open" title="Offen: ${analysis.statusOpen}"></button><button class="progress" style="width:${progressPercent}%" data-summary-status="in_progress" title="In Bearbeitung: ${analysis.statusInProgress}"></button><button class="done" style="width:${donePercent}%" data-summary-status="done" title="Fertig: ${analysis.statusDone}"></button></div><div class="offer-analysis-legend"><button data-summary-status="open"><i class="open"></i>Offen ${analysis.statusOpen}</button><button data-summary-status="in_progress"><i class="progress"></i>In Bearbeitung ${analysis.statusInProgress}</button><button data-summary-status="done"><i class="done"></i>Fertig ${analysis.statusDone}</button></div></section></div></div></details>`;
+    let economyBar =
+      '<p class="muted">Für eine Angebotssumme von 0,00 € ist keine Verhältnisdarstellung möglich.</p>';
+    if (Number(calculation.netTotal) > 0) {
+      if (complete) {
+        economyBar = `<div class="offer-economy-bar" aria-label="Kosten und Deckungsbeitrag"><i class="costs ${percentClass(costsShare)}"></i>${contribution >= 0 ? `<i class="margin ${percentClass(contributionShare)}"></i>` : ""}</div><div class="offer-analysis-legend"><span><i class="costs"></i>Kosten ${number(analysis.costShareOfNetPercent)} %</span>${contribution >= 0 ? `<span><i class="margin"></i>Deckungsbeitrag ${number(analysis.contributionShareOfNetPercent)} %</span>` : '<span class="negative">Kosten übersteigen die Angebotssumme</span>'}</div>`;
+      } else {
+        const unknownShare = Math.max(0, 100 - Math.min(100, costsShare));
+        economyBar = `<div class="offer-economy-bar is-incomplete" aria-label="Bisher erfasste Kosten und noch nicht bewertbarer Anteil"><i class="costs ${percentClass(costsShare)}"></i><i class="unknown ${percentClass(unknownShare)}"></i></div><div class="offer-analysis-legend"><span><i class="costs"></i>Erfasste Kosten ${number(analysis.costShareOfNetPercent)} %</span><span><i class="unknown"></i>Restbetrag ist kein ausgewiesener Deckungsbeitrag</span>${costsShare > 100 ? '<span class="negative">Erfasste Kosten übersteigen die Angebotssumme</span>' : ""}</div>`;
+      }
+    }
+    const warning = !complete
+      ? `<button class="notice offer-incomplete-filter" type="button" data-summary-filter="incomplete_included"><strong>${includedIncomplete} regulär enthaltene Position${includedIncomplete === 1 ? " besitzt" : "en besitzen"} keine vollständige Kostenbasis.</strong><span>Zusätzlich sind ${optionalIncomplete} optionale beziehungsweise ausgeschlossene Position${optionalIncomplete === 1 ? " unvollständig" : "en unvollständig"}. Betroffene reguläre Positionen anzeigen.</span></button>`
+      : "";
+    const incompleteMetric = incomplete
+      ? `<button class="analysis-filter-link" type="button" data-summary-filter="incomplete">${incomplete}</button>`
+      : "0";
+    return `<details class="offer-calculation-overview" ${open ? "open" : ""}><summary><span>Kalkulationsübersicht</span><small>Interne Kosten, Wirtschaftlichkeit und Bearbeitungsstand</small></summary><div class="offer-analysis-content">${warning}<div class="offer-analysis-grid"><section><h3>Kostenübersicht</h3>${metric("Material-Einkaufskosten", euro(analysis.materialCosts))}${metric("Kalkulierte Lohnkosten", euro(analysis.laborCosts))}${metric("Fremdleistungskosten", euro(analysis.externalCosts))}${metric("Sonstige Kosten", euro(analysis.otherCosts))}${metric(capturedCostLabel, euro(analysis.totalCosts), "is-total")}${metric("Kalkulierte Arbeitsstunden", `${number(analysis.laborHours, 2)} h`)}</section><section><h3>Wirtschaftlichkeit</h3>${metric("Positionssumme netto", euro(calculation.subtotalNet))}${metric("Rabatt / Zuschlag", euro(calculation.adjustmentSigned))}${metric("Angebotssumme netto", euro(calculation.netTotal), "is-total")}${metric(capturedCostLabel, euro(analysis.totalCosts))}${finance}${Number(calculation.demandSubtotal) || Number(calculation.alternativeSubtotal) ? metric("Optionales Angebotsvolumen", euro(Number(calculation.demandSubtotal || 0) + Number(calculation.alternativeSubtotal || 0))) : ""}</section><section><h3>Kalkulationsqualität</h3>${metric("Positionen gesamt", analysis.positionCount)}${metric("Regulär enthalten / Optional", `${analysis.includedPositionCount} / ${analysis.optionalPositionCount}`)}${metric("Kostenbasis vollständig / Unvollständig", `${total - incomplete} / ${incompleteMetric}`, incomplete ? "is-warning" : "")}${metric("Davon regulär / Optional unvollständig", `${includedIncomplete} / ${optionalIncomplete}`)}${metric("Offen / In Bearbeitung / Fertig", `${analysis.statusOpen} / ${analysis.statusInProgress} / ${analysis.statusDone}`)}${metric("Manueller Verkaufspreis", analysis.manualPriceCount)}${metric("Fertigstellungsgrad aller Positionen", `${number(donePercent)} %`, "is-total")}</section></div><div class="offer-analysis-charts"><section><h3>Kostenverteilung</h3>${costBar("Material", analysis.materialCosts, analysis.materialCostPercent, "material")}${costBar("Lohn", analysis.laborCosts, analysis.laborCostPercent, "labor")}${costBar("Fremdleistungen", analysis.externalCosts, analysis.externalCostPercent, "external")}${costBar("Sonstige", analysis.otherCosts, analysis.otherCostPercent, "other")}</section><section><h3>Wirtschaftlichkeit</h3>${economyBar}</section><section><h3>Bearbeitungsfortschritt <small>Alle Positionen</small></h3><div class="offer-status-stack"><button class="open ${percentClass(openPercent)}" data-summary-status="open" title="Offen: ${analysis.statusOpen}"></button><button class="progress ${percentClass(progressPercent)}" data-summary-status="in_progress" title="In Bearbeitung: ${analysis.statusInProgress}"></button><button class="done ${percentClass(donePercent)}" data-summary-status="done" title="Fertig: ${analysis.statusDone}"></button></div><div class="offer-analysis-legend"><button data-summary-status="open"><i class="open"></i>Offen ${analysis.statusOpen}</button><button data-summary-status="in_progress"><i class="progress"></i>In Bearbeitung ${analysis.statusInProgress}</button><button data-summary-status="done"><i class="done"></i>Fertig ${analysis.statusDone}</button></div></section></div></div></details>`;
   }
   function searchHits() {
     return searchQuery
@@ -820,9 +866,12 @@
     render();
   });
   root.addEventListener("click", (event) => {
-    const control = event.target.closest("[data-summary-status]");
+    const control = event.target.closest(
+      "[data-summary-status], [data-summary-filter]",
+    );
     if (!control) return;
-    workStatusFilter = control.dataset.summaryStatus;
+    workStatusFilter =
+      control.dataset.summaryStatus || control.dataset.summaryFilter;
     statusFilter.value = workStatusFilter;
     render();
     structureScroll.scrollIntoView({ behavior: "smooth", block: "start" });
