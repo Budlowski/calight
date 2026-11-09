@@ -44,7 +44,12 @@
     title.textContent = heading;
     content.replaceChildren();
     if (body instanceof Node) content.append(body);
-    else content.textContent = String(body ?? "");
+    else {
+      const message = document.createElement("p");
+      message.className = "global-modal-message";
+      message.textContent = String(body ?? "");
+      content.append(message);
+    }
     footer.replaceChildren();
 
     const promise = new Promise((resolve) => {

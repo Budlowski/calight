@@ -71,20 +71,20 @@
         }
     }
 
-    root.addEventListener('click',event=>{
+    root.addEventListener('click',async event=>{
         const exportButton=event.target.closest('[data-master-export]');
         if(exportButton){
             const link=document.createElement('a');link.href=`/api/master-data/export/${encodeURIComponent(exportButton.dataset.masterExport)}`;link.download='';link.click();return;
         }
         const importButton=event.target.closest('[data-master-import]');
         if(!importButton)return;
-        if(dirty&&!confirm('Ungespeicherte Änderungen verwerfen und den vollständigen Stamm importieren?'))return;
+        if(dirty&&!(await CalightModal.confirm({title:'Ungespeicherte Änderungen',content:'Ungespeicherte Änderungen verwerfen und den vollständigen Stamm importieren?',confirmLabel:'Verwerfen und importieren',danger:true})))return;
         importScope=importButton.dataset.masterImport;importFile.value='';importFile.click();
     });
     importFile.addEventListener('change',async()=>{
         const file=importFile.files[0];if(!file||!importScope)return;
         if(file.size>10_000_000){notify('Die JSON-Datei darf höchstens 10 MB groß sein.','error');return;}
-        if(!confirm('Den vollständigen Stamm aus dieser Datei importieren? Vorhandene Datensätze mit gleicher interner ID werden aktualisiert.'))return;
+        if(!(await CalightModal.confirm({title:'Stammdaten importieren',content:'Den vollständigen Stamm aus dieser Datei importieren? Vorhandene Datensätze mit gleicher interner ID werden aktualisiert.',confirmLabel:'Stammdaten importieren'})))return;
         try{
             const document=JSON.parse(await file.text());
             const result=await api(`/api/master-data/import/${encodeURIComponent(importScope)}`,{method:'POST',body:document});
@@ -636,8 +636,8 @@
         }
     }
 
-    function closeEditor(form) {
-        if (dirty && !window.confirm('Ungespeicherte Änderungen verwerfen?')) return;
+    async function closeEditor(form) {
+        if (dirty && !(await CalightModal.confirm({title:'Ungespeicherte Änderungen',content:'Ungespeicherte Änderungen wirklich verwerfen?',confirmLabel:'Verwerfen',danger:true}))) return;
         dirty = false;
         form.hidden = true;
     }

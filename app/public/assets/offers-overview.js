@@ -51,14 +51,19 @@
     message.className = `notice notice-${type}`;
     message.hidden = false;
   }
-  function confirmDiscard() {
+  async function confirmDiscard() {
     return (
       !formDirty ||
-      window.confirm("Ungespeicherte Eingaben wirklich verwerfen?")
+      (await CalightModal.confirm({
+        title: "Ungespeicherte Eingaben",
+        content: "Ungespeicherte Eingaben wirklich verwerfen?",
+        confirmLabel: "Verwerfen",
+        danger: true,
+      }))
     );
   }
-  function openForm() {
-    if (!confirmDiscard()) return;
+  async function openForm() {
+    if (!(await confirmDiscard())) return;
     form.reset();
     form.hidden = false;
     formDirty = false;
@@ -116,8 +121,8 @@
     render();
   });
   newButton.addEventListener("click", openForm);
-  form.querySelector("[data-cancel]").addEventListener("click", () => {
-    if (!confirmDiscard()) return;
+  form.querySelector("[data-cancel]").addEventListener("click", async () => {
+    if (!(await confirmDiscard())) return;
     form.reset();
     form.hidden = true;
     formDirty = false;

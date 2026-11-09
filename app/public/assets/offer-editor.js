@@ -1230,9 +1230,12 @@
         throw new Error((preview.details || []).join(" ") || preview.error);
       const changes = preview.changes;
       if (
-        !confirm(
-          `Import prüfen:\nBezeichnung: ${changes.title.old} → ${changes.title.new}\nElemente: ${changes.nodes.old} → ${changes.nodes.new}\nSumme: ${euro(changes.netTotal.old)} → ${euro(changes.netTotal.new)}\n\nBestehenden Entwurf ersetzen?`,
-        )
+        !(await CalightModal.confirm({
+          title: "Import prüfen",
+          content: `Bezeichnung: ${changes.title.old} → ${changes.title.new}\nElemente: ${changes.nodes.old} → ${changes.nodes.new}\nSumme: ${euro(changes.netTotal.old)} → ${euro(changes.netTotal.new)}\n\nBestehenden Entwurf ersetzen?`,
+          confirmLabel: "Entwurf ersetzen",
+          danger: true,
+        }))
       )
         return;
       const response = await fetch(
@@ -1328,9 +1331,12 @@
       await reloadLibrary();
       status.textContent = `Stammartikel ${saved.articleNumber || saved.name} angelegt.`;
       if (
-        confirm(
-          "Stammartikel wurde angelegt. Diesen Baustein jetzt damit verknüpfen und den Artikelstammpreis verwenden?",
-        )
+        await CalightModal.confirm({
+          title: "Stammartikel verknüpfen",
+          content:
+            "Stammartikel wurde angelegt. Diesen Baustein jetzt damit verknüpfen und den Artikelstammpreis verwenden?",
+          confirmLabel: "Verknüpfen",
+        })
       ) {
         Object.assign(pendingCostItemComponent, {
           masterDataId: saved.id,

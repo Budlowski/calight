@@ -610,7 +610,9 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .global-modal-panel { display: grid; max-height: calc(100vh - 34px); grid-template-rows: auto minmax(0, 1fr) auto; }
 .global-modal-panel > header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border); }
 .global-modal-panel > header h2 { margin: 0; font-size: 19px; }
+.global-modal [data-modal-close] { width: 34px; height: 34px; flex-basis: 34px; font-size: 24px; line-height: 1; }
 .global-modal-content { overflow: auto; padding: var(--space-5); }
+.global-modal-message { margin: 0; white-space: pre-line; }
 .global-modal-content form { display: grid; gap: var(--space-3); }
 .global-modal-panel > footer { display: flex; justify-content: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-5); border-top: 1px solid var(--border); background: #f7f9fa; }
 .global-modal-summary { margin: 0; padding: var(--space-3); border-left: 3px solid var(--primary); background: #edf5fa; }

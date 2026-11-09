@@ -87,8 +87,16 @@
       return null;
     }
   }
-  function confirmDiscard() {
-    return !dirty || window.confirm("Ungespeicherte Änderungen verwerfen?");
+  async function confirmDiscard() {
+    return (
+      !dirty ||
+      (await CalightModal.confirm({
+        title: "Ungespeicherte Änderungen",
+        content: "Ungespeicherte Änderungen wirklich verwerfen?",
+        confirmLabel: "Verwerfen",
+        danger: true,
+      }))
+    );
   }
   window.addEventListener("beforeunload", (e) => {
     if (!dirty) return;
@@ -148,8 +156,8 @@
           .join("")
       : '<p class="card muted">Keine Kunden gefunden.</p>';
   }
-  function openCustomer(item = null) {
-    if (!confirmDiscard()) return;
+  async function openCustomer(item = null) {
+    if (!(await confirmDiscard())) return;
     const f = document.querySelector("#customer-form");
     f.reset();
     f.elements.id.value = item?.id || "";
@@ -275,12 +283,12 @@
           copy = e.target.closest("[data-customer-copy]"),
           archive = e.target.closest("[data-customer-archive]");
         if (edit)
-          openCustomer(
+          await openCustomer(
             state.customers.find((c) => c.id === edit.dataset.customerEdit),
           );
-        if (copy && confirmDiscard())
+        if (copy && (await confirmDiscard()))
           await mutate(`/api/customers/${copy.dataset.customerCopy}/copy`, {});
-        if (archive && confirmDiscard()) {
+        if (archive && (await confirmDiscard())) {
           const c = state.customers.find(
             (x) => x.id === archive.dataset.customerArchive,
           );
@@ -370,8 +378,8 @@
         f.hidden = true;
       }
     });
-    f.querySelector("[data-cancel]").addEventListener("click", () => {
-      if (confirmDiscard()) {
+    f.querySelector("[data-cancel]").addEventListener("click", async () => {
+      if (await confirmDiscard()) {
         dirty = false;
         f.hidden = true;
       }
@@ -441,8 +449,8 @@
     f.elements.contactId.disabled = !customer;
     f.querySelector("[data-legacy-customer]").hidden = !!customer;
   }
-  function openProject(item = null) {
-    if (!confirmDiscard()) return;
+  async function openProject(item = null) {
+    if (!(await confirmDiscard())) return;
     const f = document.querySelector("#project-form");
     f.reset();
     f.elements.id.value = item?.id || "";
@@ -519,13 +527,15 @@
     document
       .querySelector("#new-project")
       .addEventListener("click", () => openProject());
-    document.querySelector("#project-list").addEventListener("click", (e) => {
-      const edit = e.target.closest("[data-project-edit]");
-      if (edit)
-        openProject(
-          state.projects.find((p) => p.id === edit.dataset.projectEdit),
-        );
-    });
+    document
+      .querySelector("#project-list")
+      .addEventListener("click", async (e) => {
+        const edit = e.target.closest("[data-project-edit]");
+        if (edit)
+          await openProject(
+            state.projects.find((p) => p.id === edit.dataset.projectEdit),
+          );
+      });
     f.elements.customerId.addEventListener("change", () => contactOptions());
     f.elements.autoProjectNumber.addEventListener("change", () => {
       f.elements.projectNumber.disabled = f.elements.autoProjectNumber.checked;
@@ -546,8 +556,8 @@
         f.hidden = true;
       }
     });
-    f.querySelector("[data-cancel]").addEventListener("click", () => {
-      if (confirmDiscard()) {
+    f.querySelector("[data-cancel]").addEventListener("click", async () => {
+      if (await confirmDiscard()) {
         dirty = false;
         f.hidden = true;
       }

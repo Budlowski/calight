@@ -63,24 +63,32 @@
         '[data-remove-address]', '[data-trailing-delete]', '[data-delete-offer]'
     ].join(',');
     const confirmedForms = new WeakSet();
+    const confirmedControls = new WeakSet();
     const isDestructiveControl = element => element.matches(destructiveSelector)
         || /^(Löschen|Entfernen)$/i.test(element.textContent.trim());
-    const confirmDestructive = element => window.confirm(
-        element.dataset.confirmMessage || 'Element wirklich löschen beziehungsweise entfernen?'
-    );
+    const confirmDestructive = element => CalightModal.confirm({
+        title: 'Löschen bestätigen',
+        content: element.dataset.confirmMessage || 'Element wirklich löschen beziehungsweise entfernen?',
+        confirmLabel: 'Löschen',
+        danger: true,
+    });
 
-    document.addEventListener('click', event => {
+    document.addEventListener('click', async event => {
         const control = event.target.closest('button, a');
         if (!control || control.disabled || !isDestructiveControl(control)) return;
-        if (!confirmDestructive(control)) {
-            event.preventDefault();
-            event.stopImmediatePropagation();
+        if (confirmedControls.has(control)) {
+            confirmedControls.delete(control);
             return;
         }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (!await confirmDestructive(control)) return;
+        confirmedControls.add(control);
         if (control.form) confirmedForms.add(control.form);
+        control.click();
     }, true);
 
-    document.addEventListener('submit', event => {
+    document.addEventListener('submit', async event => {
         const form = event.target;
         if (!(form instanceof HTMLFormElement)) return;
         if (confirmedForms.has(form)) {
@@ -89,10 +97,12 @@
         }
         const destructive = /\/delete(?:$|[/?#])/i.test(form.action)
             || form.querySelector('button[type="submit"]')?.textContent.trim().match(/^(Löschen|Entfernen)$/i);
-        if (destructive && !confirmDestructive(form)) {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-        }
+        if (!destructive) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (!await confirmDestructive(form)) return;
+        confirmedForms.add(form);
+        form.requestSubmit();
     }, true);
 
     const visible = element => element && !element.hidden && element.getClientRects().length > 0;
