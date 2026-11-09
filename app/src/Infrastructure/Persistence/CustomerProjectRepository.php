@@ -15,7 +15,11 @@ final readonly class CustomerProjectRepository
     /** @return list<array<string,mixed>> */
     public function customers(): array
     {
-        return $this->pdo->query('SELECT * FROM customers ORDER BY active DESC, customer_number COLLATE NOCASE, company_name COLLATE NOCASE, last_name COLLATE NOCASE')->fetchAll();
+        return $this->pdo->query('SELECT c.*,
+            (SELECT COUNT(*) FROM projects p WHERE p.customer_id=c.id) AS project_count,
+            (SELECT COUNT(*) FROM offers o JOIN projects p ON p.id=o.project_id WHERE p.customer_id=c.id) AS offer_count
+            FROM customers c
+            ORDER BY c.active DESC, c.customer_number COLLATE NOCASE, c.company_name COLLATE NOCASE, c.last_name COLLATE NOCASE')->fetchAll();
     }
 
     /** @return array<string,mixed>|null */
@@ -95,7 +99,8 @@ final readonly class CustomerProjectRepository
     {
         return $this->pdo->query("SELECT p.*, c.customer_number,
             CASE WHEN c.customer_type='company' THEN c.company_name ELSE trim(c.first_name || ' ' || c.last_name) END AS linked_customer_name,
-            trim(co.first_name || ' ' || co.last_name) AS contact_name
+            trim(co.first_name || ' ' || co.last_name) AS contact_name,
+            (SELECT COUNT(*) FROM offers o WHERE o.project_id=p.id) AS offer_count
             FROM projects p LEFT JOIN customers c ON c.id=p.customer_id LEFT JOIN customer_contacts co ON co.id=p.contact_id
             ORDER BY CASE p.status WHEN 'active' THEN 0 WHEN 'draft' THEN 1 WHEN 'completed' THEN 2 ELSE 3 END, p.updated_at DESC")->fetchAll();
     }

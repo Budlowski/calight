@@ -48,6 +48,14 @@ final class CustomerProjectTest extends TestCase
             $this->assertTrue(str_starts_with($project['projectNumber'],'PR'));
             $this->assertSame($customer['id'],$project['customerId']);
             $this->assertSame('Bauort',$project['siteCity']);
+            $overview=$service->overview();
+            $customerOverview=array_values(array_filter($overview['customers'],fn($item)=>$item['id']===$customer['id']))[0];
+            $projectOverview=array_values(array_filter($overview['projects'],fn($item)=>$item['id']===$project['id']))[0];
+            $this->assertSame(1,$customerOverview['projectCount']);
+            $this->assertSame(0,$customerOverview['offerCount']);
+            $this->assertSame(0,$projectOverview['offerCount']);
+            $this->assertTrue($customerOverview['updatedAt']!=='');
+            $this->assertTrue($projectOverview['updatedAt']!=='');
 
             $customer['companyName']='Muster Elektro & Technik GmbH';
             $customer['contacts'][0]['phone']='0999';

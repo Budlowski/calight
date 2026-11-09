@@ -187,8 +187,29 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .service-number-field .check-inline { font-size: 12px; }
 .auto-number-option { white-space: nowrap; }
 .customer-toolbar, .project-toolbar { grid-template-columns: minmax(260px, 1fr) minmax(180px, .3fr) auto; }
-.customer-project-split { grid-template-columns: minmax(320px, .55fr) minmax(720px, 1.45fr); }
-.customer-head-grid, .project-head-grid { grid-template-columns: minmax(210px, .7fr) minmax(220px, 1fr) minmax(180px, .8fr); }
+.management-toolbar { grid-template-columns: minmax(260px, 1fr) minmax(150px, .32fr) minmax(150px, .32fr) auto auto auto; align-items: center; }
+.management-result-count { color: var(--muted); font-size: var(--font-small); font-weight: 650; white-space: nowrap; }
+.management-split, .customer-project-split { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.management-list { align-content: start; }
+.management-list .service-list-item { transition: border-color .15s ease, background-color .15s ease; }
+.management-list .service-list-item:hover { border-color: #a7bac6; background: #fbfdfe; }
+.management-list .service-list-actions { flex-wrap: wrap; }
+.management-card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.management-card-head .status-badge { flex: 0 0 auto; }
+.management-card-facts { display: flex; flex-wrap: wrap; gap: 3px 12px; margin-top: 2px; color: #405563; font-size: var(--font-small); }
+.management-card-facts span { white-space: nowrap; }
+.management-card-total { margin-top: 2px; color: var(--primary); font-weight: 750; font-variant-numeric: tabular-nums; }
+.management-editor { border-left: 3px solid var(--primary); }
+.management-editor .editor-heading > div { display: grid; gap: 2px; }
+.management-editor .editor-heading p { margin: 0; font-size: var(--font-small); }
+.management-editor h3 { padding-bottom: var(--space-1); border-bottom: 1px solid var(--border); color: #385d76; }
+.management-editor .customer-head-grid, .management-editor .project-head-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; }
+.management-editor .service-number-field { gap: var(--space-1); }
+.management-editor .service-number-heading { min-height: 20px; height: 20px; }
+.management-editor .auto-number-option { align-self: center; font-size: 12px; }
+.management-editor .auto-number-option input { width: 16px; min-height: 16px; height: 16px; margin: 0; }
+.management-editor input:not([type="checkbox"]), .management-editor select { min-height: var(--control-height); height: var(--control-height); }
+.management-editor .contact-grid, .management-editor .address-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .address-grid { display: grid; grid-template-columns: minmax(180px, 1.4fr) minmax(100px, .45fr) minmax(90px, .45fr) minmax(160px, 1fr) minmax(140px, .7fr); gap: var(--space-2); }
 .inline-toolbar { padding: 0 14px 10px; }
 .inline-record-list { display: grid; gap: var(--space-2); padding: 0 10px 10px; }
@@ -198,8 +219,7 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .contact-grid label, .address-grid label { font-size: 12px; }
 .contact-grid input, .address-grid input, .address-grid select { padding: 7px 8px; }
 .inline-empty { margin: 0; padding: 0 14px 14px; }
-.offer-overview-grid { grid-template-columns: minmax(300px, .55fr) minmax(520px, 1.45fr); align-items: start; }
-.offer-toolbar { grid-template-columns: minmax(220px, 1fr) minmax(160px, .35fr); }
+.offer-toolbar { grid-template-columns: minmax(260px, 1fr) minmax(150px, .32fr) minmax(170px, .35fr) auto auto auto; }
 .offer-editor-header { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-5); }
 .offer-editor-header h1 { margin-bottom: 0; }
 .offer-save-area { display: flex; align-items: center; gap: 14px; }
@@ -347,7 +367,7 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .offer-position-node > summary > .offer-node-actions { width: 100%; min-width: 0; padding-left: var(--space-2); border-left: 1px solid var(--border); }
 .offer-title-node > summary > .offer-node-actions { grid-column: 8; width: 100%; min-width: 0; padding-left: var(--space-2); border-left: 1px solid rgba(120,145,160,.28); }
 .offer-position-node > summary { border-left: 3px solid #c1ccd3; background: white; }
-.offer-position-node[open] { margin-block: var(--space-2); }
+.offer-position-node[open] { margin-top: 0; margin-bottom: 50px; }
 .offer-position-node[open] > summary { border-left-color: #7c97a8; background: #f8fafb; }
 .offer-level-label { width: fit-content; padding: 2px 6px; border: 1px solid #9fb5c4; border-radius: 9px; color: #385d76; background: #f6fafc; font-size: 10px; font-weight: 750; letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; }
 .position-label { border-color: #c4cdd3; color: #586670; background: #f4f6f7; }
@@ -453,7 +473,8 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
     .component-controls-actions { justify-content: flex-start; }
     .component-add-row { grid-template-columns: 1fr; }
     .customer-toolbar, .project-toolbar, .customer-head-grid, .project-head-grid, .address-grid, .contact-grid { grid-template-columns: 1fr; }
-    .offer-overview-grid, .offer-position-grid, .offer-template-row, .manual-price-row { grid-template-columns: 1fr; }
+    .management-editor .customer-head-grid, .management-editor .project-head-grid, .management-editor .address-grid, .management-editor .contact-grid { grid-template-columns: 1fr; }
+    .offer-position-grid, .offer-template-row, .manual-price-row { grid-template-columns: 1fr; }
     .offer-editor-header { display: block; }
     .offer-save-area { justify-content: space-between; }
     .offer-save-area { align-items: stretch; }
@@ -481,11 +502,13 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 }
 
 @media (min-width: 801px) and (max-width: 1350px) {
-    .service-master-split, .customer-project-split { grid-template-columns: 1fr; }
+    .service-master-split, .management-split, .customer-project-split { grid-template-columns: 1fr; }
     .service-editor { position: static; }
 }
 
 @media (min-width: 801px) and (max-width: 1100px) {
+    .management-toolbar, .offer-toolbar { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .management-toolbar > input[type="search"] { grid-column: 1 / -1; }
     .component-primary-grid { grid-template-columns: .8fr 1.4fr .7fr .5fr; }
     .component-controls-actions { grid-column: 1 / -1; justify-content: flex-end; }
     .component-price-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }

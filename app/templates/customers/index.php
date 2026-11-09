@@ -2,10 +2,10 @@
 <div id="customer-project-app" data-page="customers" data-csrf="<?= $escape($csrfToken) ?>">
     <div class="page-heading"><div><h1>Kunden</h1><p class="muted">Kundendaten, Ansprechpartner und Adressen zentral verwalten.</p></div><label class="check-inline"><input id="show-archived" type="checkbox"> Archivierte anzeigen</label></div>
     <div id="admin-message" class="notice" hidden></div>
-    <div class="master-toolbar customer-toolbar"><input id="customer-search" type="search" placeholder="Kundennummer, Name oder Ort durchsuchen"><select id="customer-type-filter"><option value="">Alle Kundentypen</option><option value="company">Unternehmen</option><option value="private">Privatpersonen</option></select><button class="button" id="new-customer" type="button">Neuer Kunde</button></div>
-    <div class="master-split customer-project-split">
-        <div id="customer-list" class="service-list"></div>
-        <form id="customer-form" class="card form-stack master-editor" hidden>
+    <div class="master-toolbar management-toolbar customer-toolbar"><input id="customer-search" type="search" placeholder="Nummer, Name, Ort, Kontakt oder Adresse durchsuchen"><select id="customer-type-filter"><option value="">Alle Kundentypen</option><option value="company">Unternehmen</option><option value="private">Privatpersonen</option></select><select id="customer-sort"><option value="name">Name A–Z</option><option value="number">Kundennummer</option><option value="updated">Zuletzt geändert</option></select><span class="management-result-count" id="customer-result-count"></span><button class="button button-light" id="customer-reset" type="button" data-icon="refresh-cw">Zurücksetzen</button><button class="button" id="new-customer" type="button">Neuer Kunde</button></div>
+    <div class="master-split management-split customer-project-split">
+        <div id="customer-list" class="service-list management-list"></div>
+        <form id="customer-form" class="card form-stack master-editor management-editor" hidden>
             <input name="id" type="hidden"><div class="editor-heading"><h2>Kunde</h2></div>
             <div class="form-grid customer-head-grid">
                 <div class="service-number-field"><div class="service-number-heading"><label for="customer-number">Kundennummer</label><label class="check-inline auto-number-option"><input name="autoCustomerNumber" type="checkbox" checked> Automatisch</label></div><input id="customer-number" name="customerNumber" maxlength="100"></div>
