@@ -87,7 +87,7 @@
   );
   structureScroll.insertAdjacentHTML(
     "afterend",
-    '<section class="offer-adjustment-panel"><strong>Angebotsanpassung</strong><label>Art<select data-adjustment="type"><option value="none">Keine</option><option value="discount">Rabatt</option><option value="surcharge">Aufschlag</option></select></label><label>Berechnung<select data-adjustment="mode"><option value="percentage">Prozentual</option><option value="absolute">Absolut</option></select></label><label>Wert<input data-adjustment="value" inputmode="decimal"></label><label>Bezeichnung<input data-adjustment="label" placeholder="Optional"></label></section>',
+    '<details class="offer-adjustment-details"><summary>Rabatt/Aufschlag</summary><section class="offer-adjustment-panel"><label>Art<select data-adjustment="type"><option value="none">Keine</option><option value="discount">Rabatt</option><option value="surcharge">Aufschlag</option></select></label><label>Berechnung<select data-adjustment="mode"><option value="percentage">Prozentual</option><option value="absolute">Absolut</option></select></label><label>Wert<input data-adjustment="value" inputmode="decimal"></label><label>Bezeichnung<input data-adjustment="label" placeholder="Optional"></label></section></details>',
   );
   const adjustmentPanel = root.querySelector(".offer-adjustment-panel"),
     searchInput = root.querySelector("[data-offer-search]"),
@@ -625,9 +625,9 @@
   }
   function updateOfferTotal() {
     let out = document.querySelector("#offer-summary-footer");
-    const overviewWasOpen = out?.querySelector(
-      ".offer-calculation-overview",
-    )?.open;
+    const overviewWasOpen =
+      out?.querySelector(".offer-calculation-overview")?.open ?? true;
+    const adjustmentDetails = root.querySelector(".offer-adjustment-details");
     if (!out) {
       out = document.createElement("section");
       out.id = "offer-summary-footer";
@@ -641,6 +641,10 @@
       ? `<span>Zwischensumme ${euro(c.subtotalNet)}</span><span>${esc(a.label || (a.type === "discount" ? "Rabatt" : "Aufschlag"))} ${euro(c.adjustmentSigned)}</span><strong>Angebotssumme netto ${euro(c.netTotal)}</strong>`
       : `<span>Angebotssumme netto</span><strong>${euro(c.netTotal ?? "0.00")}</strong>`;
     out.innerHTML = `<div id="offer-net-total" class="offer-net-total">${summary}</div>${calculationOverview(c, overviewWasOpen)}`;
+    if (adjustmentDetails)
+      out
+        .querySelector(".offer-calculation-overview")
+        ?.before(adjustmentDetails);
   }
   function metric(label, value, css = "") {
     return `<div class="offer-analysis-metric ${css}"><span>${label}</span><strong>${value}</strong></div>`;
