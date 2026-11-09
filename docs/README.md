@@ -2,7 +2,6 @@
 
 **Open-Source-Kalkulations- und Angebotssoftware für Handwerk und Dienstleistung.**
 
-![Calight Angebotseditor](images/angebotseditor.png)
 
 Calight ist eine schlanke, selbst gehostete Anwendung zur Erstellung und Kalkulation von Angeboten. Sie richtet sich an Handwerksbetriebe, Einzelunternehmer und Dienstleister, die ihre Leistungen transparent und detailliert kalkulieren möchten.
 
@@ -20,6 +19,51 @@ Calight ist eine schlanke, selbst gehostete Anwendung zur Erstellung und Kalkula
 ## Keine Buchhaltungssoftware
 
 Calight konzentriert sich auf **Kalkulation und Angebotserstellung**. Es soll Buchhaltungs- und Rechnungssoftware wie Lexware ergänzen, nicht ersetzen.
+
+## Auftragsabwicklung
+
+```mermaid
+flowchart TD
+    K["Kunde"]
+    P["Projekt (optional)"]
+    A["Angebot"]
+    AU["Auftrag"]
+    BT["Bautagesbericht"]
+    AM["Aufmaß"]
+    RP["Rapport"]
+    RE["Rechnung<br>(ext.)"]
+    NK["Nachkalkulation"]
+
+    K --> P
+    K --> A
+    P --> A
+
+    K -->|"Direkter Regieauftrag"| AU
+    P -->|"Direkter Regieauftrag"| AU
+    A --> AU
+
+    AU --> BT
+    AU --> AM
+    AU --> RP
+
+    AU -->|"Nachtrag"| NA["Nachtragsangebot"]
+    NA --> AU
+
+    AM --> RE
+    RP --> RE
+
+    BT -->|"Ist-Zeiten und Ist-Kosten"| NK
+    AU -->|"Soll-Kalkulation"| NK
+    RE -->|"Erlöse"| NK
+
+    classDef main fill:#e3effa,stroke:#608bb2,color:#193d5c
+    classDef docs fill:#e6f2e8,stroke:#76a17a,color:#24532b
+    classDef result fill:#fff0d8,stroke:#bd9855,color:#654917
+
+    class K,P,A,AU main
+    class BT,AM,RP,NA docs
+    class RE,NK result
+```
 
 ## Technik
 

@@ -85,7 +85,7 @@
     );
   toolbar.insertAdjacentHTML(
     "beforebegin",
-    '<div class="offer-search"><label><span class="visually-hidden">Angebot durchsuchen</span><input type="search" data-offer-search placeholder="Titel und Positionen durchsuchen"></label><label class="offer-status-filter"><span class="visually-hidden">Positionen filtern</span><select data-work-status-filter><option value="">Alle Positionen</option><optgroup label="Bearbeitungsstatus"><option value="open">Offen</option><option value="in_progress">In Bearbeitung</option><option value="done">Fertig</option></optgroup><optgroup label="Kalkulationsqualität"><option value="incomplete">Kostenbasis unvollständig</option><option value="incomplete_included">Unvollständig und regulär enthalten</option></optgroup></select></label><span data-search-count>Keine Suche</span><div class="offer-progress" data-offer-progress></div><div class="offer-search-results" data-search-results hidden></div></div>',
+    '<div class="offer-search"><label class="offer-status-filter"><span class="visually-hidden">Positionen filtern</span><select data-work-status-filter><option value="">Alle Positionen</option><optgroup label="Bearbeitungsstatus"><option value="open">Offen</option><option value="in_progress">In Bearbeitung</option><option value="done">Fertig</option></optgroup><optgroup label="Kalkulationsqualität"><option value="incomplete">Kostenbasis unvollständig</option><option value="incomplete_included">Unvollständig und regulär enthalten</option></optgroup></select></label><div class="offer-search-query"><label><span class="visually-hidden">Angebot durchsuchen</span><input type="search" data-offer-search placeholder="Titel und Positionen durchsuchen"></label><button class="offer-search-clear" type="button" data-search-clear aria-label="Suchfeld leeren" title="Suchfeld leeren" hidden>×</button><div class="offer-search-results" data-search-results hidden></div></div><span data-search-count hidden></span></div>',
   );
   structureScroll.insertAdjacentHTML(
     "afterend",
@@ -95,7 +95,7 @@
     searchInput = root.querySelector("[data-offer-search]"),
     statusFilter = root.querySelector("[data-work-status-filter]"),
     searchCount = root.querySelector("[data-search-count]"),
-    progressOutput = root.querySelector("[data-offer-progress]"),
+    searchClear = root.querySelector("[data-search-clear]"),
     searchResults = root.querySelector("[data-search-results]");
   function uuid() {
     if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
@@ -621,7 +621,6 @@
       }
     });
     applySearchHighlights();
-    updateProgress();
     updateOfferTotal();
     applyReadOnlyState();
   }
@@ -645,10 +644,6 @@
     saveButton.hidden = true;
     undoButton.hidden = true;
     redoButton.hidden = true;
-  }
-  function updateProgress() {
-    const progress = CalightOfferStatus.progress(offer.nodes);
-    progressOutput.innerHTML = `<span>${progress.done} von ${progress.total} Positionen fertig</span><span class="offer-progress-track" aria-hidden="true"><i class="${percentClass(progress.percent)}"></i></span>`;
   }
   function updateOfferTotal() {
     let out = document.querySelector("#offer-summary-footer");
@@ -756,7 +751,9 @@
     searchQuery = value;
     const hits = searchHits();
     if (value) for (const hit of hits) openAncestors(hit.id);
-    searchCount.textContent = value ? `${hits.length} Treffer` : "Keine Suche";
+    searchCount.hidden = !value;
+    searchCount.textContent = value ? `${hits.length} Treffer` : "";
+    searchClear.hidden = !value;
     searchResults.hidden = !value || hits.length === 0;
     searchResults.innerHTML = hits
       .map(
@@ -1912,6 +1909,11 @@
     markDirty({ group: inputHistoryGroup(event.target) });
   });
   searchInput.addEventListener("input", runSearch);
+  searchClear.addEventListener("click", () => {
+    searchInput.value = "";
+    runSearch();
+    searchInput.focus();
+  });
   searchResults.addEventListener("click", (event) => {
     const button = event.target.closest("[data-search-target]");
     if (!button) return;

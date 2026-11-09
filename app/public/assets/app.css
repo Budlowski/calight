@@ -440,9 +440,6 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .offer-position-node[open] > summary { border-left-color: #7c97a8; background: #f8fafb; }
 .offer-position-node.offer-calculation-incomplete > summary { box-shadow: inset 4px 0 #d3a52a; }
 .offer-status-filter select { min-height: var(--control-height); }
-.offer-progress { display: grid; min-width: 190px; gap: 3px; color: var(--muted); font-size: 11px; text-align: right; white-space: nowrap; }
-.offer-progress-track { display: block; height: 4px; overflow: hidden; border-radius: 3px; background: #dfe5e9; }
-.offer-progress-track i { display: block; height: 100%; border-radius: inherit; background: #4d9255; transition: width .2s ease; }
 .offer-summary-footer { margin-top: var(--space-3); }
 .offer-summary-footer .offer-net-total { margin-top: 0; }
 .offer-adjustment-details { border: 1px solid var(--border); border-top: 0; background: white; }
@@ -713,7 +710,6 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
     .component-summary > :nth-child(n+3) { text-align: left; }
     .offer-children { margin-left: 3px; padding-left: 9px; }
     .offer-children > .offer-node::before { left: -9px; width: 9px; }
-    .offer-progress { text-align: left; }
     .offer-analysis-grid, .offer-analysis-charts { grid-template-columns: 1fr; }
     .offer-calculation-overview > summary { align-items: flex-start; flex-direction: column; }
     .project-detail-head, .project-facts, .project-offer-layout, .compact-action-form { grid-template-columns: 1fr; }
@@ -761,8 +757,14 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
     background: var(--panel);
 }
 #offer-editor .offer-title-edit-row { grid-template-columns: minmax(230px, 1.15fr) minmax(120px, .35fr) minmax(220px, 1fr) auto; }
-#offer-editor .offer-search { position: relative; display: grid; grid-template-columns: minmax(260px, 1fr) minmax(160px, 210px) auto minmax(190px, 260px); align-items: center; gap: var(--space-2); margin: var(--space-2) 0; }
+#offer-editor .offer-search { display: grid; grid-template-columns: minmax(160px, 210px) minmax(260px, 1fr) auto; align-items: center; gap: var(--space-2); margin: var(--space-2) 0; }
 #offer-editor .offer-search label { min-width: 0; }
+#offer-editor .offer-search-query { position: relative; min-width: 0; }
+#offer-editor .offer-search-query label, #offer-editor .offer-search-query input { display: block; width: 100%; }
+#offer-editor .offer-search-query input { padding-right: 34px; }
+#offer-editor .offer-search-query input::-webkit-search-cancel-button { appearance: none; }
+#offer-editor .offer-search-clear { position: absolute; z-index: 2; top: 50%; right: 5px; width: 26px; height: 26px; padding: 0; transform: translateY(-50%); border: 0; border-radius: 4px; background: transparent; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; }
+#offer-editor .offer-search-clear:hover, #offer-editor .offer-search-clear:focus-visible { background: #e8eef2; color: var(--text); }
 #offer-editor .offer-search-results { position: absolute; z-index: 20; top: 100%; left: 0; width: min(650px, 100%); max-height: 280px; overflow: auto; border: 1px solid var(--border); background: #fff; box-shadow: 0 8px 22px rgb(16 36 54 / 15%); }
 #offer-editor .offer-search-results button { display: block; width: 100%; padding: var(--space-2); border: 0; border-bottom: 1px solid var(--border); background: transparent; text-align: left; }
 #offer-editor .offer-search-results button:hover { background: #f3f6f8; }
