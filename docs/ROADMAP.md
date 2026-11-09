@@ -82,7 +82,7 @@ Aufmaße, Rapporte und Bautagesberichte sind **unabhängig** voneinander. Innerh
 - Jede abgegebene Revision erhält ihren eigenen unveränderlichen Snapshot und ein archiviertes PDF.
 - Vorherige Fassungen und Revisionshistorie erhalten; Revision 0 nicht eigens als „Revision 0“ anzeigen.
 - Eindeutig speichern, welche Angebotsrevision tatsächlich angenommen wurde.
-- Statusübergänge, Ersetzung vorheriger Revisionen und Umgang mit mehrfacher Annahme vor Umsetzung verbindlich festlegen.
+- Geschäftsstatus werden je abgegebener Revision geführt. Pro Angebotskette darf höchstens eine Revision gleichzeitig als angenommen markiert sein; ältere Stände und ihre Archive bleiben unverändert erhalten.
 
 ### Nachträge
 
@@ -238,15 +238,14 @@ Auftragsdetails bündeln Übersicht, Leistungen, Bautagesberichte, Aufmaße/Rapp
 
 ## Vor einer Implementierung noch festzulegen
 
-1. Revisions- und Annahmelogik bei mehreren Angebotsfassungen.
-2. Nummerierung, Status und Freigabe von Nachträgen.
-3. Preisgrundlagen und Verrechnungssätze für Regiearbeiten.
-4. Mengenänderungen und Freigabe von Teilaufmaßen.
-5. Korrektur, Unterschrift und Archivierung von Rapporten.
-6. Ist-Kostenerfassung ohne Bautagesbericht.
-7. Behandlung von Abschlags-/Schlussrechnungen ohne Doppelzählung.
-8. Datenmigration für optionale Projekte und Ansprechpartner.
-9. CardDAV-Feldzuordnung und Umgang mit verschobenen Kontakten.
+1. Nummerierung, Status und Freigabe von Nachträgen.
+2. Preisgrundlagen und Verrechnungssätze für Regiearbeiten.
+3. Mengenänderungen und Freigabe von Teilaufmaßen.
+4. Korrektur, Unterschrift und Archivierung von Rapporten.
+5. Ist-Kostenerfassung ohne Bautagesbericht.
+6. Behandlung von Abschlags-/Schlussrechnungen ohne Doppelzählung.
+7. Datenmigration für optionale Projekte und Ansprechpartner.
+8. CardDAV-Feldzuordnung und Umgang mit verschobenen Kontakten.
 
 Diese Fragen jeweils vor der betroffenen Phase klären, nicht alles vorab implementieren.
 

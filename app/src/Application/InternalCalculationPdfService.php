@@ -27,7 +27,8 @@ final readonly class InternalCalculationPdfService
     public function fileName(array $offer): string
     {
         $number=trim((string)($offer['offerNumber']??''))?:'Entwurf';
-        return date('Y-m-d').'_Interne_Kalkulation_'.$number.'.pdf';
+        $revision=(int)($offer['revision']??0);
+        return date('Y-m-d').'_Interne_Kalkulation_'.$number.($revision>0?'_Rev-'.$revision:'').'.pdf';
     }
 
     /** @param array<string,mixed> $offer */

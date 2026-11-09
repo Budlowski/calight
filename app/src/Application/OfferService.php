@@ -105,9 +105,10 @@ final readonly class OfferService
         foreach($this->offers->all() as $metadata){
             $calculated=$this->loadDraft((string)$metadata['id'])['offer'];
             $result[]=['id'=>$metadata['id'],'projectId'=>$metadata['project_id'],'projectName'=>$metadata['project_name'],
-                'projectNumber'=>$metadata['project_number'],'offerNumber'=>$metadata['offer_number'],'status'=>$metadata['status'],
+                'projectNumber'=>$metadata['project_number'],'offerNumber'=>$metadata['effective_offer_number']??$metadata['offer_number'],'status'=>$metadata['status'],
                 'title'=>$calculated['title'],'updatedAt'=>$metadata['updated_at'],'submittedAt'=>$metadata['submitted_at']??null,
-                'documentDate'=>$metadata['document_date']??null,'netTotal'=>$calculated['calculation']['netTotal']??'0.00'];
+                'documentDate'=>$metadata['document_date']??null,'revision'=>(int)($metadata['revision_number']??0),
+                'netTotal'=>$calculated['calculation']['netTotal']??'0.00'];
         }
         return $result;
     }
@@ -150,8 +151,11 @@ final readonly class OfferService
         if (!hash_equals((string) $metadata['draft_etag'], $expectedEtag)) {
             throw new OfferConflictException('Der Entwurf wurde zwischenzeitlich geaendert. Bitte neu laden.');
         }
-        if(($offer['id']??null)!==$offerId||($offer['projectId']??null)!==$metadata['project_id']||($offer['status']??null)!=='draft'||($offer['offerNumber']??null)!==null
-            ||($offer['revision']??null)!==0||array_key_exists('submittedAt',$offer)||array_key_exists('documentDate',$offer)){
+        $revision=(int)($metadata['revision_number']??0);
+        $expectedNumber=$revision===0?null:(string)($metadata['effective_offer_number']??'');
+        if(($offer['id']??null)!==$offerId||($offer['projectId']??null)!==$metadata['project_id']||($offer['status']??null)!=='draft'
+            ||($offer['offerNumber']??null)!==$expectedNumber||($offer['revision']??null)!==$revision
+            ||array_key_exists('submittedAt',$offer)||array_key_exists('documentDate',$offer)){
             throw new OfferValidationException(['Status, Angebotsnummer, Revision und Abschlussdaten dürfen nicht über die Entwurfsspeicherung verändert werden.']);
         }
 
@@ -193,6 +197,52 @@ final readonly class OfferService
         }
     }
 
+    /** @return array{id:string,url:string,created:bool,revision:int} */
+    public function createRevision(string $offerId):array
+    {
+        $metadata=$this->offers->find($offerId);
+        if($metadata===null)throw new RuntimeException('Angebot wurde nicht gefunden.');
+        if(($metadata['status']??'draft')==='draft')throw new OfferValidationException(['Eine Revision kann nur aus einem abgegebenen Angebotsstand erstellt werden.']);
+        $rootId=(string)($metadata['revision_root_id']??$metadata['id']);
+        $newId='';$projectId=(string)$metadata['project_id'];
+        $this->pdo->exec('BEGIN IMMEDIATE');
+        try{
+            $open=$this->offers->openRevision($rootId);
+            if($open!==null){$this->pdo->commit();return['id'=>(string)$open['id'],'url'=>'/offers/'.rawurlencode((string)$open['id']),'created'=>false,'revision'=>(int)$open['revision_number']];}
+            $latest=$this->offers->latestRevision($rootId);
+            if($latest===null||($latest['status']??'draft')==='draft'||($latest['snapshot_etag']??null)===null)throw new OfferConflictException('Der letzte abgegebene Angebotsstand ist nicht verfügbar.');
+            $source=$this->store->loadSnapshot($projectId,(string)$latest['id'],(string)$latest['snapshot_etag']);
+            $revision=(int)$latest['revision_number']+1;$newId=Uuid::v4();$now=Clock::now();
+            $source['id']=$newId;$source['projectId']=$projectId;$source['offerNumber']=(string)$latest['effective_offer_number'];
+            $source['revision']=$revision;$source['status']='draft';$source['createdAt']=$now;$source['updatedAt']=$now;
+            unset($source['submittedAt'],$source['documentDate']);
+            $source=(new OfferNormalizer())->normalize($source);(new OfferValidator())->validate($source);$this->calculator->calculate($source);
+            $etag=$this->store->saveDraft($projectId,$newId,$source,null);
+            $this->offers->createRevision($newId,$projectId,$this->store->relativeDraftPath($projectId,$newId),$etag,$rootId,$revision,(string)$latest['id']);
+            $this->pdo->commit();return['id'=>$newId,'url'=>'/offers/'.rawurlencode($newId),'created'=>true,'revision'=>$revision];
+        }catch(Throwable $exception){
+            if($this->pdo->inTransaction())$this->pdo->rollBack();
+            if($newId!==''){try{$staged=$this->store->stageDraftDeletion($projectId,$newId);$this->store->finalizeStagedDeletion($staged);}catch(Throwable $cleanup){error_log($cleanup->getMessage());}}
+            if($exception instanceof PDOException&&str_starts_with((string)$exception->getCode(),'23'))throw new OfferConflictException('Für dieses Angebot besteht bereits eine offene Revision.');
+            throw$exception;
+        }
+    }
+
+    /** @return array{rootId:string,currentRevision:int,openRevision:?array<string,mixed>,items:list<array<string,mixed>>} */
+    public function revisionHistory(string $offerId):array
+    {
+        $metadata=$this->offers->find($offerId);if($metadata===null)throw new RuntimeException('Angebot wurde nicht gefunden.');
+        $rootId=(string)($metadata['revision_root_id']??$metadata['id']);$items=[];$open=null;
+        foreach($this->offers->revisions($rootId) as $item){
+            $entry=['id'=>(string)$item['id'],'revision'=>(int)$item['revision_number'],'status'=>(string)$item['status'],
+                'offerNumber'=>$item['effective_offer_number']??null,'submittedAt'=>$item['submitted_at']??null,
+                'documentDate'=>$item['document_date']??null,'updatedAt'=>(string)$item['updated_at'],
+                'hasPdf'=>($item['submitted_pdf_sha256']??null)!==null,'current'=>(string)$item['id']===$offerId];
+            if($entry['status']==='draft')$open=$entry;$items[]=$entry;
+        }
+        return['rootId'=>$rootId,'currentRevision'=>(int)($metadata['revision_number']??0),'openRevision'=>$open,'items'=>$items];
+    }
+
     /** @return array<string,mixed> */
     public function submitOffer(string $offerId,string $expectedEtag,?string $manualNumber,string $documentDate,bool $confirmIncomplete):array
     {
@@ -232,17 +282,22 @@ final readonly class OfferService
                     ]:null];
                 }
                 if($calculated===null)throw new OfferValidationException(['Die Angebotskalkulation ist nicht berechenbar.']);
-                $now=new DateTimeImmutable();$number=trim((string)$manualNumber)!==''
+                $now=new DateTimeImmutable();$revision=(int)($metadata['revision_number']??0);
+                if($revision>0){
+                    $number=(string)($metadata['effective_offer_number']??'');
+                    if($number==='')throw new OfferConflictException('Die Angebotsnummer der Revisionskette fehlt.');
+                    if(trim((string)$manualNumber)!==''&&trim((string)$manualNumber)!==$number)throw new OfferValidationException(['Die Angebotsnummer kann bei einer Revision nicht geändert werden.']);
+                }else{$number=trim((string)$manualNumber)!==''
                     ?$this->numberRanges->reserveManual('offer','offer',$offerId,Uuid::v4(),trim((string)$manualNumber),$now)
-                    :$this->numberRanges->allocate('offer','offer',$offerId,Uuid::v4(),$now);
-                $calculated['offerNumber']=$number;$calculated['status']='submitted';$calculated['revision']=0;
+                    :$this->numberRanges->allocate('offer','offer',$offerId,Uuid::v4(),$now);}
+                $calculated['offerNumber']=$number;$calculated['status']='submitted';$calculated['revision']=$revision;
                 $calculated['documentDate']=$documentDate;$calculated['submittedAt']=$now->format(DATE_ATOM);$calculated['updatedAt']=$now->format(DATE_ATOM);
                 $calculated['documentTerms']=$this->pdfService->resolvedDocumentTerms($calculated);
                 $calculated=$this->calculator->calculate($calculated);(new OfferValidator())->validate($calculated);
                 $pdf=$this->pdfService->render($calculated);
                 $files=$this->store->publishSubmission($projectId,$offerId,$calculated,$pdf);$published=true;
                 if(!$this->offers->markSubmitted($offerId,$expectedEtag,$number,$calculated['submittedAt'],$documentDate,$files))throw new OfferConflictException('Das Angebot wurde zwischenzeitlich abgeschlossen.');
-                $this->pdo->commit();return['submitted'=>true,'idempotent'=>false,'offerNumber'=>$number,'status'=>'submitted','submittedAt'=>$calculated['submittedAt'],'documentDate'=>$documentDate,'snapshotSha256'=>$files['snapshotHash'],'pdfSha256'=>$files['pdfHash']];
+                $this->pdo->commit();return['submitted'=>true,'idempotent'=>false,'offerNumber'=>$number,'revision'=>$revision,'status'=>'submitted','submittedAt'=>$calculated['submittedAt'],'documentDate'=>$documentDate,'snapshotSha256'=>$files['snapshotHash'],'pdfSha256'=>$files['pdfHash']];
             });
         }catch(Throwable $e){if($this->pdo->inTransaction())$this->pdo->rollBack();if($published)$this->store->removePublishedSubmission($projectId,$offerId);if($e instanceof PDOException&&str_starts_with((string)$e->getCode(),'23'))throw new OfferValidationException(['Die Angebotsnummer ist bereits vergeben.']);throw$e;}
     }
@@ -252,7 +307,7 @@ final readonly class OfferService
     {
         $allowed=['submitted'=>['commissioned','rejected'],'commissioned'=>['rejected'],'rejected'=>['commissioned']];
         if(!in_array($newStatus,$allowed[$expectedStatus]??[],true))throw new OfferValidationException(['Dieser Statuswechsel ist nicht zulässig.']);
-        $this->pdo->exec('BEGIN IMMEDIATE');try{if(!$this->offers->changeStatus($offerId,$expectedStatus,$newStatus))throw new OfferConflictException('Der Angebotsstatus wurde zwischenzeitlich geändert.');$this->pdo->commit();return['status'=>$newStatus];}catch(Throwable $e){if($this->pdo->inTransaction())$this->pdo->rollBack();throw$e;}
+        $this->pdo->exec('BEGIN IMMEDIATE');try{if(!$this->offers->changeStatus($offerId,$expectedStatus,$newStatus))throw new OfferConflictException('Der Angebotsstatus wurde zwischenzeitlich geändert.');$this->pdo->commit();return['status'=>$newStatus];}catch(Throwable $e){if($this->pdo->inTransaction())$this->pdo->rollBack();if($e instanceof PDOException&&str_starts_with((string)$e->getCode(),'23')&&$newStatus==='commissioned')throw new OfferValidationException(['In dieser Revisionshistorie ist bereits eine andere Revision als angenommen markiert.']);throw$e;}
     }
 
     /** @return array{pdf:string,fileName:string} */
@@ -261,11 +316,11 @@ final readonly class OfferService
         if($this->pdfService===null)throw new RuntimeException('PDF-Erzeugung ist nicht konfiguriert.');
         $metadata=$this->offers->find($offerId);if($metadata===null||($metadata['submitted_pdf_sha256']??null)===null)throw new RuntimeException('Archivierte Angebots-PDF wurde nicht gefunden.');
         $pdf=$this->store->loadSubmittedPdf((string)$metadata['project_id'],$offerId,(string)$metadata['submitted_pdf_sha256']);
-        return['pdf'=>$pdf,'fileName'=>$this->pdfService->fileName(['offerNumber'=>$metadata['offer_number'],'documentDate'=>$metadata['document_date']])];
+        return['pdf'=>$pdf,'fileName'=>$this->pdfService->fileName(['offerNumber'=>$metadata['effective_offer_number']??$metadata['offer_number'],'documentDate'=>$metadata['document_date'],'revision'=>(int)($metadata['revision_number']??0)])];
     }
 
     /** @param array<string,mixed> $metadata @return array<string,mixed> */
-    private function submissionResult(array $metadata,bool $idempotent):array{return['submitted'=>true,'idempotent'=>$idempotent,'offerNumber'=>$metadata['offer_number'],'status'=>$metadata['status'],'submittedAt'=>$metadata['submitted_at'],'documentDate'=>$metadata['document_date'],'snapshotSha256'=>$metadata['snapshot_etag'],'pdfSha256'=>$metadata['submitted_pdf_sha256']];}
+    private function submissionResult(array $metadata,bool $idempotent):array{return['submitted'=>true,'idempotent'=>$idempotent,'offerNumber'=>$metadata['effective_offer_number']??$metadata['offer_number'],'revision'=>(int)($metadata['revision_number']??0),'status'=>$metadata['status'],'submittedAt'=>$metadata['submitted_at'],'documentDate'=>$metadata['document_date'],'snapshotSha256'=>$metadata['snapshot_etag'],'pdfSha256'=>$metadata['submitted_pdf_sha256']];}
 
     /** @return array<string,mixed> */
     public function previewImport(string $offerId, array $imported, string $expectedEtag): array
@@ -280,6 +335,10 @@ final readonly class OfferService
             $offerId,
             (string) $current['offer']['createdAt'],
         );
+        // Beim Import in eine offene Revision bleibt die serverseitig verwaltete
+        // Dokumentidentität erhalten; fremde Nummern und Revisionen werden ignoriert.
+        $prepared['offerNumber']=$current['offer']['offerNumber']??null;
+        $prepared['revision']=(int)($current['offer']['revision']??0);
         $calculated = $this->calculator->calculate($prepared);
         return [
             'offer' => $calculated,

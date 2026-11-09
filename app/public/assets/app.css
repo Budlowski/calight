@@ -776,6 +776,13 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 #offer-editor .offer-text-node > summary { background: #f8fafb; font-style: italic; }
 #offer-editor .offer-text-editor { display: grid; grid-template-columns: minmax(180px, .4fr) minmax(300px, 1fr); gap: var(--space-2); }
 #offer-editor .offer-net-total { flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
+#offer-editor .offer-revision-primary-action { display: flex; justify-content: flex-end; margin: var(--space-1) 0; }
+#offer-editor .offer-revision-history { margin-top: var(--space-2); border-top: 1px solid var(--border); }
+#offer-editor .offer-revision-history > summary { padding: var(--space-2) 0; color: var(--primary); font-weight: 700; cursor: pointer; }
+#offer-editor .offer-revision-list { display: grid; gap: 2px; padding-bottom: var(--space-2); }
+#offer-editor .offer-revision-row { display: grid; grid-template-columns: minmax(210px, 1fr) minmax(130px, auto) auto; gap: var(--space-3); align-items: center; min-height: 34px; padding: var(--space-1) var(--space-2); background: #f5f8fa; font-size: var(--font-small); }
+#offer-editor .offer-revision-row.is-current { box-shadow: inset 3px 0 var(--primary); background: #eaf3f8; }
+#offer-editor .offer-revision-actions { display: flex; gap: var(--space-1); justify-content: flex-end; }
 @media (max-width: 1100px) {
     #offer-editor .offer-adjustment-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     #offer-editor .offer-title-edit-row { grid-template-columns: minmax(220px, 1fr) minmax(120px, .4fr) minmax(220px, 1fr); }
@@ -786,4 +793,6 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
     #offer-editor .offer-search { grid-template-columns: 1fr; align-items: stretch; }
     .global-modal-selection { grid-template-columns: 1fr; }
     .global-modal-selection .span-all { grid-column: auto; }
+    #offer-editor .offer-revision-row { grid-template-columns: 1fr auto; }
+    #offer-editor .offer-revision-actions { grid-column: 1 / -1; justify-content: flex-start; }
 }

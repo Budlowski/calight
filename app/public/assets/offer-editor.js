@@ -1302,13 +1302,14 @@
       });
       return;
     }
-    const form = modalForm(
-      `<div class="global-modal-selection"><label>Dokumentdatum<input name="documentDate" type="date" value="${localDateValue()}" required></label><label>Nummernvergabe<select name="numberMode"><option value="auto">Automatisch</option><option value="manual">Manuell</option></select></label><label class="span-all" data-manual-number hidden>Angebotsnummer<input name="offerNumber" maxlength="100" autocomplete="off"></label></div><p class="notice">Der Angebotsstand wird einschließlich Preisen und Kalkulation unveränderlich gespeichert. Spätere Änderungen sind nur über eine zukünftige Revision möglich.</p>`,
+    const isRevision = Number(offer.revision || 0) > 0,
+      form = modalForm(
+      `<div class="global-modal-selection"><label>Dokumentdatum<input name="documentDate" type="date" value="${localDateValue()}" required></label>${isRevision ? `<label>Angebotsnummer<input value="${esc(offer.offerNumber)}" readonly></label>` : '<label>Nummernvergabe<select name="numberMode"><option value="auto">Automatisch</option><option value="manual">Manuell</option></select></label><label class="span-all" data-manual-number hidden>Angebotsnummer<input name="offerNumber" maxlength="100" autocomplete="off"></label>'}</div><p class="notice">Der Angebotsstand wird einschließlich Preisen und Kalkulation unveränderlich gespeichert. Spätere Änderungen sind nur über eine neue Revision möglich.</p>`,
     );
     const mode = form.elements.numberMode,
       manualRow = form.querySelector("[data-manual-number]"),
       manualInput = form.elements.offerNumber;
-    mode.addEventListener("change", () => {
+    mode?.addEventListener("change", () => {
       const manual = mode.value === "manual";
       manualRow.hidden = !manual;
       manualInput.required = manual;
@@ -1326,7 +1327,7 @@
     if (!proceed) return;
     const payload = {
       documentDate: form.elements.documentDate.value,
-      offerNumber: mode.value === "manual" ? manualInput.value.trim() : null,
+      offerNumber: isRevision ? null : mode.value === "manual" ? manualInput.value.trim() : null,
       confirmIncomplete: false,
     };
     await performSubmission(payload);
@@ -1436,8 +1437,29 @@
       status.textContent = error.message;
     }
   }
+  async function createRevision() {
+    const confirmed = await CalightModal.confirm({
+      title: "Neue Angebotsrevision erstellen",
+      content: "Aus dem letzten abgegebenen Stand wird eine neue bearbeitbare Revision erstellt. Der bisherige Stand und seine PDF bleiben unverändert.",
+      confirmLabel: "Revision erstellen",
+    });
+    if (!confirmed) return;
+    status.textContent = "Revision wird erstellt …";
+    try {
+      const response = await fetch(
+          `/api/offers/${encodeURIComponent(root.dataset.offerId)}/revisions`,
+          { method: "POST", credentials: "same-origin", headers: { "X-CSRF-Token": root.dataset.csrf } },
+        ),
+        result = await responsePayload(response);
+      if (!response.ok) throw new Error((result.details || []).join(" ") || result.error || "Revision konnte nicht erstellt werden.");
+      location.assign(result.url);
+    } catch (error) {
+      status.textContent = error.message;
+    }
+  }
   root.querySelector("[data-submit-offer]")?.addEventListener("click", submitOffer);
   root.querySelector("[data-copy-current]")?.addEventListener("click", copyCurrentOffer);
+  root.querySelector("[data-create-revision]")?.addEventListener("click", createRevision);
   root.querySelectorAll("[data-change-status]").forEach((button) =>
     button.addEventListener("click", () => changeLifecycleStatus(button.dataset.changeStatus)),
   );
