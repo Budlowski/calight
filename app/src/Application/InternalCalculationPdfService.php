@@ -133,7 +133,7 @@ final readonly class InternalCalculationPdfService
                 $this->rightText($pdf,$right-135,$y,$font-1,'EK',true,'.35 .4 .45');
                 $this->rightText($pdf,$right-68,$y,$font-1,'Aufschlag',true,'.35 .4 .45');
                 $this->rightText($pdf,$right,$y,$font-1,'VK',true,'.35 .4 .45');
-                $y-=9;$pdf->line($left+50,$y,$right,$y,'.82 .84 .86');$y-=7;
+                $y-=5;$pdf->line($left+50,$y,$right,$y,'.82 .84 .86');$y-=11;
             };
 
             if($componentRows!==[]){
@@ -176,8 +176,10 @@ final readonly class InternalCalculationPdfService
         $calculation=$offer['calculation'];
         $analysis=$calculation['analysis'];
         $newPage();
+        $y-=14;
         $this->titleOverview($pdf,$numbers,$left,$right,$y,$font,$offer['nodes']??[],$calculation,$accent,$newPage,$bottom);
         $newPage();
+        $y-=14;
         $pdf->text($left,$y,15,'Kalkulationsübersicht',true,$accent);$y-=25;
         $this->summaryBlock($pdf,$numbers,$left,$right,$y,$font,$calculation,$analysis,$accent);
         return $pdf->output();
@@ -271,7 +273,7 @@ final readonly class InternalCalculationPdfService
         };
         $header();
         foreach($this->titleSummary($nodes) as $row){
-            if($y-30<$bottom){$newPage();$pdf->text($left,$y,12,'Titelübersicht – Fortsetzung',true,$accent);$y-=22;$header();}
+            if($y-30<$bottom){$newPage();$y-=14;$pdf->text($left,$y,12,'Titelübersicht – Fortsetzung',true,$accent);$y-=22;$header();}
             $lines=$this->wrap($row['number'].'  '.$row['name'],58);$baseline=$y;
             foreach($lines as $line){$pdf->text($left,$y,$font,$line,true);$y-=10;}
             $this->rightText($pdf,$regularRight,$baseline,$font,$numbers->money($row['regular']));
