@@ -122,10 +122,10 @@ final readonly class InternalCalculationPdfService
             if($components!==[]){
                 $ensure(25);
                 $pdf->text($left+50,$y,$font-1,'Kalkulationsbaustein / Typ',true,'.35 .4 .45');
-                $pdf->textRight($right-210,$y,$font-1,'Menge / Einheit',true,'.35 .4 .45');
-                $pdf->textRight($right-135,$y,$font-1,'EK',true,'.35 .4 .45');
-                $pdf->textRight($right-68,$y,$font-1,'Aufschlag',true,'.35 .4 .45');
-                $pdf->textRight($right,$y,$font-1,'VK',true,'.35 .4 .45');
+                $pdf->textRight($right-214,$y,$font-1,'Menge / Einheit',true,'.35 .4 .45');
+                $pdf->textRight($right-139,$y,$font-1,'EK',true,'.35 .4 .45');
+                $pdf->textRight($right-72,$y,$font-1,'Aufschlag',true,'.35 .4 .45');
+                $pdf->textRight($right-4,$y,$font-1,'VK',true,'.35 .4 .45');
                 $y-=10;
                 foreach($components as $index=>$component){
                     $ensure(15);
@@ -153,6 +153,8 @@ final readonly class InternalCalculationPdfService
 
         $calculation=$offer['calculation'];
         $analysis=$calculation['analysis'];
+        $newPage();
+        $this->titleOverview($pdf,$numbers,$left,$right,$y,$font,$offer['nodes']??[],$calculation,$accent,$newPage,$bottom);
         $newPage();
         $pdf->text($left,$y,15,'Kalkulationsübersicht',true,$accent);$y-=25;
         $this->summaryBlock($pdf,$numbers,$left,$right,$y,$font,$calculation,$analysis,$accent);
@@ -197,8 +199,13 @@ final readonly class InternalCalculationPdfService
         $metric=function(string $label,string $value,bool $bold=false)use($pdf,$left,$right,&$y,$font):void{$pdf->text($left,$y,$font,$label,$bold);$pdf->textRight($right,$y,$font,$value,$bold);$y-=15;};
         $pdf->text($left,$y,$font+2,'Kostenaufteilung',true);$y-=18;
         foreach([['Material',$analysis['materialCosts'],$analysis['materialCostPercent']],['Lohn',$analysis['laborCosts'],$analysis['laborCostPercent']],['Fremdleistungen',$analysis['externalCosts'],$analysis['externalCostPercent']],['Sonstige',$analysis['otherCosts'],$analysis['otherCostPercent']]] as [$label,$cost,$percent]){
-            $metric($label,$numbers->money((string)$cost).' · '.$numbers->percent((string)$percent));
-            $width=max(0.0,min(1.0,(float)$percent/100))*180;$pdf->line($left+125,$y+19,$left+305,$y+19,'.88 .9 .92');if($width>0)$pdf->line($left+125,$y+19,$left+125+$width,$y+19,$accent);
+            $pdf->text($left,$y,$font,$label);
+            $width=max(0.0,min(1.0,(float)$percent/100))*180;
+            $pdf->line($left+125,$y+2,$left+305,$y+2,'.88 .9 .92');
+            if($width>0)$pdf->line($left+125,$y+2,$left+125+$width,$y+2,$accent);
+            $pdf->textRight($right-62,$y,$font,$numbers->money((string)$cost));
+            $pdf->textRight($right,$y,$font,$numbers->percent((string)$percent));
+            $y-=15;
         }
         $y-=6;$metric('Gesamte kalkulierte Kosten',$numbers->money((string)$analysis['totalCosts']),true);
         $metric('Kalkulierte Arbeitsstunden',$numbers->quantity((string)$analysis['laborHours']).' h');
@@ -216,6 +223,52 @@ final readonly class InternalCalculationPdfService
         $metric('Vollständig / Unvollständig',($analysis['positionCount']-$analysis['incompleteCount']).' / '.$analysis['incompleteCount'],true);
         $metric('Offen / In Bearbeitung / Fertig',$analysis['statusOpen'].' / '.$analysis['statusInProgress'].' / '.$analysis['statusDone']);
         $metric('Manuell übersteuerter Verkaufspreis',(string)$analysis['manualPriceCount']);
+    }
+
+    /** @param list<array<string,mixed>> $nodes @param array<string,mixed> $calculation */
+    private function titleOverview(SimplePdf $pdf,PdfNumberFormatter $numbers,float $left,float $right,float &$y,float $font,array $nodes,array $calculation,string $accent,callable $newPage,float $bottom): void
+    {
+        $pdf->text($left,$y,15,'Titelübersicht',true,$accent);$y-=25;
+        $regularRight=$right-140;$demandRight=$right-70;
+        $header=function()use($pdf,$left,$right,$regularRight,$demandRight,&$y,$font):void{
+            $pdf->text($left,$y,$font,'Titel',true);
+            $pdf->textRight($regularRight-4,$y,$font,'Regulär',true);
+            $pdf->textRight($demandRight-4,$y,$font,'Bedarf',true);
+            $pdf->textRight($right-4,$y,$font,'Alternativ',true);
+            $y-=8;$pdf->line($left,$y,$right,$y,'0.3 0.35 0.4');$y-=14;
+        };
+        $header();
+        foreach($this->titleSummary($nodes) as $row){
+            if($y-30<$bottom){$newPage();$pdf->text($left,$y,12,'Titelübersicht – Fortsetzung',true,$accent);$y-=22;$header();}
+            $lines=$this->wrap($row['number'].'  '.$row['name'],58);$baseline=$y;
+            foreach($lines as $line){$pdf->text($left,$y,$font,$line,true);$y-=10;}
+            $pdf->textRight($regularRight,$baseline,$font,$numbers->money($row['regular']));
+            $pdf->textRight($demandRight,$baseline,$font,$numbers->money($row['demand']));
+            $pdf->textRight($right,$baseline,$font,$numbers->money($row['alternative']));
+            $pdf->line($left,$y,$right,$y);$y-=14;
+        }
+        $y-=4;$pdf->text($left,$y,$font+1,'Gesamtsummen',true);
+        $pdf->textRight($regularRight,$y,$font+1,$numbers->money((string)$calculation['subtotalNet']),true);
+        $pdf->textRight($demandRight,$y,$font+1,$numbers->money((string)$calculation['demandSubtotal']),true);
+        $pdf->textRight($right,$y,$font+1,$numbers->money((string)$calculation['alternativeSubtotal']),true);
+    }
+
+    /** @param list<array<string,mixed>> $nodes @return list<array{number:string,name:string,regular:string,demand:string,alternative:string}> */
+    private function titleSummary(array $nodes): array
+    {
+        $rows=[];$title=0;$untitled=['regular'=>BigDecimal::zero(),'demand'=>BigDecimal::zero(),'alternative'=>BigDecimal::zero()];
+        foreach($nodes as $node){
+            if(($node['type']??'')==='title'){
+                $calculation=is_array($node['calculation']??null)?$node['calculation']:[];
+                $rows[]=['number'=>(string)++$title,'name'=>(string)$node['name'],'regular'=>(string)($calculation['regularSubtotal']??'0'),'demand'=>(string)($calculation['demandSubtotal']??'0'),'alternative'=>(string)($calculation['alternativeSubtotal']??'0')];
+                continue;
+            }
+            if(($node['type']??'')!=='position')continue;
+            $type=($node['positionType']??'normal')==='bedarf'?'demand':(($node['positionType']??'normal')==='alternative'?'alternative':'regular');
+            $untitled[$type]=$untitled[$type]->plus((string)($node['calculation']['positionTotal']??'0'));
+        }
+        if(!$untitled['regular']->isZero()||!$untitled['demand']->isZero()||!$untitled['alternative']->isZero())$rows[]=['number'=>'–','name'=>'Positionen ohne Titel','regular'=>(string)$untitled['regular'],'demand'=>(string)$untitled['demand'],'alternative'=>(string)$untitled['alternative']];
+        return $rows;
     }
 
     /** @return list<string> */
