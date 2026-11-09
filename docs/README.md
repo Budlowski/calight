@@ -2,6 +2,8 @@
 
 **Open-Source-Kalkulations- und Angebotssoftware für Handwerk und Dienstleistung.**
 
+![Calight Angebotseditor](images/angebotseditor.png)
+
 Calight ist eine schlanke, selbst gehostete Anwendung zur Erstellung und Kalkulation von Angeboten. Sie richtet sich an Handwerksbetriebe, Einzelunternehmer und Dienstleister, die ihre Leistungen transparent und detailliert kalkulieren möchten.
 
 ## Funktionen
@@ -39,3 +41,15 @@ Calight ist freie Open-Source-Software unter der **GNU Affero General Public Lic
 Die Software darf auch kommerziell kostenlos genutzt, verändert und weitergegeben werden. Dabei gelten die Bedingungen der AGPL-3.0.
 
 Siehe [LICENSE](LICENSE).
+
+
+## Bilder
+
+![Calight Angebotseditor Titel / Positionen](images/angebotseditor_1.png)
+Calight Angebotseditor Titel / Positionen
+
+![Calight Angebotseditor Positionskalkulation](images/angebotseditor_2.png)
+Calight Angebotseditor Positionskalkulation
+
+![Calight Angebotseditor Kalkulationsübersicht](images/angebotseditor_3.png)
+Calight Angebotseditor Kalkulationsübersicht
