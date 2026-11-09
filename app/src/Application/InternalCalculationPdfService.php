@@ -55,7 +55,7 @@ final readonly class InternalCalculationPdfService
             $company=trim((string)($settings['companyName']??'').' '.(string)($settings['legalForm']??''));
             $pdf->text($left,810,13,$company?:'Calight',true,$accent);
             if($page===1)$this->logo($pdf,$settings,$left,$right);
-            $pdf->textRight($right,810,7,'Interne Kalkulation · Seite '.$page,true,'.45 .1 .1');
+            $this->rightText($pdf,$right,810,7,'Interne Kalkulation · Seite '.$page,true,'.45 .1 .1');
             $pdf->line($left,800,$right,800,'0.3 0.35 0.4');
         };
         $newPage();
@@ -66,15 +66,15 @@ final readonly class InternalCalculationPdfService
         $pdf->text($left,$y,12,(string)$offer['title'],true,$accent);
         $y-=17;
         $pdf->text($left,$y,$font,'Projekt: '.trim((string)($project['project_number']??'').' · '.(string)($project['name']??'')));
-        $pdf->textRight($right,$y,$font,'Stand: '.date('d.m.Y H:i'));
+        $this->rightText($pdf,$right,$y,$font,'Stand: '.date('d.m.Y H:i'));
         $y-=22;
 
         $header=function()use($pdf,&$y,$left,$right,$font):void{
             $pdf->text($left,$y,$font,'Pos.',true);
             $pdf->text($left+42,$y,$font,'Bezeichnung',true);
-            $pdf->textRight($right-145,$y,$font,'Menge',true);
-            $pdf->textRight($right-72,$y,$font,'VK je Einheit',true);
-            $pdf->textRight($right,$y,$font,'Gesamt',true);
+            $this->rightText($pdf,$right-145,$y,$font,'Menge',true);
+            $this->rightText($pdf,$right-72,$y,$font,'VK je Einheit',true);
+            $this->rightText($pdf,$right,$y,$font,'Gesamt',true);
             $y-=8;$pdf->line($left,$y,$right,$y,'0.3 0.35 0.4');$y-=13;
         };
         $header();
@@ -93,7 +93,7 @@ final readonly class InternalCalculationPdfService
             if($row['kind']==='subtotal'){
                 $ensure(28);
                 $pdf->text($left+42,$y,$font,'Summe '.$row['label'],true);
-                $pdf->textRight($right,$y,$font,$numbers->money($row['total']),true);
+                $this->rightText($pdf,$right,$y,$font,$numbers->money($row['total']),true);
                 $y-=8;$pdf->line($left+42,$y,$right,$y);$y-=19;
                 continue;
             }
@@ -109,34 +109,51 @@ final readonly class InternalCalculationPdfService
             if($incomplete)$markers[]='[Kalkulation unvollständig]';
             $title=trim(implode(' ',$markers).' '.(string)$node['shortText']);
             $titleLines=$this->wrap($title,70);
-            $height=46+count($titleLines)*10+count($components)*13;
-            $ensure(min($height,100.0));
+            $componentRows=[];
+            foreach($components as $index=>$component){
+                $label=(string)($component['name']??'Unbenannter Baustein').' · '.$this->typeLabel((string)($component['calculationType']??''));
+                $lines=$this->wrap($label,38);
+                $componentRows[]=['index'=>$index,'component'=>$component,'lines'=>$lines,'height'=>max(13.0,count($lines)*9.0+2.0)];
+            }
+            $componentsHeight=array_sum(array_column($componentRows,'height'));
+            $height=52+count($titleLines)*10+$componentsHeight;
+            if($height<=($top-$bottom-45))$ensure($height);
+            else $ensure(55+count($titleLines)*10);
             $baseline=$y;
             $pdf->text($left+2,$y,$font,$row['number'],true);
             foreach($titleLines as $line){$pdf->text($left+42+min($row['depth'],3)*7,$y,$font,$line,true);$y-=10;}
-            $pdf->textRight($right-145,$baseline,$font,$numbers->quantity((string)$node['quantity']).' '.(string)$node['unit']);
-            $pdf->textRight($right-72,$baseline,$font,$numbers->money((string)($calculation['effectiveUnitPrice']??'0')));
-            $pdf->textRight($right,$baseline,$font,$numbers->money((string)($calculation['positionTotal']??'0')),true);
+            $this->rightText($pdf,$right-145,$baseline,$font,$numbers->quantity((string)$node['quantity']).' '.(string)$node['unit']);
+            $this->rightText($pdf,$right-72,$baseline,$font,$numbers->money((string)($calculation['effectiveUnitPrice']??'0')));
+            $this->rightText($pdf,$right,$baseline,$font,$numbers->money((string)($calculation['positionTotal']??'0')),true);
             $y-=2;
 
-            if($components!==[]){
-                $ensure(25);
+            $componentHeader=function()use($pdf,&$y,$left,$right,$font):void{
                 $pdf->text($left+50,$y,$font-1,'Kalkulationsbaustein / Typ',true,'.35 .4 .45');
-                $pdf->textRight($right-214,$y,$font-1,'Menge / Einheit',true,'.35 .4 .45');
-                $pdf->textRight($right-139,$y,$font-1,'EK',true,'.35 .4 .45');
-                $pdf->textRight($right-72,$y,$font-1,'Aufschlag',true,'.35 .4 .45');
-                $pdf->textRight($right-4,$y,$font-1,'VK',true,'.35 .4 .45');
-                $y-=10;
-                foreach($components as $index=>$component){
-                    $ensure(15);
-                    $name=(string)($component['name']??'Unbenannter Baustein');
-                    $type=$this->typeLabel((string)($component['calculationType']??''));
-                    $pdf->text($left+50,$y,$font-1,$this->shorten($name,42).' · '.$type);
-                    $pdf->textRight($right-210,$y,$font-1,$numbers->quantity((string)($component['quantity']??'0')).' '.(string)($component['unit']??''));
-                    $pdf->textRight($right-135,$y,$font-1,$numbers->money((string)($component['costPrice']??'0')));
-                    $pdf->textRight($right-68,$y,$font-1,$numbers->percent((string)($component['markupPercent']??'0')));
-                    $pdf->textRight($right,$y,$font-1,$numbers->money((string)($calculation['componentSalesPrices'][$index]??'0')));
-                    $y-=13;
+                $this->rightText($pdf,$right-210,$y,$font-1,'Menge / Einheit',true,'.35 .4 .45');
+                $this->rightText($pdf,$right-135,$y,$font-1,'EK',true,'.35 .4 .45');
+                $this->rightText($pdf,$right-68,$y,$font-1,'Aufschlag',true,'.35 .4 .45');
+                $this->rightText($pdf,$right,$y,$font-1,'VK',true,'.35 .4 .45');
+                $y-=9;$pdf->line($left+50,$y,$right,$y,'.82 .84 .86');$y-=7;
+            };
+
+            if($componentRows!==[]){
+                $componentHeader();
+                foreach($componentRows as $componentIndex=>$componentRow){
+                    $rowHeight=$componentRow['height'];
+                    $isLast=$componentIndex===array_key_last($componentRows);
+                    if($y-$rowHeight-($isLast?34:0)<$bottom){
+                        $newPage();$header();
+                        $pdf->text($left+42,$y,$font-1,'Fortsetzung Position '.$row['number'].' · '.(string)$node['shortText'],true,'.35 .4 .45');
+                        $y-=14;$componentHeader();
+                    }
+                    $component=$componentRow['component'];
+                    $rowBaseline=$y;
+                    foreach($componentRow['lines'] as $line){$pdf->text($left+50,$y,$font-1,$line);$y-=9;}
+                    $this->rightText($pdf,$right-210,$rowBaseline,$font-1,$numbers->quantity((string)($component['quantity']??'0')).' '.(string)($component['unit']??''));
+                    $this->rightText($pdf,$right-135,$rowBaseline,$font-1,$numbers->money((string)($component['costPrice']??'0')));
+                    $this->rightText($pdf,$right-68,$rowBaseline,$font-1,$numbers->percent((string)($component['markupPercent']??'0')));
+                    $this->rightText($pdf,$right,$rowBaseline,$font-1,$numbers->money((string)($calculation['componentSalesPrices'][$componentRow['index']]??'0')));
+                    $y=$rowBaseline-$rowHeight;
                 }
             }
 
@@ -144,11 +161,16 @@ final readonly class InternalCalculationPdfService
             $positionCosts=BigDecimal::of((string)($calculation['totalCosts']??'0'))->multipliedBy($quantity)->toScale(2,RoundingMode::HalfUp);
             $sale=BigDecimal::of((string)($calculation['positionTotal']??'0'));
             $contribution=$incomplete?'nicht belastbar':$numbers->money((string)$sale->minus($positionCosts));
-            $ensure(24);
-            $pdf->text($left+50,$y,$font-1,'Gesamtkosten: '.$numbers->money((string)$positionCosts),true);
-            $pdf->text($left+205,$y,$font-1,'Tatsächlicher VK: '.$numbers->money((string)$sale),true);
-            $pdf->textRight($right,$y,$font-1,'Deckungsbeitrag: '.$contribution,true,$incomplete?'.55 .35 0':'0 0 0');
-            $y-=9;$pdf->line($left,$y,$right,$y);$y-=15;
+            $ensure(34);
+            $costRight=$left+215;$saleRight=$left+365;
+            $this->rightText($pdf,$costRight,$y,$font-1,'Gesamtkosten',false,'.35 .4 .45');
+            $this->rightText($pdf,$saleRight,$y,$font-1,'Tatsächlicher VK',false,'.35 .4 .45');
+            $this->rightText($pdf,$right,$y,$font-1,'Deckungsbeitrag',false,'.35 .4 .45');
+            $y-=11;
+            $this->rightText($pdf,$costRight,$y,$font,$numbers->money((string)$positionCosts),true);
+            $this->rightText($pdf,$saleRight,$y,$font,$numbers->money((string)$sale),true);
+            $this->rightText($pdf,$right,$y,$font,$contribution,true,$incomplete?'.55 .35 0':'0 0 0');
+            $y-=9;$pdf->line($left,$y,$right,$y);$y-=17;
         }
 
         $calculation=$offer['calculation'];
@@ -196,15 +218,25 @@ final readonly class InternalCalculationPdfService
     /** @param array<string,mixed> $calculation @param array<string,mixed> $analysis */
     private function summaryBlock(SimplePdf $pdf,PdfNumberFormatter $numbers,float $left,float $right,float &$y,float $font,array $calculation,array $analysis,string $accent): void
     {
-        $metric=function(string $label,string $value,bool $bold=false)use($pdf,$left,$right,&$y,$font):void{$pdf->text($left,$y,$font,$label,$bold);$pdf->textRight($right,$y,$font,$value,$bold);$y-=15;};
+        $valueRight=min($right,$left+390);
+        $metric=function(string $label,string $value,bool $bold=false)use($pdf,$left,$valueRight,&$y,$font):void{
+            $pdf->text($left,$y,$font,$label,$bold);
+            $this->rightText($pdf,$valueRight,$y,$font,$value,$bold);
+            $y-=15;
+        };
         $pdf->text($left,$y,$font+2,'Kostenaufteilung',true);$y-=18;
+        $amountRight=min($right-62,$left+390);$percentRight=min($right,$left+455);
+        $this->rightText($pdf,$amountRight,$y,$font-1,'Betrag',true,'.35 .4 .45');
+        $this->rightText($pdf,$percentRight,$y,$font-1,'Anteil',true,'.35 .4 .45');
+        $y-=12;
         foreach([['Material',$analysis['materialCosts'],$analysis['materialCostPercent']],['Lohn',$analysis['laborCosts'],$analysis['laborCostPercent']],['Fremdleistungen',$analysis['externalCosts'],$analysis['externalCostPercent']],['Sonstige',$analysis['otherCosts'],$analysis['otherCostPercent']]] as [$label,$cost,$percent]){
             $pdf->text($left,$y,$font,$label);
-            $width=max(0.0,min(1.0,(float)$percent/100))*180;
-            $pdf->line($left+125,$y+2,$left+305,$y+2,'.88 .9 .92');
-            if($width>0)$pdf->line($left+125,$y+2,$left+125+$width,$y+2,$accent);
-            $pdf->textRight($right-62,$y,$font,$numbers->money((string)$cost));
-            $pdf->textRight($right,$y,$font,$numbers->percent((string)$percent));
+            $barLeft=$left+105;$barRight=$left+265;
+            $width=max(0.0,min(1.0,(float)$percent/100))*($barRight-$barLeft);
+            $pdf->line($barLeft,$y+2,$barRight,$y+2,'.88 .9 .92');
+            if($width>0)$pdf->line($barLeft,$y+2,$barLeft+$width,$y+2,$accent);
+            $this->rightText($pdf,$amountRight,$y,$font,$numbers->money((string)$cost));
+            $this->rightText($pdf,$percentRight,$y,$font,$numbers->percent((string)$percent));
             $y-=15;
         }
         $y-=6;$metric('Gesamte kalkulierte Kosten',$numbers->money((string)$analysis['totalCosts']),true);
@@ -232,9 +264,9 @@ final readonly class InternalCalculationPdfService
         $regularRight=$right-140;$demandRight=$right-70;
         $header=function()use($pdf,$left,$right,$regularRight,$demandRight,&$y,$font):void{
             $pdf->text($left,$y,$font,'Titel',true);
-            $pdf->textRight($regularRight-4,$y,$font,'Regulär',true);
-            $pdf->textRight($demandRight-4,$y,$font,'Bedarf',true);
-            $pdf->textRight($right-4,$y,$font,'Alternativ',true);
+            $this->rightText($pdf,$regularRight,$y,$font,'Regulär',true);
+            $this->rightText($pdf,$demandRight,$y,$font,'Bedarf',true);
+            $this->rightText($pdf,$right,$y,$font,'Alternativ',true);
             $y-=8;$pdf->line($left,$y,$right,$y,'0.3 0.35 0.4');$y-=14;
         };
         $header();
@@ -242,15 +274,15 @@ final readonly class InternalCalculationPdfService
             if($y-30<$bottom){$newPage();$pdf->text($left,$y,12,'Titelübersicht – Fortsetzung',true,$accent);$y-=22;$header();}
             $lines=$this->wrap($row['number'].'  '.$row['name'],58);$baseline=$y;
             foreach($lines as $line){$pdf->text($left,$y,$font,$line,true);$y-=10;}
-            $pdf->textRight($regularRight,$baseline,$font,$numbers->money($row['regular']));
-            $pdf->textRight($demandRight,$baseline,$font,$numbers->money($row['demand']));
-            $pdf->textRight($right,$baseline,$font,$numbers->money($row['alternative']));
+            $this->rightText($pdf,$regularRight,$baseline,$font,$numbers->money($row['regular']));
+            $this->rightText($pdf,$demandRight,$baseline,$font,$numbers->money($row['demand']));
+            $this->rightText($pdf,$right,$baseline,$font,$numbers->money($row['alternative']));
             $pdf->line($left,$y,$right,$y);$y-=14;
         }
         $y-=4;$pdf->text($left,$y,$font+1,'Gesamtsummen',true);
-        $pdf->textRight($regularRight,$y,$font+1,$numbers->money((string)$calculation['subtotalNet']),true);
-        $pdf->textRight($demandRight,$y,$font+1,$numbers->money((string)$calculation['demandSubtotal']),true);
-        $pdf->textRight($right,$y,$font+1,$numbers->money((string)$calculation['alternativeSubtotal']),true);
+        $this->rightText($pdf,$regularRight,$y,$font+1,$numbers->money((string)$calculation['subtotalNet']),true);
+        $this->rightText($pdf,$demandRight,$y,$font+1,$numbers->money((string)$calculation['demandSubtotal']),true);
+        $this->rightText($pdf,$right,$y,$font+1,$numbers->money((string)$calculation['alternativeSubtotal']),true);
     }
 
     /** @param list<array<string,mixed>> $nodes @return list<array{number:string,name:string,regular:string,demand:string,alternative:string}> */
@@ -273,7 +305,25 @@ final readonly class InternalCalculationPdfService
 
     /** @return list<string> */
     private function wrap(string $text,int $width): array{return explode("\n",wordwrap(trim($text),$width,"\n",true));}
-    private function shorten(string $text,int $length): string{return mb_strlen($text)<=$length?$text:mb_substr($text,0,$length-1).'…';}
+    private function rightText(SimplePdf $pdf,float $right,float $y,float $size,string $text,bool $bold=false,string $color='0 0 0'): void
+    {
+        $pdf->text($right-$this->textWidth($text,$size),$y,$size,$text,$bold,$color);
+    }
+
+    private function textWidth(string $text,float $size): float
+    {
+        $widths=[
+            ' '=>278,'.'=>278,','=>278,':'=>278,';'=>278,'-'=>333,'–'=>556,'/'=>278,'%'=>889,'€'=>556,
+            'A'=>667,'B'=>667,'C'=>722,'D'=>722,'E'=>667,'F'=>611,'G'=>778,'H'=>722,'I'=>278,'J'=>500,'K'=>667,'L'=>556,'M'=>833,'N'=>722,'O'=>778,'P'=>667,'Q'=>778,'R'=>722,'S'=>667,'T'=>611,'U'=>722,'V'=>667,'W'=>944,'X'=>667,'Y'=>667,'Z'=>611,
+            'a'=>556,'b'=>556,'c'=>500,'d'=>556,'e'=>556,'f'=>278,'g'=>556,'h'=>556,'i'=>222,'j'=>222,'k'=>500,'l'=>222,'m'=>833,'n'=>556,'o'=>556,'p'=>556,'q'=>556,'r'=>333,'s'=>500,'t'=>278,'u'=>556,'v'=>500,'w'=>722,'x'=>500,'y'=>500,'z'=>500,
+        ];
+        $units=0;
+        foreach(preg_split('//u',$text,-1,PREG_SPLIT_NO_EMPTY)?:[] as $character){
+            $normalized=strtr($character,['Ä'=>'A','Ö'=>'O','Ü'=>'U','ä'=>'a','ö'=>'o','ü'=>'u','ß'=>'s']);
+            $units+=$widths[$normalized]??556;
+        }
+        return $units*$size/1000;
+    }
     private function typeLabel(string $type): string{return ['material'=>'Material','labor'=>'Lohn','external'=>'Fremdleistung','other'=>'Sonstige Kosten'][$type]??$type;}
     /** @param array<string,mixed> $settings */
     private function logo(SimplePdf $pdf,array $settings,float $left,float $right): void{if(!is_string($settings['logoData']??null)||!str_starts_with($settings['logoData'],'data:image/jpeg;base64,'))return;$data=base64_decode(substr($settings['logoData'],23),true);if($data===false)return;$width=(float)($settings['logoWidth']??180);$height=(float)($settings['logoHeight']??100);$x=($settings['logoPosition']??'right')==='left'?$left:$right-$width;$pdf->jpegContained($data,$x,800-$height,$width,$height);}
