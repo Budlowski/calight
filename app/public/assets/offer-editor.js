@@ -25,10 +25,13 @@
     searchQuery = "",
     workStatusFilter = "",
     searchPreviousOpen = null,
-    titlePositionCounts = new Map();
+    titlePositionCounts = new Map(),
+    savedHistoryState = "",
+    historyGroupTimer = 0;
   const openNodes = new Set(),
     pricePreviews = new Map(),
-    library = { services: [], costItems: [], trailingTexts: [] };
+    library = { services: [], costItems: [], trailingTexts: [] },
+    history = new CalightOfferHistory(10);
   const esc = (v) =>
     String(v ?? "").replace(
       /[&<>'"]/g,
@@ -55,6 +58,8 @@
     }).format(Number(v ?? 0));
   const dec = (v, fallback = "0") => String(v ?? fallback).replace(".", ",");
   const toolbar = root.querySelector(".offer-tree-toolbar");
+  const undoButton = toolbar.querySelector("[data-undo]"),
+    redoButton = toolbar.querySelector("[data-redo]");
   const structureScroll = root.querySelector(".offer-structure-scroll");
   const offerHeaderScroll = structureScroll.querySelector(
       ".offer-header-scroll",
@@ -136,11 +141,77 @@
       );
     return payload.data ?? payload;
   }
-  function markDirty() {
-    dirty = true;
+  function historySnapshot() {
+    const snapshot = structuredClone(offer);
+    snapshot.title = titleInput.value;
+    delete snapshot.calculation;
+    walk(snapshot.nodes, (node) => delete node.calculation);
+    return snapshot;
+  }
+  function comparableHistoryState(snapshot = historySnapshot()) {
+    const comparable = structuredClone(snapshot);
+    delete comparable.createdAt;
+    delete comparable.updatedAt;
+    return JSON.stringify(comparable);
+  }
+  function updateHistoryControls() {
+    undoButton.disabled = !history.canUndo;
+    redoButton.disabled = !history.canRedo;
+  }
+  function updateDirtyState(message = "Ungespeicherte Änderungen") {
+    dirty = comparableHistoryState() !== savedHistoryState;
+    status.textContent = dirty ? message : "Gespeichert";
+  }
+  function markDirty(options = {}) {
+    history.record(historySnapshot(), options.group ?? null);
+    clearTimeout(historyGroupTimer);
+    if (options.group)
+      historyGroupTimer = setTimeout(() => history.endGroup(), 700);
+    else history.endGroup();
     stateRevision++;
-    status.textContent = "Ungespeicherte Änderungen";
+    updateDirtyState();
+    updateHistoryControls();
     scheduleCalculation();
+  }
+  function restoreHistory(snapshot) {
+    if (!snapshot) return;
+    clearTimeout(calcTimer);
+    clearTimeout(historyGroupTimer);
+    calculationRequest++;
+    stateRevision++;
+    offer = snapshot;
+    normalize();
+    titleInput.value = offer.title;
+    pricePreviews.clear();
+    showTerms();
+    showAdjustment();
+    render();
+    updateDirtyState();
+    updateHistoryControls();
+    scheduleCalculation();
+  }
+  function undo() {
+    restoreHistory(history.undo());
+  }
+  function redo() {
+    restoreHistory(history.redo());
+  }
+  function inputHistoryGroup(input, row = null) {
+    if (!(
+      input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement
+    ))
+      return null;
+    if (input.type === "checkbox" || input.type === "radio") return null;
+    const component = input.closest("[data-component-index]")?.dataset
+      .componentIndex;
+    const field =
+      input.dataset.componentField ||
+      input.dataset.field ||
+      input.dataset.adjustment ||
+      input.id ||
+      input.name ||
+      "input";
+    return `${row?.dataset.nodeId || "offer"}:${component ?? ""}:${field}`;
   }
   function newTitle() {
     return {
@@ -742,6 +813,8 @@
     openNodes.clear();
     render();
   };
+  undoButton.addEventListener("click", undo);
+  redoButton.addEventListener("click", redo);
   statusFilter.addEventListener("change", () => {
     workStatusFilter = statusFilter.value;
     render();
@@ -1087,7 +1160,7 @@
             name: selected.name,
           };
       }
-      markDirty();
+      markDirty({ group: inputHistoryGroup(e.target, row) });
       render();
       return;
     }
@@ -1113,7 +1186,7 @@
             markupPercent: master.markupPercent,
           });
       }
-      markDirty();
+      markDirty({ group: inputHistoryGroup(e.target, row) });
       if (field === "priceMode") render();
       return;
     }
@@ -1121,12 +1194,12 @@
       const f = e.target.dataset.field;
       node[f] =
         f === "quantity" ? e.target.value.replace(",", ".") : e.target.value;
-      markDirty();
+      markDirty({ group: inputHistoryGroup(e.target, row) });
       return;
     }
     if (e.target.matches("[data-manual-price]")) {
       node.manualUnitPrice = e.target.value.replace(",", ".");
-      markDirty();
+      markDirty({ group: inputHistoryGroup(e.target, row) });
     }
   });
   tree.addEventListener("change", (e) => {
@@ -1412,10 +1485,10 @@
         (n.type === "title" && n.children.some((c) => findIn(c, id))))
     );
   }
-  adjustmentPanel.addEventListener("input", () => {
+  adjustmentPanel.addEventListener("input", (event) => {
     syncAdjustment();
     showAdjustment();
-    markDirty();
+    markDirty({ group: inputHistoryGroup(event.target) });
   });
   searchInput.addEventListener("input", runSearch);
   searchResults.addEventListener("click", (event) => {
@@ -1433,13 +1506,31 @@
       .querySelector(`[data-node-id="${id}"]`)
       ?.scrollIntoView({ behavior: "smooth", block: "center" });
   });
-  titleInput.addEventListener("input", markDirty);
+  titleInput.addEventListener("input", () =>
+    markDirty({ group: inputHistoryGroup(titleInput) }),
+  );
   Object.values(termFields).forEach((field) =>
-    field.addEventListener("input", () => {
+    field.addEventListener("input", (event) => {
       syncTerms();
-      markDirty();
+      markDirty({ group: inputHistoryGroup(event.target) });
     }),
   );
+  document.addEventListener("keydown", (event) => {
+    if (event.defaultPrevented || !(event.ctrlKey || event.metaKey)) return;
+    const target = event.target;
+    if (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target?.isContentEditable
+    )
+      return;
+    const key = event.key.toLowerCase(),
+      wantsUndo = key === "z" && !event.shiftKey,
+      wantsRedo = key === "y" || (key === "z" && event.shiftKey);
+    if (!wantsUndo && !wantsRedo) return;
+    event.preventDefault();
+    wantsUndo ? undo() : redo();
+  });
   window.addEventListener("beforeunload", (e) => {
     if (dirty) {
       e.preventDefault();
@@ -1449,6 +1540,7 @@
   saveButton.onclick = async () => {
     calculationRequest++;
     offer.title = titleInput.value.trim();
+    titleInput.value = offer.title;
     offer.updatedAt = new Date().toISOString();
     status.textContent = "Speichert …";
     saveButton.disabled = true;
@@ -1472,8 +1564,11 @@
           (x.details || []).join(" ") || x.error || "Speichern fehlgeschlagen.",
         );
       etag = x.etag;
+      history.replaceCurrent(historySnapshot());
+      savedHistoryState = comparableHistoryState();
       dirty = false;
       status.textContent = "Gespeichert";
+      updateHistoryControls();
       scheduleCalculation();
     } catch (x) {
       status.textContent = x.message;
@@ -1505,6 +1600,9 @@
       showTerms();
       showAdjustment();
       render();
+      history.reset(historySnapshot());
+      savedHistoryState = comparableHistoryState();
+      updateHistoryControls();
       saveButton.disabled = false;
       status.textContent = "";
       scheduleCalculation();

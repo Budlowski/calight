@@ -345,6 +345,7 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .context-menu-panel > a:hover, .context-menu-panel > button:hover { background: #edf4f8; }
 .offer-save-area #save-status:empty { display: none; }
 .offer-tree-toolbar { margin: var(--space-2) 0; }
+.offer-history-actions { display: inline-flex; gap: 3px; padding-left: var(--space-1); border-left: 1px solid var(--border); }
 .toolbar-spacer { flex: 1 1 auto; }
 
 /* Angebotseditor: klare Ebenen von Gliederung, Position und Kalkulation. */
