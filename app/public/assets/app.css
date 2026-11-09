@@ -91,6 +91,9 @@ textarea { min-height: 58px; resize: vertical; }
 .icon-grip-vertical { --icon-url: url('/assets/icons/lucide/grip-vertical.svg'); }
 .icon-chevrons-up { --icon-url: url('/assets/icons/lucide/chevrons-up.svg'); }
 .icon-chevrons-down { --icon-url: url('/assets/icons/lucide/chevrons-down.svg'); }
+.icon-undo-2 { --icon-url: url('/assets/icons/lucide/undo-2.svg'); }
+.icon-redo-2 { --icon-url: url('/assets/icons/lucide/redo-2.svg'); }
+.icon-wrench { --icon-url: url('/assets/icons/lucide/wrench.svg'); }
 .icon-refresh-cw { --icon-url: url('/assets/icons/lucide/refresh-cw.svg'); }
 .icon-settings { --icon-url: url('/assets/icons/lucide/settings.svg'); }
 .icon-file-up { --icon-url: url('/assets/icons/lucide/file-up.svg'); }
@@ -346,6 +349,8 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .offer-save-area #save-status:empty { display: none; }
 .offer-tree-toolbar { margin: var(--space-2) 0; }
 .offer-history-actions { display: inline-flex; gap: 3px; padding-left: var(--space-1); border-left: 1px solid var(--border); }
+.offer-tree-toolbar .toolbar-icon-button { border-color: #aeb7c0; background: white; color: var(--text); }
+.offer-tree-toolbar .toolbar-icon-button:hover { border-color: #8da9bb; background: #edf4f8; }
 .toolbar-spacer { flex: 1 1 auto; }
 
 /* Angebotseditor: klare Ebenen von Gliederung, Position und Kalkulation. */
