@@ -59,8 +59,8 @@
     }).format(Number(v ?? 0));
   const dec = (v, fallback = "0") => String(v ?? fallback).replace(".", ",");
   const toolbar = root.querySelector(".offer-tree-toolbar");
-  const undoButton = toolbar.querySelector("[data-undo]"),
-    redoButton = toolbar.querySelector("[data-redo]");
+  const undoButton = root.querySelector("[data-undo]"),
+    redoButton = root.querySelector("[data-redo]");
   const structureScroll = root.querySelector(".offer-structure-scroll");
   const offerHeaderScroll = structureScroll.querySelector(
       ".offer-header-scroll",
