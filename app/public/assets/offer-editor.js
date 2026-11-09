@@ -767,6 +767,7 @@
     render();
   }
   function structural(focus = null) {
+    if (isReadOnly()) return;
     markDirty();
     render();
     if (focus) tree.querySelector(`[data-node-id="${focus}"] input`)?.focus();
@@ -873,6 +874,7 @@
     updateOfferTotal();
   }
   function addNode(parent, node) {
+    if (isReadOnly()) return;
     container(parent)?.push(node);
     openNodes.add(node.id);
     structural(node.id);
@@ -962,6 +964,7 @@
     });
   }
   async function refreshArticleMasterData() {
+    if (isReadOnly()) return;
     try {
       status.textContent = "Artikelstammdaten werden geprüft …";
       await reloadLibrary();
@@ -1009,6 +1012,7 @@
     }
   }
   async function refreshPositionMasterData() {
+    if (isReadOnly()) return;
     try {
       status.textContent = "Positionsstammdaten werden geprüft …";
       await reloadLibrary();
@@ -1107,6 +1111,7 @@
     return form;
   }
   async function overwriteMarkups() {
+    if (isReadOnly()) return;
     const form = modalForm(
       `<div class="global-modal-selection"><label>Neuer Aufschlag (%)<input name="markup" inputmode="decimal" required placeholder="z. B. 25,00 oder -5,00"></label><label>Kalkulationstyp<select name="type"><option value="">Alle</option><option value="material">Material</option><option value="labor">Lohn</option><option value="external">Fremdleistung</option><option value="other">Sonstige Kosten</option></select></label><label class="span-all">Titel<select name="title">${titleScopeOptions()}</select></label></div><p class="global-modal-summary" data-bulk-count>Bitte einen gültigen Aufschlag eingeben.</p>`,
     );
@@ -1168,6 +1173,7 @@
     status.textContent = `${components.length} Kalkulationsbaustein${components.length === 1 ? " wurde" : "e wurden"} aktualisiert.`;
   }
   async function overwriteWorkStatus() {
+    if (isReadOnly()) return;
     const form = modalForm(
       `<div class="global-modal-selection"><label class="span-all">Titel<select name="title">${titleScopeOptions()}</select></label><label class="span-all">Neuer Status<select name="status"><option value="open">Offen</option><option value="in_progress">In Bearbeitung</option><option value="done">Fertig</option></select></label></div><p class="global-modal-summary" data-bulk-count></p>`,
     );
@@ -1345,28 +1351,36 @@
           },
         ),
         result = await responsePayload(response);
-      if (response.status === 409 && result.warning?.code === "incomplete_calculation") {
+      if (!response.ok && result.validation) {
+        const errors = result.validation.errors || [],
+          warnings = result.validation.warnings || [],
+          blocking = errors.length > 0;
         const content = document.createElement("div");
         const intro = document.createElement("p");
-        intro.className = "notice notice-warning";
-        intro.textContent = `${result.warning.count} regulär enthaltene Position${result.warning.count === 1 ? " besitzt" : "en besitzen"} keine vollständige Kostenbasis.`;
-        const list = document.createElement("ul");
-        for (const position of result.warning.positions || []) {
-          const item = document.createElement("li");
-          item.textContent = position.shortText;
-          list.append(item);
+        intro.className = `notice ${blocking ? "notice-error" : "notice-warning"}`;
+        intro.textContent = blocking
+          ? "Das Angebot kann noch nicht abgegeben werden. Bitte beheben Sie folgende Fehler:"
+          : "Das Angebot enthält Hinweise, die vor der Abgabe ausdrücklich bestätigt werden müssen:";
+        content.append(intro);
+        for (const [heading, problems] of [["Fehler", errors], ["Warnungen", warnings]]) {
+          if (!problems.length) continue;
+          const title = document.createElement("h3"), list = document.createElement("ul");
+          title.textContent = heading;
+          for (const problem of problems) {
+            const item = document.createElement("li");
+            item.textContent = `${problem.position ? `${problem.position}: ` : ""}${problem.message}`;
+            list.append(item);
+          }
+          content.append(title, list);
         }
-        const note = document.createElement("p");
-        note.textContent = "Die Verkaufspreise werden nicht verändert. Möchten Sie das Angebot dennoch verbindlich abgeben?";
-        content.append(intro, list, note);
-        const confirmed = await CalightModal.confirm({
-          title: "Unvollständige Kalkulation bestätigen",
-          content,
-          confirmLabel: "Trotzdem abgeben",
-        });
-        if (confirmed)
-          await performSubmission({ ...payload, confirmIncomplete: true });
-        else status.textContent = "Abschluss abgebrochen";
+        if (blocking) {
+          await CalightModal.open({title:"Angebotsprüfung",content,actions:[{label:"Schließen",value:null,primary:true}]});
+          status.textContent = "Angebotsprüfung fehlgeschlagen";
+        } else {
+          const confirmed = await CalightModal.confirm({title:"Angebotsprüfung bestätigen",content,confirmLabel:"Warnungen bestätigen und abgeben"});
+          if (confirmed) await performSubmission({ ...payload, confirmIncomplete: true });
+          else status.textContent = "Abschluss abgebrochen";
+        }
         return;
       }
       if (!response.ok)
@@ -1635,6 +1649,7 @@
   tree.addEventListener(
     "click",
     (event) => {
+      if (isReadOnly()) return;
       if (event.target.closest("[data-work-status]")) {
         event.stopPropagation();
         return;
@@ -1891,6 +1906,7 @@
     );
   }
   adjustmentPanel.addEventListener("input", (event) => {
+    if (isReadOnly()) return;
     syncAdjustment();
     showAdjustment();
     markDirty({ group: inputHistoryGroup(event.target) });
@@ -1916,6 +1932,7 @@
   );
   Object.values(termFields).forEach((field) =>
     field.addEventListener("input", (event) => {
+      if (isReadOnly()) return;
       syncTerms();
       markDirty({ group: inputHistoryGroup(event.target) });
     }),

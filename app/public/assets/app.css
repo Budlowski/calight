@@ -319,7 +319,11 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .offer-readonly .offer-child-toolbar,
 .offer-readonly .offer-node-actions,
 .offer-readonly .offer-template-row,
-.offer-readonly .secondary-actions-panel {
+.offer-readonly .secondary-actions-panel,
+.offer-readonly [data-add-root-title],
+.offer-readonly [data-add-root-position],
+.offer-readonly [data-add-root-text],
+.offer-readonly .offer-tree-toolbar details.context-menu {
   display: none !important;
 }
 
@@ -329,6 +333,26 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
   color: inherit;
   background: #f4f7f9;
   opacity: 1;
+}
+
+.offer-readonly .offer-node-editor input:disabled,
+.offer-readonly .offer-node-editor select:disabled,
+.offer-readonly .offer-node-editor textarea:disabled {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  appearance: none;
+}
+
+.offer-readonly .offer-document-head input,
+.offer-readonly .offer-document-head select,
+.offer-readonly .offer-document-head textarea,
+.offer-readonly .offer-node-editor input,
+.offer-readonly .offer-node-editor select,
+.offer-readonly .offer-node-editor textarea,
+.offer-readonly .offer-adjustment-details input,
+.offer-readonly .offer-adjustment-details select {
+  pointer-events: none;
 }
 .status-completed, .status-submitted { background: #e2edf7; color: #22577c; }
 .status-archived, .status-rejected { background: #eceeef; color: #5d646a; }

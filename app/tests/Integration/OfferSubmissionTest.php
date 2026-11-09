@@ -52,7 +52,11 @@ final class OfferSubmissionTest extends TestCase
             $this->assertSame('rejected',$service->changeStatus($id,'commissioned','rejected')['status']);
             $archive=$service->submittedPdf($id);$this->assertTrue(str_starts_with($archive['pdf'],'%PDF-1.4'));
             $collision=$service->createDraft($project,'Nummernkollision');$collisionDraft=$service->loadDraft($collision);
-            $this->assertThrows(OfferValidationException::class,fn()=>$service->submitOffer($collision,$collisionDraft['etag'],$result['offerNumber'],'2026-11-09',true));
+            $collisionOffer=$collisionDraft['offer'];$collisionOffer['nodes']=[[
+                'id'=>Uuid::v4(),'type'=>'position','positionType'=>'normal','workStatus'=>'done','shortText'=>'Kollision','longText'=>'','quantity'=>'1.000','unit'=>'Stk.','manualUnitPrice'=>'10.00','components'=>[],
+            ]];
+            $collisionEtag=$service->saveDraft($collision,$collisionOffer,$collisionDraft['etag']);
+            $this->assertThrows(OfferValidationException::class,fn()=>$service->submitOffer($collision,$collisionEtag,$result['offerNumber'],'2026-11-09',true));
             $this->assertSame('draft',$offers->find($collision)['status']);
             chmod($tmp.'/offers/'.$project.'/'.$id.'/snapshot.json',0640);file_put_contents($tmp.'/offers/'.$project.'/'.$id.'/snapshot.json',"\n",FILE_APPEND);
             $this->assertThrows(\RuntimeException::class,fn()=>$service->loadDraft($id));

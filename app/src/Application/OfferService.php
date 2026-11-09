@@ -13,6 +13,7 @@ use App\Domain\Offer\OfferCalculator;
 use App\Domain\Offer\OfferValidator;
 use App\Domain\Offer\OfferValidationException;
 use App\Domain\Offer\OfferNormalizer;
+use App\Domain\Offer\OfferSubmissionValidator;
 use App\Support\Clock;
 use App\Support\Uuid;
 use PDO;
@@ -217,9 +218,20 @@ final readonly class OfferService
                 if(!hash_equals((string)$metadata['draft_etag'],$expectedEtag))throw new OfferConflictException('Der Entwurf wurde zwischenzeitlich geändert. Bitte neu laden.');
                 $draft=$this->store->loadDraft($projectId,$offerId);
                 if(!hash_equals($expectedEtag,$draft['etag']))throw new OfferConflictException('Der Entwurf wurde zwischenzeitlich geändert. Bitte neu laden.');
-                $calculated=$this->calculator->calculate($draft['offer']);
-                $incomplete=$this->includedIncompletePositions($calculated['nodes']??[]);
-                if($incomplete!==[]&&!$confirmIncomplete){$this->pdo->rollBack();return['submitted'=>false,'warning'=>['code'=>'incomplete_calculation','message'=>'Regulär enthaltene Positionen besitzen keine vollständige Kostenbasis.','count'=>count($incomplete),'positions'=>$incomplete]];}
+                $calculated=null;$calculationErrors=[];
+                try{$calculated=$this->calculator->calculate($draft['offer']);}catch(Throwable $exception){$calculationErrors[]=$exception->getMessage()?:'Die Angebotskalkulation ist nicht berechenbar.';}
+                $validation=(new OfferSubmissionValidator())->inspect($draft['offer'],$calculated,$this->projects->find($projectId),$calculationErrors);
+                if($validation['errors']!==[]||($validation['warnings']!==[]&&!$confirmIncomplete)){
+                    $this->pdo->rollBack();
+                    $hasIncomplete=array_filter($validation['warnings'],fn(array $item):bool=>$item['code']==='incomplete_cost_basis')!==[];
+                    return['submitted'=>false,'validation'=>$validation,'warning'=>$validation['warnings']!==[]?[
+                        'code'=>$hasIncomplete?'incomplete_calculation':'submission_warnings',
+                        'message'=>'Der Angebotsabschluss erfordert eine ausdrückliche Bestätigung.',
+                        'count'=>count($validation['warnings']),
+                        'positions'=>array_values(array_filter(array_map(fn(array $item):?array=>isset($item['positionId'])?['id'=>$item['positionId'],'shortText'=>$item['position']]:null,$validation['warnings']))),
+                    ]:null];
+                }
+                if($calculated===null)throw new OfferValidationException(['Die Angebotskalkulation ist nicht berechenbar.']);
                 $now=new DateTimeImmutable();$number=trim((string)$manualNumber)!==''
                     ?$this->numberRanges->reserveManual('offer','offer',$offerId,Uuid::v4(),trim((string)$manualNumber),$now)
                     :$this->numberRanges->allocate('offer','offer',$offerId,Uuid::v4(),$now);
@@ -254,12 +266,6 @@ final readonly class OfferService
 
     /** @param array<string,mixed> $metadata @return array<string,mixed> */
     private function submissionResult(array $metadata,bool $idempotent):array{return['submitted'=>true,'idempotent'=>$idempotent,'offerNumber'=>$metadata['offer_number'],'status'=>$metadata['status'],'submittedAt'=>$metadata['submitted_at'],'documentDate'=>$metadata['document_date'],'snapshotSha256'=>$metadata['snapshot_etag'],'pdfSha256'=>$metadata['submitted_pdf_sha256']];}
-
-    /** @param list<array<string,mixed>> $nodes @return list<array{id:string,shortText:string}> */
-    private function includedIncompletePositions(array $nodes,bool $excluded=false):array
-    {
-        $result=[];foreach($nodes as $node){if(($node['type']??null)==='title'){$titleExcluded=$excluded||($node['titleType']??'normal')!=='normal';$result=[...$result,...$this->includedIncompletePositions($node['children']??[],$titleExcluded)];continue;}if(($node['type']??null)==='position'&&!$excluded&&($node['positionType']??'normal')==='normal'&&($node['components']??[])===[])$result[]=['id'=>(string)$node['id'],'shortText'=>(string)$node['shortText']];}return$result;
-    }
 
     /** @return array<string,mixed> */
     public function previewImport(string $offerId, array $imported, string $expectedEtag): array

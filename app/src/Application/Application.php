@@ -210,7 +210,8 @@ final readonly class Application
             $etag=trim((string)($request->headers['if-match']??''),'"');if($etag==='')return Response::json(['error'=>'If-Match-Header fehlt.'],428);
             $documentDate=trim((string)($data['documentDate']??date('Y-m-d')));$manual=isset($data['offerNumber'])?trim((string)$data['offerNumber']):null;
             $result=$this->offerService->submitOffer($parameters['id'],$etag,$manual,$documentDate,filter_var($data['confirmIncomplete']??false,FILTER_VALIDATE_BOOL));
-            return Response::json($result,($result['submitted']??false)?200:409);
+            $status=($result['submitted']??false)?200:((($result['validation']['errors']??[])!==[])?422:409);
+            return Response::json($result,$status);
         }));
         $this->router->add('PATCH','/api/offers/{id}/status',fn(Request $request,array $parameters):Response=>$this->protected(function()use($request,$parameters):Response{
             $this->requireCsrf($request,$request->headers['x-csrf-token']??null);$data=$this->jsonBody($request);
