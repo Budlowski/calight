@@ -51,12 +51,19 @@
   const dec = (v, fallback = "0") => String(v ?? fallback).replace(".", ",");
   const toolbar = root.querySelector(".offer-tree-toolbar");
   const structureScroll = root.querySelector(".offer-structure-scroll");
+  const offerHeaderScroll = structureScroll.querySelector(
+      ".offer-header-scroll",
+    ),
+    offerTreeScroll = structureScroll.querySelector(".offer-tree-scroll");
   const costItemDialog = document.querySelector("#cost-item-dialog"),
     costItemDialogForm = document.querySelector("#cost-item-dialog-form"),
     costItemDialogError = costItemDialog?.querySelector(
       "[data-cost-item-dialog-error]",
     );
   let pendingCostItemComponent = null;
+  offerTreeScroll.addEventListener("scroll", () => {
+    offerHeaderScroll.scrollLeft = offerTreeScroll.scrollLeft;
+  });
   toolbar
     .querySelector("[data-add-root-position]")
     .insertAdjacentHTML(

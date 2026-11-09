@@ -341,10 +341,12 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 
 /* Angebotseditor: klare Ebenen von Gliederung, Position und Kalkulation. */
 .offer-node > summary { min-height: 40px; }
-.offer-structure-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
-.offer-structure-scroll > .offer-list-header, .offer-structure-scroll > .offer-tree { min-width: 1140px; }
+.offer-structure-scroll { max-width: 100%; }
+.offer-header-scroll { position: sticky; z-index: 12; top: 0; max-width: 100%; overflow: hidden; background: #f4f7f9; }
+.offer-tree-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
+.offer-header-scroll > .offer-list-header, .offer-tree-scroll > .offer-tree { min-width: 1140px; }
 .offer-position-node > summary, .offer-title-node > summary, .offer-list-header { display: grid; grid-template-columns: 70px 66px minmax(230px, 1fr) 230px 116px 108px 122px 122px; align-items: center; gap: var(--space-2); }
-.offer-list-header { position: sticky; z-index: 12; top: -18px; min-height: 30px; padding: 4px 8px; border: 1px solid var(--border); background: #f4f7f9; color: var(--muted); font-size: 11px; font-weight: 700; }
+.offer-list-header { min-height: 30px; padding: 4px 8px; border: 1px solid var(--border); background: #f4f7f9; color: var(--muted); font-size: 11px; font-weight: 700; }
 .offer-list-header > :first-child { grid-column: 1 / 4; }
 .offer-list-header > :not(:first-child) { text-align: right; }
 .offer-title-name-summary, .offer-position-name { display: flex; min-width: 0; align-items: center; gap: var(--space-2); }

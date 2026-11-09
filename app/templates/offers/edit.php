@@ -10,8 +10,8 @@
     </section>
     <div class="offer-tree-toolbar"><button class="button" type="button" data-icon="plus" data-add-root-title>Titel hinzufügen</button><button class="button button-light" type="button" data-icon="plus" data-add-root-position>Position hinzufügen</button><button class="button button-light" type="button" data-icon="chevrons-down" data-expand-all>Alle aufklappen</button><button class="button button-light" type="button" data-icon="chevrons-up" data-collapse-all>Alle einklappen</button><span class="toolbar-spacer"></span><button class="button button-light" type="button" data-icon="refresh-cw" data-refresh-article-master>Artikelstammdaten aktualisieren</button><button class="button button-light" type="button" data-icon="refresh-cw" data-refresh-position-master>Positionsstammdaten aktualisieren</button></div>
     <div class="offer-structure-scroll">
-        <div class="offer-list-header" aria-hidden="true"><span>Position / Bezeichnung</span><span>Art / Status / Preisquelle</span><span>Alternativ / Menge</span><span>Bedarf / EP netto</span><span>Regulär / GP netto</span><span>Aktionen</span></div>
-        <div id="offer-tree" class="offer-tree" aria-live="polite"></div>
+        <div class="offer-header-scroll"><div class="offer-list-header" aria-hidden="true"><span>Position / Bezeichnung</span><span>Art / Status / Preisquelle</span><span>Alternativ / Menge</span><span>Bedarf / EP netto</span><span>Regulär / GP netto</span><span>Aktionen</span></div></div>
+        <div class="offer-tree-scroll"><div id="offer-tree" class="offer-tree" aria-live="polite"></div></div>
     </div>
     <dialog id="cost-item-dialog" class="compact-dialog">
         <form method="dialog" id="cost-item-dialog-form" class="form-stack">
