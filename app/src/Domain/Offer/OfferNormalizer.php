@@ -19,7 +19,7 @@ final class OfferNormalizer
     public function normalize(array $offer, bool $fillMissingIds = false): array
     {
         unset($offer['calculation']);
-        foreach (['createdAt', 'updatedAt'] as $field) {
+        foreach (['createdAt', 'updatedAt','submittedAt'] as $field) {
             if (is_string($offer[$field] ?? null) && trim($offer[$field]) !== '') {
                 try {
                     $offer[$field] = (new DateTimeImmutable($offer[$field]))

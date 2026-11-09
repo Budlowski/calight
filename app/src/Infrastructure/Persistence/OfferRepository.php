@@ -72,6 +72,25 @@ final readonly class OfferRepository
         return $statement->rowCount() === 1;
     }
 
+    /** @param array{snapshotPath:string,snapshotHash:string,pdfPath:string,pdfHash:string} $files */
+    public function markSubmitted(string $id,string $expectedEtag,string $number,string $submittedAt,string $documentDate,array $files):bool
+    {
+        $statement=$this->pdo->prepare('UPDATE offers SET offer_number=:number,status=:submitted,snapshot_relative_path=:snapshot_path,
+            snapshot_etag=:snapshot_hash,submitted_pdf_relative_path=:pdf_path,submitted_pdf_sha256=:pdf_hash,
+            submitted_at=:submitted_at,document_date=:document_date,updated_at=:updated_at
+            WHERE id=:id AND status=:draft AND offer_number IS NULL AND draft_etag=:etag');
+        $statement->execute(['number'=>$number,'submitted'=>'submitted','snapshot_path'=>$files['snapshotPath'],'snapshot_hash'=>$files['snapshotHash'],
+            'pdf_path'=>$files['pdfPath'],'pdf_hash'=>$files['pdfHash'],'submitted_at'=>$submittedAt,'document_date'=>$documentDate,
+            'updated_at'=>$submittedAt,'id'=>$id,'draft'=>'draft','etag'=>$expectedEtag]);
+        return$statement->rowCount()===1;
+    }
+
+    public function changeStatus(string $id,string $expected,string $newStatus):bool
+    {
+        $statement=$this->pdo->prepare('UPDATE offers SET status=:new_status,updated_at=:updated_at WHERE id=:id AND status=:expected AND snapshot_etag IS NOT NULL');
+        $statement->execute(['new_status'=>$newStatus,'updated_at'=>Clock::now(),'id'=>$id,'expected'=>$expected]);return$statement->rowCount()===1;
+    }
+
     public function deleteDraft(string $id):bool
     {
         $statement=$this->pdo->prepare('DELETE FROM offers WHERE id=:id AND status=:status');

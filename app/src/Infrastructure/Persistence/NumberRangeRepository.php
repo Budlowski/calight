@@ -32,6 +32,7 @@ final readonly class NumberRangeRepository
             'customer' => 'customers customer_number',
             'project' => 'projects project_number',
             'service_template' => 'service_templates article_number',
+            'offer' => 'offers offer_number',
             default => null,
         };
         $entityCollision = $entitySource === null ? null : $this->entityCollisionStatement($entitySource);

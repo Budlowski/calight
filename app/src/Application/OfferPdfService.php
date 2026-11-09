@@ -20,7 +20,7 @@ final readonly class OfferPdfService
  {
   $settings=$this->settings->get();
   $pattern=(string)($settings['fileNamePattern']??'{JJJJ}-{MM}-{TT}_{DOKUMENTTYP}_{DOKUMENTNUMMER}');
-  $date=new DateTimeImmutable();
+  $date=new DateTimeImmutable((string)($offer['documentDate']??'now'));
   $fileName=strtr($pattern,[
    '{JJJJ}'=>$date->format('Y'),'{MM}'=>$date->format('m'),'{TT}'=>$date->format('d'),
    '{DOKUMENTTYP}'=>'Angebot','{DOKUMENTNUMMER}'=>trim((string)($offer['offerNumber']??''))?:'Entwurf',
@@ -31,6 +31,17 @@ final readonly class OfferPdfService
   $fileName=trim(preg_replace('/\s+/','_',$fileName)??$fileName,' ._-');
   return ($fileName!==''?$fileName:'Angebot_Entwurf').'.pdf';
  }
+ /** @param array<string,mixed> $offer @return array<string,mixed> */
+ public function resolvedDocumentTerms(array $offer):array
+ {
+  $settings=$this->settings->get();$individual=is_array($offer['documentTerms']??null)?$offer['documentTerms']:[];
+  $text=static fn(string $key):string=>trim((string)($individual[$key]??''))!==''?(string)$individual[$key]:(string)($settings[$key]??'');
+  $mode=(string)($individual['validityMode']??'default');if($mode==='default')$mode=(string)($settings['validityMode']??'duration');
+  $days=$mode==='duration'?(int)($individual['validityDays']??0):null;if($mode==='duration'&&$days<1)$days=(int)($settings['validityDays']??30);
+  $date=$mode==='date'?(string)($individual['validityDate']??''):null;if($mode==='date'&&$date==='')$date=(string)($settings['validityDate']??'');
+  return['introText'=>$text('introText'),'closingText'=>$text('closingText'),'paymentTerms'=>$text('paymentTerms'),'additionalTerms'=>$text('additionalTerms'),
+   'validityMode'=>$mode,'validityDays'=>$days,'validityDate'=>$date];
+ }
  /** @param array<string,mixed> $offer */
  public function render(array $offer):string
  {
@@ -39,8 +50,9 @@ final readonly class OfferPdfService
   $footer=function()use($pdf,$settings,$left,$right):void{if(!($settings['showFooter']??true))return;$pdf->line($left,72,$right,72);$columns=[[$this->company($settings),trim(($settings['street']??'').' '.($settings['houseNumber']??'')),trim(($settings['postalCode']??'').' '.($settings['city']??''))],array_filter([(string)($settings['phone']??'')!==''?'Telefon '.$settings['phone']:'',(string)($settings['email']??''),(string)($settings['website']??'')]),array_filter([(string)($settings['taxNumber']??'')!==''?'Steuernummer '.$settings['taxNumber']:'',(string)($settings['vatId']??'')!==''?'USt-ID '.$settings['vatId']:'']),array_filter([(string)($settings['bankName']??''),(string)($settings['iban']??'')!==''?'IBAN '.$settings['iban']:'',(string)($settings['bic']??'')!==''?'BIC '.$settings['bic']:''])];$width=($right-$left)/4;foreach($columns as $index=>$lines){$fy=58;foreach(array_filter($lines,static fn($v)=>trim((string)$v)!=='') as $line){$pdf->text($left+$index*$width,$fy,6.5,(string)$line,$fy===58);$fy-=10;}}if(trim((string)($settings['footerText']??''))!=='')$pdf->text($left,18,6.5,(string)$settings['footerText']);};
   $newPage=function(bool $first=false)use($pdf,$footer,$settings,$left,$right,$accent):void{if(!$first)$pdf->page();$footer();if($settings['showHeader']??true){$company=$this->company($settings);$companyX=$first&&($settings['logoPosition']??'right')==='left'&&is_string($settings['logoData']??null)?$left+(float)($settings['logoWidth']??180)+12:$left;$pdf->text($companyX,800,14,$company?:'Calight',true,$accent);if($first)$this->logo($pdf,$settings,$left,$right);}};$newPage(true);
   $company=$this->company($settings);$addressY=($settings['addressMode']??'standard')==='window'?690:680;$sender=implode(' · ',array_filter([$company,trim(($settings['street']??'').' '.($settings['houseNumber']??'')),trim(($settings['postalCode']??'').' '.($settings['city']??''))]));if($sender!==''){$pdf->text($left,$addressY+18,6.5,$sender,false,'.35 .4 .45');$pdf->line($left,$addressY+12,$left+270,$addressY+12);}$recipient=(string)($project['customer_display']??'');$pdf->text($left,$addressY-7,10,$recipient?:'Kein Kunde zugeordnet',true);$pdf->text($left,$addressY-22,9,trim(($project['customer_street']??'').' '.($project['customer_house_number']??'')));$pdf->text($left,$addressY-36,9,trim(($project['customer_postal_code']??'').' '.($project['customer_city']??'')));
-  if($settings['showProjectInfo']??true){$meta=[['Belegnummer','folgt bei verbindlicher Ausgabe'],['Datum',date('d.m.Y')],['Projekt',(string)($project['project_number']??'')],['Objekt',(string)($project['name']??'')]];$my=$addressY-7;foreach($meta as [$label,$value]){if(trim($value)==='')continue;$pdf->text($right-200,$my,$font,$label,false,'.35 .4 .45');$pdf->text($right-115,$my,$font,$value,true);$my-=15;}}
-  $headingY=$addressY-90;$pdf->text($left,$headingY,17,'Angebot – Entwurf',true,$accent);$pdf->text($left,$headingY-21,11,(string)$offer['title'],true);$y=$headingY-50;foreach($this->wrap($terms['introText'],105) as $line){$pdf->text($left,$y,$font+1,$line);$y-=12;}$y-=8;
+  $isDraft=($offer['status']??'draft')==='draft';$documentDate=(string)($offer['documentDate']??date('Y-m-d'));$formattedDate=(new DateTimeImmutable($documentDate))->format('d.m.Y');
+  if($settings['showProjectInfo']??true){$meta=[['Belegnummer',$isDraft?'folgt bei verbindlicher Ausgabe':(string)($offer['offerNumber']??'')],['Datum',$formattedDate],['Projekt',(string)($project['project_number']??'')],['Objekt',(string)($project['name']??'')]];$my=$addressY-7;foreach($meta as [$label,$value]){if(trim($value)==='')continue;$pdf->text($right-200,$my,$font,$label,false,'.35 .4 .45');$pdf->text($right-115,$my,$font,$value,true);$my-=15;}}
+  $headingY=$addressY-90;$pdf->text($left,$headingY,17,$isDraft?'Angebot – Entwurf':'Angebot',true,$accent);$pdf->text($left,$headingY-21,11,(string)$offer['title'],true);$y=$headingY-50;foreach($this->wrap($terms['introText'],105) as $line){$pdf->text($left,$y,$font+1,$line);$y-=12;}$y-=8;
   $tableHeader=function()use($pdf,&$y,$left,$right,$font):void{$pdf->text($left,$y,$font,'Pos.',true);$pdf->text($left+45,$y,$font,'Bezeichnung',true);$pdf->textRight($right-150,$y,$font,'Menge',true);$pdf->textRight($right-88,$y,$font,'Einzelpreis',true);$pdf->textRight($right,$y,$font,'Gesamt',true);$y-=9;$pdf->line($left,$y,$right,$y,'0.3 0.35 0.4');$y-=14;};$tableHeader();
   $ensure=function(float $height)use($newPage,$tableHeader,&$y,$top,$bottom):void{if($y-$height>=$bottom)return;$newPage();$y=$top;$tableHeader();};$hasSpecial=false;
   $rows=$this->rows($offer['nodes'],[],(bool)($settings['showEmptyTitles']??false));

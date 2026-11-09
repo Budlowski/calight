@@ -17,7 +17,7 @@ final class OfferValidator
     {
         $errors = [];
         $seenIds = [];
-        $this->rejectUnknown($offer,['schemaVersion','id','projectId','offerNumber','revision','status','title','createdAt','updatedAt','documentTerms','offerAdjustment','nodes','calculation'],'offer',$errors);
+        $this->rejectUnknown($offer,['schemaVersion','id','projectId','offerNumber','revision','status','title','createdAt','updatedAt','submittedAt','documentDate','documentTerms','offerAdjustment','nodes','calculation'],'offer',$errors);
 
         if (($offer['schemaVersion'] ?? null) !== 1) {
             $errors[] = 'schemaVersion muss 1 sein.';
@@ -27,8 +27,8 @@ final class OfferValidator
                 $errors[] = $field . ' muss eine gueltige UUID sein.';
             }
         }
-        if (($offer['status'] ?? null) !== 'draft') {
-            $errors[] = 'Ein bearbeitbarer Entwurf muss den Status draft haben.';
+        if (!in_array($offer['status'] ?? null,['draft','submitted','commissioned','rejected'],true)) {
+            $errors[] = 'Der Angebotsstatus ist ungültig.';
         }
         if (!is_string($offer['title'] ?? null) || trim($offer['title']) === '') {
             $errors[] = 'Die Angebotsbezeichnung darf nicht leer sein.';
@@ -46,6 +46,8 @@ final class OfferValidator
                 $errors[] = $field . ' muss ein gültiger ISO-8601-Zeitstempel sein.';
             }
         }
+        if(array_key_exists('submittedAt',$offer)&&$offer['submittedAt']!==null&&!$this->isTimestamp($offer['submittedAt']))$errors[]='submittedAt muss ein gültiger ISO-8601-Zeitstempel sein.';
+        if(array_key_exists('documentDate',$offer)&&$offer['documentDate']!==null&&!preg_match('/^\d{4}-\d{2}-\d{2}$/',(string)$offer['documentDate']))$errors[]='documentDate muss ein gültiges Datum sein.';
         if (!is_array($offer['nodes'] ?? null) || !array_is_list($offer['nodes'])) {
             $errors[] = 'nodes muss eine Liste sein.';
         } else {

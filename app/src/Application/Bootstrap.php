@@ -55,6 +55,8 @@ final readonly class Bootstrap
         );
         $documentSettingsRepository=new DocumentSettingsRepository($this->pdo);
         $settingsService=new DocumentSettingsService($documentSettingsRepository);
+        $offerPdfService=new OfferPdfService($this->pdo,$documentSettingsRepository,new OfferValidator(),$offerCalculator);
+        $offerService=new OfferService($this->pdo,$projects,$offers,$store,$offerCalculator,$numberRanges,$offerPdfService);
 
         return new Application(
             new Router(),
@@ -62,12 +64,12 @@ final readonly class Bootstrap
             new UserRepository($this->pdo),
             $projects,
             $offers,
-            new OfferService($this->pdo, $projects, $offers, $store,$offerCalculator),
+            $offerService,
             $masterData,
             $customerProjects,
             new OfferCalculationController(new OfferCalculationService($masterDataService,new OfferValidator(),$offerCalculator)),
             new SettingsController($view,$settingsService),
-            new OfferPdfService($this->pdo,$documentSettingsRepository,new OfferValidator(),$offerCalculator),
+            $offerPdfService,
             new InternalCalculationPdfService($this->pdo,$documentSettingsRepository,new OfferValidator(),$offerCalculator),
         );
     }

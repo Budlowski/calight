@@ -8,6 +8,7 @@ use App\Domain\Offer\OfferValidator;
 use App\Support\Uuid;
 use JsonException;
 use RuntimeException;
+use Throwable;
 
 final readonly class OfferJsonStore
 {
@@ -107,6 +108,64 @@ final readonly class OfferJsonStore
         return $projectId . '/' . $offerId . '/draft.json';
     }
 
+    public function withExclusiveLock(string $projectId,string $offerId,callable $operation):mixed
+    {
+        $this->assertIdentifiers($projectId,$offerId);
+        $directory=$this->offerDirectory($projectId,$offerId);
+        if(!is_dir($directory))throw new RuntimeException('Angebotsverzeichnis wurde nicht gefunden.');
+        $lock=fopen($directory.'/.draft.lock','c');
+        if($lock===false||!flock($lock,LOCK_EX))throw new RuntimeException('Angebot konnte nicht gesperrt werden.');
+        try{return$operation();}finally{flock($lock,LOCK_UN);fclose($lock);}
+    }
+
+    /** @param array<string,mixed> $snapshot @return array{snapshotPath:string,snapshotHash:string,pdfPath:string,pdfHash:string} */
+    public function publishSubmission(string $projectId,string $offerId,array $snapshot,string $pdf):array
+    {
+        $this->assertIdentifiers($projectId,$offerId);$directory=$this->offerDirectory($projectId,$offerId);
+        $snapshotPath=$directory.'/snapshot.json';$pdfPath=$directory.'/submitted.pdf';
+        // Dateien ohne zugehörigen DB-Abschluss stammen von einem abgebrochenen vorherigen Versuch.
+        foreach([$snapshotPath,$pdfPath] as $orphan)if(is_file($orphan)&&!unlink($orphan))throw new RuntimeException('Verwaiste Abschlussdatei konnte nicht bereinigt werden.');
+        try{$json=json_encode($snapshot,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n";}catch(JsonException $e){throw new RuntimeException('Abschluss-Snapshot konnte nicht erzeugt werden.',0,$e);}
+        $snapshotTemp=tempnam($directory,'.snapshot-');$pdfTemp=tempnam($directory,'.submitted-');
+        if($snapshotTemp===false||$pdfTemp===false){if(is_string($snapshotTemp)&&is_file($snapshotTemp))unlink($snapshotTemp);if(is_string($pdfTemp)&&is_file($pdfTemp))unlink($pdfTemp);throw new RuntimeException('Temporäre Abschlussdateien konnten nicht angelegt werden.');}
+        $published=[];
+        try{
+            if(file_put_contents($snapshotTemp,$json,LOCK_EX)!==strlen($json))throw new RuntimeException('Snapshot konnte nicht vollständig geschrieben werden.');
+            $decoded=json_decode((string)file_get_contents($snapshotTemp),true,flags:JSON_THROW_ON_ERROR);
+            if(!is_array($decoded))throw new RuntimeException('Snapshot ist ungültig.');
+            $this->validator->validate($decoded);
+            if(!str_starts_with($pdf,'%PDF-1.')||file_put_contents($pdfTemp,$pdf,LOCK_EX)!==strlen($pdf))throw new RuntimeException('Abschluss-PDF konnte nicht vollständig geschrieben werden.');
+            if(!link($snapshotTemp,$snapshotPath))throw new RuntimeException('Snapshot konnte nicht unveränderlich bereitgestellt werden.');$published[]=$snapshotPath;
+            if(!link($pdfTemp,$pdfPath))throw new RuntimeException('Abschluss-PDF konnte nicht unveränderlich bereitgestellt werden.');$published[]=$pdfPath;
+            chmod($snapshotPath,0440);chmod($pdfPath,0440);
+            $snapshotHash=hash_file('sha256',$snapshotPath);$pdfHash=hash_file('sha256',$pdfPath);
+            if($snapshotHash===false||$pdfHash===false)throw new RuntimeException('Integritätsprüfung der Abschlussdateien ist fehlgeschlagen.');
+            return['snapshotPath'=>$this->relativePath($snapshotPath),'snapshotHash'=>$snapshotHash,'pdfPath'=>$this->relativePath($pdfPath),'pdfHash'=>$pdfHash];
+        }catch(Throwable $e){foreach($published as $path)if(is_file($path))unlink($path);if($e instanceof JsonException)throw new RuntimeException('Geschriebener Snapshot ist ungültig.',0,$e);throw$e;
+        }finally{foreach([$snapshotTemp,$pdfTemp] as $temp)if(is_file($temp))unlink($temp);}
+    }
+
+    public function removePublishedSubmission(string $projectId,string $offerId):void
+    {
+        $directory=$this->offerDirectory($projectId,$offerId);foreach([$directory.'/snapshot.json',$directory.'/submitted.pdf'] as $path)if(is_file($path))unlink($path);
+    }
+
+    /** @return array<string,mixed> */
+    public function loadSnapshot(string $projectId,string $offerId,string $expectedHash):array
+    {
+        $path=$this->offerDirectory($projectId,$offerId).'/snapshot.json';
+        if(!is_file($path)||!hash_equals($expectedHash,(string)hash_file('sha256',$path)))throw new RuntimeException('Abschluss-Snapshot fehlt oder wurde verändert.');
+        try{$snapshot=json_decode((string)file_get_contents($path),true,flags:JSON_THROW_ON_ERROR);}catch(JsonException $e){throw new RuntimeException('Abschluss-Snapshot ist ungültig.',0,$e);}
+        if(!is_array($snapshot))throw new RuntimeException('Abschluss-Snapshot ist ungültig.');$this->validator->validate($snapshot);return$snapshot;
+    }
+
+    public function loadSubmittedPdf(string $projectId,string $offerId,string $expectedHash):string
+    {
+        $path=$this->offerDirectory($projectId,$offerId).'/submitted.pdf';
+        if(!is_file($path)||!hash_equals($expectedHash,(string)hash_file('sha256',$path)))throw new RuntimeException('Archivierte Angebots-PDF fehlt oder wurde verändert.');
+        return(string)file_get_contents($path);
+    }
+
     public function stageDraftDeletion(string $projectId,string $offerId):string
     {
         $this->assertIdentifiers($projectId,$offerId);
@@ -134,6 +193,8 @@ final readonly class OfferJsonStore
     {
         return rtrim($this->basePath, '/') . '/' . $projectId . '/' . $offerId;
     }
+
+    private function relativePath(string $path):string{return ltrim(substr($path,strlen(rtrim($this->basePath,'/'))),'/');}
 
     private function assertIdentifiers(string $projectId, string $offerId): void
     {
