@@ -79,7 +79,7 @@
           (o) =>
             (!status || o.status === status) &&
             (!q ||
-              `${o.title} ${o.customerName || ""} ${o.projectName || ""} ${o.projectNumber || ""} ${o.offerNumber || ""}`
+              `${o.title} ${o.customerName || ""} ${o.projectName || ""} ${o.projectNumber || ""} ${o.offerNumber || ""} ${o.orderNumber || ""}`
                 .toLocaleLowerCase("de-DE")
                 .includes(q)),
         )
@@ -104,7 +104,8 @@
               const projectAction = o.projectId
                 ? `<a class="button button-light button-small" data-icon="folder-kanban" href="/projects/${encodeURIComponent(o.projectId)}">Projekt</a>`
                 : "";
-              return `<article class="service-list-item management-card"><div class="service-list-main"><div class="management-card-head"><span class="service-number">${esc(o.offerNumber || "Entwurf ohne Angebotsnummer")}${Number(o.revision || 0) > 0 ? ` · Revision ${Number(o.revision)}` : ""}</span><span class="status-badge status-${esc(o.status)}">${labels[o.status] || esc(o.status)}</span></div><strong>${esc(o.title)}</strong><span class="muted">${assignment}</span><span class="management-card-total">${euro(o.netTotal)} netto</span><span class="muted">${o.status === "draft" || !o.submittedAt ? `Zuletzt geändert ${date(o.updatedAt)}` : `Abgegeben ${date(o.submittedAt)}`}</span></div><div class="service-list-actions"><a class="button button-light button-small" data-icon="file-text" href="/offers/${encodeURIComponent(o.id)}">${o.status === "draft" ? "Öffnen" : "Ansehen"}</a>${projectAction}<button class="button button-light button-small" type="button" data-icon="copy" data-copy-offer="${o.id}">Kopieren</button>${o.status === "draft" ? `<button class="button button-light button-small button-danger-light" type="button" data-icon="trash" data-delete-offer="${o.id}" data-confirm-message="Angebotsentwurf ${esc(o.title)} endgültig löschen?">Löschen</button>` : ""}</div></article>`;
+              const documentLabel = o.documentType === "change_order" ? `<span class="status-badge">Nachtrag · ${esc(o.orderNumber || "Auftrag")}</span>` : "";
+              return `<article class="service-list-item management-card"><div class="service-list-main"><div class="management-card-head"><span class="service-number">${esc(o.offerNumber || (o.documentType === "change_order" ? "Nachtragsentwurf ohne Nummer" : "Entwurf ohne Angebotsnummer"))}${Number(o.revision || 0) > 0 ? ` · Revision ${Number(o.revision)}` : ""}</span><span>${documentLabel}<span class="status-badge status-${esc(o.status)}">${labels[o.status] || esc(o.status)}</span></span></div><strong>${esc(o.title)}</strong><span class="muted">${assignment}</span><span class="management-card-total">${euro(o.netTotal)} netto</span><span class="muted">${o.status === "draft" || !o.submittedAt ? `Zuletzt geändert ${date(o.updatedAt)}` : `Abgegeben ${date(o.submittedAt)}`}</span></div><div class="service-list-actions"><a class="button button-light button-small" data-icon="file-text" href="/offers/${encodeURIComponent(o.id)}">${o.status === "draft" ? "Öffnen" : "Ansehen"}</a>${projectAction}<button class="button button-light button-small" type="button" data-icon="copy" data-copy-offer="${o.id}">Kopieren</button>${o.status === "draft" ? `<button class="button button-light button-small button-danger-light" type="button" data-icon="trash" data-delete-offer="${o.id}" data-confirm-message="${o.documentType === "change_order" ? "Nachtragsentwurf" : "Angebotsentwurf"} ${esc(o.title)} endgültig löschen?">Löschen</button>` : ""}</div></article>`;
             },
           )
           .join("")

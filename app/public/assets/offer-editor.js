@@ -30,6 +30,7 @@
     filteredNodeIds = new Set(),
     savedHistoryState = "",
     historyGroupTimer = 0;
+  const isChangeOrder = root.dataset.documentType === "change_order";
   const isReadOnly = () => lifecycleStatus !== "draft";
   const openNodes = new Set(),
     pricePreviews = new Map(),
@@ -1297,14 +1298,14 @@
       await CalightModal.open({
         title: "Ungespeicherte Änderungen",
         content:
-          "Bitte speichern Sie den aktuellen Entwurf, bevor Sie das Angebot verbindlich abgeben.",
+          `Bitte speichern Sie den aktuellen Entwurf, bevor Sie ${isChangeOrder ? "den Nachtrag" : "das Angebot"} verbindlich abgeben.`,
         actions: [{ label: "Verstanden", value: null, primary: true }],
       });
       return;
     }
     const isRevision = Number(offer.revision || 0) > 0,
       form = modalForm(
-      `<div class="global-modal-selection"><label>Dokumentdatum<input name="documentDate" type="date" value="${localDateValue()}" required></label>${isRevision ? `<label>Angebotsnummer<input value="${esc(offer.offerNumber)}" readonly></label>` : '<label>Nummernvergabe<select name="numberMode"><option value="auto">Automatisch</option><option value="manual">Manuell</option></select></label><label class="span-all" data-manual-number hidden>Angebotsnummer<input name="offerNumber" maxlength="100" autocomplete="off"></label>'}</div><p class="notice">Der Angebotsstand wird einschließlich Preisen und Kalkulation unveränderlich gespeichert. Spätere Änderungen sind nur über eine neue Revision möglich.</p>`,
+      `<div class="global-modal-selection"><label>Dokumentdatum<input name="documentDate" type="date" value="${localDateValue()}" required></label>${isRevision ? `<label>${isChangeOrder ? "Nachtragsnummer" : "Angebotsnummer"}<input value="${esc(offer.offerNumber)}" readonly></label>` : `<label>Nummernvergabe<select name="numberMode"><option value="auto">Automatisch</option><option value="manual">Manuell</option></select></label><label class="span-all" data-manual-number hidden>${isChangeOrder ? "Nachtragsnummer" : "Angebotsnummer"}<input name="offerNumber" maxlength="100" autocomplete="off"></label>`}</div><p class="notice">Der ${isChangeOrder ? "Nachtragsstand" : "Angebotsstand"} wird einschließlich Preisen und Kalkulation unveränderlich gespeichert. Spätere Änderungen sind nur über eine neue Revision möglich.</p>`,
     );
     const mode = form.elements.numberMode,
       manualRow = form.querySelector("[data-manual-number]"),
@@ -1316,11 +1317,11 @@
       if (manual) manualInput.focus();
     });
     const proceed = await CalightModal.open({
-      title: "Angebot verbindlich abgeben",
+      title: `${isChangeOrder ? "Nachtrag" : "Angebot"} verbindlich abgeben`,
       content: form,
       actions: [
         { label: "Abbrechen", value: false },
-        { label: "Angebot abgeben", value: true, primary: true, validate: true },
+        { label: `${isChangeOrder ? "Nachtrag" : "Angebot"} abgeben`, value: true, primary: true, validate: true },
       ],
       initialFocus: '[name="documentDate"]',
     });
@@ -1333,7 +1334,7 @@
     await performSubmission(payload);
   }
   async function performSubmission(payload) {
-    status.textContent = "Angebot wird verbindlich abgeschlossen …";
+    status.textContent = `${isChangeOrder ? "Nachtrag" : "Angebot"} wird verbindlich abgeschlossen …`;
     try {
       const response = await fetch(
           `/api/offers/${encodeURIComponent(root.dataset.offerId)}/submit`,
@@ -1395,16 +1396,17 @@
   async function changeLifecycleStatus(nextStatus) {
     const labels = { commissioned: "Angenommen", rejected: "Abgelehnt" },
       confirmed = await CalightModal.confirm({
-        title: "Angebotsstatus ändern",
-        content: `Den Geschäftsstatus dieses unveränderlichen Angebots auf „${labels[nextStatus]}“ setzen? Snapshot und archivierte PDF bleiben unverändert.`,
+        title: `${isChangeOrder ? "Nachtragsstatus" : "Angebotsstatus"} ändern`,
+        content: `Den Geschäftsstatus dieses unveränderlichen ${isChangeOrder ? "Nachtrags" : "Angebots"} auf „${labels[nextStatus]}“ setzen? Snapshot und archivierte PDF bleiben unverändert.${isChangeOrder && nextStatus === "commissioned" ? " Der Nachtrag wird dabei verbindlich in den Auftragsumfang übernommen." : ""}`,
         confirmLabel: `Als ${labels[nextStatus].toLowerCase()} markieren`,
       });
     if (!confirmed) return;
     try {
+      const acceptingChangeOrder = isChangeOrder && nextStatus === "commissioned";
       const response = await fetch(
-          `/api/offers/${encodeURIComponent(root.dataset.offerId)}/status`,
+          acceptingChangeOrder ? `/api/change-orders/${encodeURIComponent(root.dataset.offerId)}/accept` : `/api/offers/${encodeURIComponent(root.dataset.offerId)}/status`,
           {
-            method: "PATCH",
+            method: acceptingChangeOrder ? "POST" : "PATCH",
             credentials: "same-origin",
             headers: {
               "Content-Type": "application/json",

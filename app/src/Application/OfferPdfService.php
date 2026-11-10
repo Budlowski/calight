@@ -21,9 +21,10 @@ final readonly class OfferPdfService
   $settings=$this->settings->get();
   $pattern=(string)($settings['fileNamePattern']??'{JJJJ}-{MM}-{TT}_{DOKUMENTTYP}_{DOKUMENTNUMMER}');
   $date=new DateTimeImmutable((string)($offer['documentDate']??'now'));
+  $documentLabel=($offer['documentType']??'offer')==='change_order'?'Nachtrag':'Angebot';
   $fileName=strtr($pattern,[
    '{JJJJ}'=>$date->format('Y'),'{MM}'=>$date->format('m'),'{TT}'=>$date->format('d'),
-   '{DOKUMENTTYP}'=>'Angebot','{DOKUMENTNUMMER}'=>trim((string)($offer['offerNumber']??''))?:'Entwurf',
+   '{DOKUMENTTYP}'=>$documentLabel,'{DOKUMENTNUMMER}'=>trim((string)($offer['offerNumber']??''))?:'Entwurf',
   ]);
   $ascii=iconv('UTF-8','ASCII//TRANSLIT//IGNORE',$fileName);
   if(is_string($ascii)&&$ascii!=='')$fileName=$ascii;
@@ -54,7 +55,7 @@ final readonly class OfferPdfService
   $isDraft=($offer['status']??'draft')==='draft';$documentDate=(string)($offer['documentDate']??date('Y-m-d'));$formattedDate=(new DateTimeImmutable($documentDate))->format('d.m.Y');
   $revision=(int)($offer['revision']??0);$documentIdentifier=(string)($offer['offerNumber']??'').($revision>0?' / Rev. '.$revision:'');
   if($settings['showProjectInfo']??true){$meta=[['Belegnummer',$isDraft&&$documentIdentifier===''?'folgt bei verbindlicher Ausgabe':$documentIdentifier],['Datum',$formattedDate],['Projekt',(string)($project['project_number']??'')],['Objekt',(string)($project['name']??'')]];$my=$addressY-7;foreach($meta as [$label,$value]){if(trim($value)==='')continue;$pdf->text($right-200,$my,$font,$label,false,'.35 .4 .45');$pdf->text($right-115,$my,$font,$value,true);$my-=15;}}
-  $headingY=$addressY-90;$pdf->text($left,$headingY,17,$isDraft?'Angebot – Entwurf':'Angebot',true,$accent);$pdf->text($left,$headingY-21,11,(string)$offer['title'],true);$y=$headingY-50;foreach($this->wrap($terms['introText'],105) as $line){$pdf->text($left,$y,$font+1,$line);$y-=12;}$y-=8;
+  $documentLabel=($offer['documentType']??'offer')==='change_order'?'Nachtrag':'Angebot';$headingY=$addressY-90;$pdf->text($left,$headingY,17,$isDraft?$documentLabel.' – Entwurf':$documentLabel,true,$accent);$pdf->text($left,$headingY-21,11,(string)$offer['title'],true);$y=$headingY-50;foreach($this->wrap($terms['introText'],105) as $line){$pdf->text($left,$y,$font+1,$line);$y-=12;}$y-=8;
   $tableHeader=function()use($pdf,&$y,$left,$right,$font):void{$pdf->text($left,$y,$font,'Pos.',true);$pdf->text($left+45,$y,$font,'Bezeichnung',true);$pdf->textRight($right-150,$y,$font,'Menge',true);$pdf->textRight($right-88,$y,$font,'Einzelpreis',true);$pdf->textRight($right,$y,$font,'Gesamt',true);$y-=9;$pdf->line($left,$y,$right,$y,'0.3 0.35 0.4');$y-=14;};$tableHeader();
   $ensure=function(float $height)use($newPage,$tableHeader,&$y,$top,$bottom):void{if($y-$height>=$bottom)return;$newPage();$y=$top;$tableHeader();};$hasSpecial=false;
   $rows=$this->rows($offer['nodes'],[],(bool)($settings['showEmptyTitles']??false));
@@ -80,8 +81,8 @@ final readonly class OfferPdfService
   $adjustment=is_array($offer['offerAdjustment']??null)?$offer['offerAdjustment']:['type'=>'none'];$hasAdjustment=($adjustment['type']??'none')!=='none';
   $taxNoteLines=$tax['note']!==''?$this->wrap($tax['note'],70):[];$sumHeight=72+count($taxNoteLines)*10+($tax['mode']==='standard'?20:0)+($hasAdjustment?42:0);$ensureFinal($sumHeight);
   if($hasAdjustment){$pdf->text($right-185,$y,$font+1,'Zwischensumme netto');$pdf->textRight($right,$y,$font+1,$numbers->money((string)($offer['calculation']['subtotalNet']??'0.00')));$y-=21;$adjustmentLabel=trim((string)($adjustment['label']??''));if($adjustmentLabel==='')$adjustmentLabel=($adjustment['type']==='discount'?'Rabatt':'Aufschlag').(($adjustment['mode']??'percentage')==='percentage'?' '.$numbers->percent((string)($adjustment['value']??'0')):'');$pdf->text($right-185,$y,$font+1,$adjustmentLabel);$pdf->textRight($right,$y,$font+1,$numbers->money((string)($offer['calculation']['adjustmentSigned']??'0.00')));$y-=21;}
-  $pdf->text($right-185,$y,$font+1,$hasAdjustment?'Angebot netto':'Summe netto');$pdf->textRight($right,$y,$font+1,$numbers->money($tax['net']));$y-=21;if($tax['mode']==='standard'){$pdf->text($right-185,$y,$font+1,'Umsatzsteuer '.$numbers->percent($tax['rate']));$pdf->textRight($right,$y,$font+1,$numbers->money($tax['tax']));$y-=20;}$pdf->line($right-190,$y+7,$right,$y+7,'0.3 0.35 0.4');$y-=8;$pdf->text($right-185,$y,$font+3,'Gesamtbetrag',true);$pdf->textRight($right,$y,$font+3,$numbers->money($tax['gross']),true,$accent);$y-=30;foreach($taxNoteLines as $line){$pdf->text($right-260,$y,$font,$line);$y-=10;}
-  $conditionBlocks=array_values(array_filter(['Angebotsgültigkeit: '.$terms['validityLabel'],$terms['paymentTerms'],$terms['additionalTerms'],$terms['closingText']],static fn(string $block):bool=>trim($block)!==''&&$block!=='Angebotsgültigkeit: '));
+  $pdf->text($right-185,$y,$font+1,$hasAdjustment?$documentLabel.' netto':'Summe netto');$pdf->textRight($right,$y,$font+1,$numbers->money($tax['net']));$y-=21;if($tax['mode']==='standard'){$pdf->text($right-185,$y,$font+1,'Umsatzsteuer '.$numbers->percent($tax['rate']));$pdf->textRight($right,$y,$font+1,$numbers->money($tax['tax']));$y-=20;}$pdf->line($right-190,$y+7,$right,$y+7,'0.3 0.35 0.4');$y-=8;$pdf->text($right-185,$y,$font+3,'Gesamtbetrag',true);$pdf->textRight($right,$y,$font+3,$numbers->money($tax['gross']),true,$accent);$y-=30;foreach($taxNoteLines as $line){$pdf->text($right-260,$y,$font,$line);$y-=10;}
+  $validityLabel=$documentLabel.'sgültigkeit';$conditionBlocks=array_values(array_filter([$validityLabel.': '.$terms['validityLabel'],$terms['paymentTerms'],$terms['additionalTerms'],$terms['closingText']],static fn(string $block):bool=>trim($block)!==''&&!str_ends_with($block,': ')));
   $conditionLines=array_map(fn(string $block):array=>$this->wrap($block,105),$conditionBlocks);$conditionHeight=array_sum(array_map(static fn(array $lines):int=>7+count($lines)*11,$conditionLines));
   if($conditionHeight>0&&$conditionHeight<=($top-$bottom))$ensureFinal((float)$conditionHeight);
   foreach($conditionLines as $lines){$blockHeight=7+count($lines)*11;if($conditionHeight>($top-$bottom))$ensureFinal((float)$blockHeight);$y-=7;foreach($lines as $line){$pdf->text($left,$y,$font,$line);$y-=11;}}

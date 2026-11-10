@@ -17,8 +17,9 @@ final readonly class OfferRepository
     public function find(string $id): ?array
     {
         $statement = $this->pdo->prepare('SELECT o.*,
-            COALESCE(o.offer_number, root.offer_number) AS effective_offer_number
+            COALESCE(o.offer_number, root.offer_number) AS effective_offer_number, ord.order_number
             FROM offers o LEFT JOIN offers root ON root.id = COALESCE(o.revision_root_id, o.id)
+            LEFT JOIN orders ord ON ord.id=o.order_id
             WHERE o.id = :id');
         $statement->execute(['id' => $id]);
         $offer = $statement->fetch();
@@ -46,27 +47,28 @@ final readonly class OfferRepository
     {
         return $this->pdo->query("SELECT o.*, p.name AS project_name, p.project_number,c.customer_number,
             CASE WHEN c.customer_type='company' THEN c.company_name ELSE trim(c.first_name||' '||c.last_name) END AS customer_name,
-            COALESCE(o.offer_number, root.offer_number) AS effective_offer_number
+            COALESCE(o.offer_number, root.offer_number) AS effective_offer_number, ord.order_number
             FROM offers o LEFT JOIN projects p ON p.id=o.project_id
             LEFT JOIN customers c ON c.id=o.customer_id
             LEFT JOIN offers root ON root.id=COALESCE(o.revision_root_id,o.id)
+            LEFT JOIN orders ord ON ord.id=o.order_id
             WHERE NOT EXISTS (SELECT 1 FROM offers newer
                 WHERE COALESCE(newer.revision_root_id,newer.id)=COALESCE(o.revision_root_id,o.id)
                   AND newer.revision_number>o.revision_number)
             ORDER BY o.updated_at DESC")->fetchAll();
     }
 
-    public function create(string $id, ?string $projectId,string $customerId,string $storageKey,string $relativePath, string $etag): void
+    public function create(string $id,?string $projectId,string $customerId,string $storageKey,string $relativePath,string $etag,string $documentType='offer',?string $orderId=null): void
     {
         $now = Clock::now();
         $statement = $this->pdo->prepare(
-            'INSERT INTO offers (id,project_id,customer_id,storage_key,draft_relative_path,draft_etag,revision_root_id,revision_number,created_at,updated_at)
-             VALUES (:id,:project_id,:customer_id,:storage_key,:draft_relative_path,:draft_etag,:id,0,:created_at,:updated_at)'
+            'INSERT INTO offers (id,project_id,customer_id,storage_key,document_type,order_id,draft_relative_path,draft_etag,revision_root_id,revision_number,created_at,updated_at)
+             VALUES (:id,:project_id,:customer_id,:storage_key,:document_type,:order_id,:draft_relative_path,:draft_etag,:id,0,:created_at,:updated_at)'
         );
         $statement->execute([
             'id' => $id,
             'project_id' => $projectId,
-            'customer_id'=>$customerId,'storage_key'=>$storageKey,
+            'customer_id'=>$customerId,'storage_key'=>$storageKey,'document_type'=>$documentType,'order_id'=>$orderId,
             'draft_relative_path' => $relativePath,
             'draft_etag' => $etag,
             'created_at' => $now,
@@ -74,13 +76,13 @@ final readonly class OfferRepository
         ]);
     }
 
-    public function createRevision(string $id,?string $projectId,string $customerId,string $storageKey,string $relativePath,string $etag,string $rootId,int $revision,string $previousId):void
+    public function createRevision(string $id,?string $projectId,string $customerId,string $storageKey,string $relativePath,string $etag,string $rootId,int $revision,string $previousId,string $documentType='offer',?string $orderId=null):void
     {
         $now=Clock::now();
         $statement=$this->pdo->prepare('INSERT INTO offers
-            (id,project_id,customer_id,storage_key,draft_relative_path,draft_etag,revision_root_id,revision_number,previous_revision_id,created_at,updated_at)
-            VALUES (:id,:project_id,:customer_id,:storage_key,:path,:etag,:root,:revision,:previous,:created,:updated)');
-        $statement->execute(['id'=>$id,'project_id'=>$projectId,'customer_id'=>$customerId,'storage_key'=>$storageKey,'path'=>$relativePath,'etag'=>$etag,'root'=>$rootId,
+            (id,project_id,customer_id,storage_key,document_type,order_id,draft_relative_path,draft_etag,revision_root_id,revision_number,previous_revision_id,created_at,updated_at)
+            VALUES (:id,:project_id,:customer_id,:storage_key,:document_type,:order_id,:path,:etag,:root,:revision,:previous,:created,:updated)');
+        $statement->execute(['id'=>$id,'project_id'=>$projectId,'customer_id'=>$customerId,'storage_key'=>$storageKey,'document_type'=>$documentType,'order_id'=>$orderId,'path'=>$relativePath,'etag'=>$etag,'root'=>$rootId,
             'revision'=>$revision,'previous'=>$previousId,'created'=>$now,'updated'=>$now]);
     }
 
