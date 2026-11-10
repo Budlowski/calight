@@ -183,6 +183,15 @@ php bin/console migrate
 php bin/console user:create admin "Administrator"
 ```
 
+Optional kann beim Anlegen eines Kontos eine feste Rolle angegeben werden:
+
+```bash
+php bin/console user:create buero "Büro" office
+php bin/console user:create monteur "Monteur" technician
+```
+
+Die Rollen `admin`, `office` und `technician` verwenden feste Berechtigungsgruppen. Bestehende Konten werden bei der zugehörigen Migration als Administratoren übernommen. Benutzerstatus und Rolle können ohne zusätzliche Verwaltungsoberfläche über die geschützte Benutzer-API verwaltet werden.
+
 Alle konfigurierten Verzeichnisse müssen für den Webserver-Benutzer schreibbar sein. Im produktiven Betrieb sind HTTPS, sichere Cookies, regelmäßige Backups und restriktive Dateiberechtigungen erforderlich.
 
 ### Tests

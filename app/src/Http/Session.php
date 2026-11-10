@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http;
 
+use App\Security\RolePermissions;
 use RuntimeException;
 
 final class Session
@@ -52,6 +53,13 @@ final class Session
         unset($_SESSION['csrf_token']);
     }
 
+    /** @param array<string,mixed> $user */
+    public static function refreshUser(array $user):void
+    {
+        if(!isset($_SESSION['user']))return;
+        $_SESSION['user']=['id'=>$user['id'],'username'=>$user['username'],'displayName'=>$user['display_name'],'role'=>$user['role']];
+    }
+
     public static function logout(): void
     {
         $_SESSION = [];
@@ -66,6 +74,17 @@ final class Session
     public static function user(): ?array
     {
         return isset($_SESSION['user']) && is_array($_SESSION['user']) ? $_SESSION['user'] : null;
+    }
+
+    public static function can(string $permission): bool
+    {
+        $user = self::user();
+        return $user !== null && RolePermissions::allows((string) ($user['role'] ?? ''), $permission);
+    }
+
+    public static function require(string $permission): void
+    {
+        if (!self::can($permission)) throw new AccessDeniedException($permission);
     }
 
     public static function flash(string $type, string $message): void

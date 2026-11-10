@@ -168,7 +168,7 @@ final readonly class OfferService
     }
 
     /** @param array<string,mixed> $offer */
-    public function saveDraft(string $offerId, array $offer, string $expectedEtag): string
+    public function saveDraft(string $offerId, array $offer, string $expectedEtag,?callable $writeGuard=null): string
     {
         $metadata = $this->offers->find($offerId);
         if ($metadata === null || $metadata['status'] !== 'draft') {
@@ -190,6 +190,7 @@ final readonly class OfferService
         $newEtag = null;
         $this->pdo->exec('BEGIN IMMEDIATE');
         try {
+            if($writeGuard!==null)$writeGuard();
             $offer = (new OfferNormalizer())->normalize($offer);
             $offer['updatedAt'] = Clock::now();
             (new OfferValidator())->validate($offer);
@@ -276,7 +277,7 @@ final readonly class OfferService
     }
 
     /** @return array<string,mixed> */
-    public function submitOffer(string $offerId,string $expectedEtag,?string $manualNumber,string $documentDate,bool $confirmIncomplete):array
+    public function submitOffer(string $offerId,string $expectedEtag,?string $manualNumber,string $documentDate,bool $confirmIncomplete,?callable $writeGuard=null):array
     {
         if($this->numberRanges===null||$this->pdfService===null)throw new RuntimeException('Angebotsabschluss ist nicht konfiguriert.');
         if($manualNumber!==null&&mb_strlen(trim($manualNumber))>100)throw new OfferValidationException(['Die manuelle Angebotsnummer darf höchstens 100 Zeichen lang sein.']);
@@ -290,6 +291,7 @@ final readonly class OfferService
         $projectId=(string)$metadata['storage_key'];
         $this->pdo->exec('BEGIN IMMEDIATE');$published=false;
         try{
+            if($writeGuard!==null)$writeGuard();
             return$this->store->withExclusiveLock($projectId,$offerId,function()use($offerId,$expectedEtag,$manualNumber,$documentDate,$confirmIncomplete,$projectId,&$published):array{
                 $metadata=$this->offers->find($offerId);
                 if($metadata===null)throw new RuntimeException('Angebot wurde nicht gefunden.');
@@ -395,10 +397,10 @@ final readonly class OfferService
     }
 
     /** @param array<string,mixed> $imported */
-    public function importExisting(string $offerId, array $imported, string $expectedEtag): string
+    public function importExisting(string $offerId, array $imported, string $expectedEtag,?callable $writeGuard=null): string
     {
         $preview = $this->previewImport($offerId, $imported, $expectedEtag);
-        return $this->saveDraft($offerId, $preview['offer'], $expectedEtag);
+        return $this->saveDraft($offerId, $preview['offer'], $expectedEtag,$writeGuard);
     }
 
     /** @param array<string,mixed> $imported */

@@ -30,8 +30,14 @@
     filteredNodeIds = new Set(),
     savedHistoryState = "",
     historyGroupTimer = 0;
+  const permissionReadOnly = root.dataset.permissionReadonly === "1";
+  let lockGranted = lifecycleStatus !== "draft",
+    lockToken = "",
+    lockRenewTimer = 0,
+    lockOwner = "",
+    lastLockActivity = Date.now();
   const isChangeOrder = root.dataset.documentType === "change_order";
-  const isReadOnly = () => lifecycleStatus !== "draft";
+  const isReadOnly = () => lifecycleStatus !== "draft" || permissionReadOnly || !lockGranted;
   const openNodes = new Set(),
     pricePreviews = new Map(),
     library = { services: [], costItems: [], trailingTexts: [] },
@@ -121,6 +127,47 @@
       };
     }
   }
+  const lockHeaders = () => lockToken ? { "X-Document-Lock": lockToken } : {};
+  async function requestLock(takeOver = false) {
+    if (lifecycleStatus !== "draft" || permissionReadOnly) return { granted: false };
+    const response = await fetch(`/api/document-locks/offers/${encodeURIComponent(root.dataset.offerId)}`, {
+      method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": root.dataset.csrf },
+      body: JSON.stringify({ takeOver }),
+    });
+    const payload = await responsePayload(response);
+    if (!response.ok) throw new Error(payload.error || "Bearbeitungssperre konnte nicht angefordert werden.");
+    lockGranted = payload.granted === true;
+    lockToken = lockGranted ? payload.token : "";
+    lockOwner = payload.owner?.displayName || "einem anderen Benutzer";
+    if (lockGranted) startLockRenewal();
+    return payload;
+  }
+  function startLockRenewal() {
+    clearInterval(lockRenewTimer);
+    lockRenewTimer = window.setInterval(async () => {
+      if (!lockGranted || !lockToken) return;
+      const inactiveFor = Date.now() - lastLockActivity;
+      if (inactiveFor >= 120000) {
+        lockGranted = false; lockToken = ""; clearInterval(lockRenewTimer);
+        applyReadOnlyState(); status.textContent = "Bearbeitungssperre wegen Inaktivität abgelaufen – schreibgeschützt";
+        return;
+      }
+      if (inactiveFor > 75000) return;
+      try {
+        const response = await fetch(`/api/document-locks/offers/${encodeURIComponent(root.dataset.offerId)}`, {
+          method: "PUT", credentials: "same-origin",
+          headers: { "Content-Type": "application/json", "X-CSRF-Token": root.dataset.csrf },
+          body: JSON.stringify({ token: lockToken }),
+        });
+        if (!response.ok) throw new Error();
+      } catch {
+        lockGranted = false; lockToken = ""; clearInterval(lockRenewTimer);
+        applyReadOnlyState(); status.textContent = "Bearbeitungssperre abgelaufen – schreibgeschützt";
+      }
+    }, 45000);
+  }
+  for (const eventName of ["input", "pointerdown", "keydown"]) root.addEventListener(eventName, () => { lastLockActivity = Date.now(); }, { passive: true });
   async function api(path, body) {
     const response = await fetch(path, {
         method: body === undefined ? "GET" : "POST",
@@ -132,6 +179,7 @@
             : {
                 "Content-Type": "application/json",
                 "X-CSRF-Token": root.dataset.csrf,
+                ...lockHeaders(),
               }),
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -627,24 +675,22 @@
   }
   function applyReadOnlyState() {
     root.classList.toggle("offer-readonly", isReadOnly());
-    if (!isReadOnly()) return;
-    titleInput.readOnly = true;
-    Object.values(termFields).forEach((field) => (field.disabled = true));
+    titleInput.readOnly = isReadOnly();
+    Object.values(termFields).forEach((field) => (field.disabled = isReadOnly()));
     adjustmentPanel
       .querySelectorAll("input, select, textarea, button")
-      .forEach((field) => (field.disabled = true));
+      .forEach((field) => (field.disabled = isReadOnly()));
     tree
       .querySelectorAll("input, select, textarea, button")
-      .forEach((field) => (field.disabled = true));
-    tree
-      .querySelectorAll("[draggable]")
-      .forEach((handle) => handle.removeAttribute("draggable"));
+      .forEach((field) => (field.disabled = isReadOnly()));
+    tree.querySelectorAll("[data-drag-id]").forEach((handle) => isReadOnly() ? handle.removeAttribute("draggable") : handle.setAttribute("draggable", "true"));
     toolbar
       .querySelectorAll("[data-add-root-title], [data-add-root-position], [data-add-root-text], details.context-menu")
-      .forEach((control) => (control.hidden = true));
-    saveButton.hidden = true;
-    undoButton.hidden = true;
-    redoButton.hidden = true;
+      .forEach((control) => (control.hidden = isReadOnly()));
+    saveButton.hidden = isReadOnly();
+    undoButton.hidden = isReadOnly();
+    redoButton.hidden = isReadOnly();
+    root.querySelectorAll("[data-submit-offer], [data-import-json]").forEach((control) => (control.hidden = isReadOnly()));
   }
   function updateOfferTotal() {
     let out = document.querySelector("#offer-summary-footer");
@@ -1247,6 +1293,7 @@
           "Content-Type": "application/json",
           "X-CSRF-Token": root.dataset.csrf,
           "If-Match": `"${etag}"`,
+          ...lockHeaders(),
         },
         previewResponse = await fetch(
           `/api/offers/${encodeURIComponent(root.dataset.offerId)}/import-preview`,
@@ -1345,6 +1392,7 @@
               "Content-Type": "application/json",
               "X-CSRF-Token": root.dataset.csrf,
               "If-Match": `"${etag}"`,
+              ...lockHeaders(),
             },
             body: JSON.stringify(payload),
           },
@@ -2010,6 +2058,7 @@
               "Content-Type": "application/json",
               "If-Match": `"${etag}"`,
               "X-CSRF-Token": root.dataset.csrf,
+              ...lockHeaders(),
             },
             body: JSON.stringify(offer),
           },
@@ -2046,8 +2095,23 @@
       );
     return payload;
   };
-  Promise.all([loadDraft(), api("/api/offer-calculation/library")])
-    .then(([draft, lib]) => {
+  root.querySelector("[data-lock-takeover]")?.addEventListener("click", async (event) => {
+    if (!(await CalightModal.confirm({ title: "Bearbeitungssperre übernehmen", content: `Die Sperre von ${lockOwner || "einem anderen Benutzer"} übernehmen? Dessen weitere Speicherzugriffe werden abgewiesen.`, confirmLabel: "Sperre übernehmen", danger: true }))) return;
+    event.currentTarget.disabled = true;
+    try { await requestLock(true); event.currentTarget.hidden = true; render(); status.textContent = "Bearbeitungssperre übernommen"; }
+    catch (error) { status.textContent = error.message; event.currentTarget.disabled = false; }
+  });
+  window.addEventListener("pagehide", () => {
+    if (!lockToken) return;
+    fetch(`/api/document-locks/offers/${encodeURIComponent(root.dataset.offerId)}`, {
+      method: "DELETE", credentials: "same-origin", keepalive: true,
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": root.dataset.csrf },
+      body: JSON.stringify({ token: lockToken }),
+    }).catch(() => {});
+  });
+  const initialLock = requestLock().catch((error) => ({ granted: false, error }));
+  Promise.all([loadDraft(), api("/api/offer-calculation/library"), initialLock])
+    .then(([draft, lib, lock]) => {
       offer = draft.offer;
       etag = draft.etag;
       lifecycleStatus = draft.lifecycleStatus || offer.status || lifecycleStatus;
@@ -2061,7 +2125,12 @@
       savedHistoryState = comparableHistoryState();
       updateHistoryControls();
       saveButton.disabled = isReadOnly();
-      status.textContent = isReadOnly() ? `Schreibgeschützter ${isChangeOrder ? "Nachtrags" : "Angebots"}stand` : "";
+      if (permissionReadOnly) status.textContent = "Keine Berechtigung zur Bearbeitung";
+      else if (lifecycleStatus !== "draft") status.textContent = `Schreibgeschützter ${isChangeOrder ? "Nachtrags" : "Angebots"}stand`;
+      else if (!lock.granted) {
+        status.textContent = lock.error ? lock.error.message : `In Bearbeitung durch ${lockOwner} – schreibgeschützt`;
+        const takeover = root.querySelector("[data-lock-takeover]"); if (takeover) takeover.hidden = !!lock.error;
+      } else status.textContent = "Bearbeitungssperre aktiv";
       scheduleCalculation();
     })
     .catch((x) => (status.textContent = x.message));

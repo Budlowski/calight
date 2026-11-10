@@ -11,6 +11,8 @@ use App\Http\CustomerProjectController;
 use App\Http\OfferCalculationController;
 use App\Http\SettingsController;
 use App\Http\OrderController;
+use App\Http\DocumentLockController;
+use App\Http\UserAccessController;
 use App\Domain\Offer\OfferCalculator;
 use App\Http\Router;
 use App\Infrastructure\Database\ConnectionFactory;
@@ -23,6 +25,7 @@ use App\Infrastructure\Persistence\NumberRangeRepository;
 use App\Infrastructure\Persistence\CustomerProjectRepository;
 use App\Infrastructure\Persistence\DocumentSettingsRepository;
 use App\Infrastructure\Persistence\OrderRepository;
+use App\Infrastructure\Persistence\DocumentLockRepository;
 use App\View\View;
 use PDO;
 
@@ -60,11 +63,13 @@ final readonly class Bootstrap
         $offerPdfService=new OfferPdfService($this->pdo,$documentSettingsRepository,new OfferValidator(),$offerCalculator);
         $offerService=new OfferService($this->pdo,$projects,$offers,$store,$offerCalculator,$numberRanges,$offerPdfService);
         $orderService=new OrderService($this->pdo,new OrderRepository($this->pdo),$offers,$offerService,$numberRanges);
+        $documentLockService=new DocumentLockService($this->pdo,new DocumentLockRepository($this->pdo));
+        $userRepository=new UserRepository($this->pdo);
 
         return new Application(
             new Router(),
             $view,
-            new UserRepository($this->pdo),
+            $userRepository,
             $projects,
             $offers,
             $offerService,
@@ -75,6 +80,9 @@ final readonly class Bootstrap
             $offerPdfService,
             new InternalCalculationPdfService($this->pdo,$documentSettingsRepository,new OfferValidator(),$offerCalculator),
             new OrderController($view,$orderService),
+            new DocumentLockController($documentLockService),
+            $documentLockService,
+            new UserAccessController(new UserAccessService($userRepository)),
         );
     }
 }

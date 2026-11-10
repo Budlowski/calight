@@ -12,17 +12,23 @@ use App\Http\Response;
 use App\Http\Router;
 use App\Http\Session;
 use App\Http\CsrfException;
+use App\Http\AccessDeniedException;
 use App\Http\MasterDataController;
 use App\Http\CustomerProjectController;
 use App\Http\OfferCalculationController;
 use App\Http\SettingsController;
 use App\Http\OrderController;
+use App\Http\DocumentLockController;
+use App\Http\UserAccessController;
 use App\Domain\Order\OrderValidationException;
+use App\Domain\DocumentLockException;
 use App\Infrastructure\Persistence\OfferConflictException;
 use App\Infrastructure\Persistence\OfferRepository;
 use App\Infrastructure\Persistence\ProjectRepository;
 use App\Infrastructure\Persistence\UserRepository;
 use App\View\View;
+use App\Security\AuthorizationPolicy;
+use App\Security\ConfidentialDataFilter;
 use JsonException;
 use RuntimeException;
 use Throwable;
@@ -43,6 +49,9 @@ final readonly class Application
         private OfferPdfService $offerPdfService,
         private InternalCalculationPdfService $internalCalculationPdfService,
         private OrderController $orderController,
+        private DocumentLockController $documentLockController,
+        private DocumentLockService $documentLocks,
+        private UserAccessController $userAccessController,
     ) {
         $this->registerRoutes();
     }
@@ -50,7 +59,20 @@ final readonly class Application
     public function handle(Request $request): Response
     {
         try {
+            $sessionUser=Session::user();
+            if($sessionUser!==null){
+                $currentUser=$this->users->findActiveById((string)$sessionUser['id']);
+                if($currentUser===null){Session::logout();return str_starts_with($request->path,'/api/')?Response::json(['error'=>'Anmeldung erforderlich.'],401):Response::redirect('/login');}
+                Session::refreshUser($currentUser);
+            }
+            if (Session::user() !== null) {
+                foreach (AuthorizationPolicy::required($request) as $permission) Session::require($permission);
+            }
             return $this->router->dispatch($request);
+        } catch (AccessDeniedException) {
+            return AuthorizationPolicy::deniedResponse($request);
+        } catch (DocumentLockException $exception) {
+            return Response::json(['error'=>$exception->getMessage(),'lock'=>$exception->lock],423);
         } catch (OfferConflictException $exception) {
             return Response::json(['error' => $exception->getMessage()], 409);
         } catch (OfferValidationException $exception) {
@@ -76,6 +98,8 @@ final readonly class Application
         $this->offerCalculationController->register($this->router);
         $this->settingsController->register($this->router);
         $this->orderController->register($this->router);
+        $this->documentLockController->register($this->router);
+        $this->userAccessController->register($this->router);
 
         $this->router->add('GET', '/', fn (): Response => Session::user() === null
             ? Response::redirect('/login')
@@ -179,6 +203,7 @@ final readonly class Application
 
         $this->router->add('GET', '/offers/{id}', fn (Request $request, array $parameters): Response => $this->protected(function () use ($parameters): Response {
             $draft = $this->offerService->loadDraft($parameters['id']);
+            if(!Session::can('costs.read'))$draft['offer']=ConfidentialDataFilter::offer($draft['offer']);
             $draft['revisionHistory']=$this->offerService->revisionHistory($parameters['id']);
             $draft['breadcrumbProject']=$draft['metadata']['project_id']!==null
                 ? $this->projects->find((string)$draft['metadata']['project_id'])
@@ -188,8 +213,9 @@ final readonly class Application
 
         $this->router->add('GET', '/api/offers/{id}', fn (Request $request, array $parameters): Response => $this->protected(function () use ($parameters): Response {
             $draft = $this->offerService->loadDraft($parameters['id']);
+            $visibleOffer=Session::can('costs.read')?$draft['offer']:ConfidentialDataFilter::offer($draft['offer']);
             return Response::json(
-                ['offer' => $draft['offer'], 'etag' => $draft['etag'], 'lifecycleStatus'=>$draft['metadata']['status'],
+                ['offer' => $visibleOffer, 'etag' => $draft['etag'], 'lifecycleStatus'=>$draft['metadata']['status'],
                     'revisionHistory'=>$this->offerService->revisionHistory($parameters['id']),
                     'submittedAt'=>$draft['metadata']['submitted_at']??null,'documentDate'=>$draft['metadata']['document_date']??null],
                 headers: ['ETag' => '"' . $draft['etag'] . '"'],
@@ -198,12 +224,13 @@ final readonly class Application
 
         $this->router->add('PUT', '/api/offers/{id}', fn (Request $request, array $parameters): Response => $this->protected(function () use ($request, $parameters): Response {
             $this->requireCsrf($request, $request->headers['x-csrf-token'] ?? null);
+            $this->requireOfferLock($request,$parameters['id']);
             $offer = $this->jsonBody($request);
             $etag = trim((string) ($request->headers['if-match'] ?? ''), '"');
             if ($etag === '') {
                 return Response::json(['error' => 'If-Match-Header fehlt.'], 428);
             }
-            $newEtag = $this->offerService->saveDraft($parameters['id'], $offer, $etag);
+            $newEtag = $this->offerService->saveDraft($parameters['id'], $offer, $etag,fn()=>$this->requireOfferLock($request,$parameters['id']));
             return Response::json(['saved' => true, 'etag' => $newEtag], headers: ['ETag' => '"' . $newEtag . '"']);
         }));
 
@@ -222,9 +249,10 @@ final readonly class Application
         }));
         $this->router->add('POST','/api/offers/{id}/submit',fn(Request $request,array $parameters):Response=>$this->protected(function()use($request,$parameters):Response{
             $this->requireCsrf($request,$request->headers['x-csrf-token']??null);$data=$this->jsonBody($request);
+            $this->requireOfferLock($request,$parameters['id']);
             $etag=trim((string)($request->headers['if-match']??''),'"');if($etag==='')return Response::json(['error'=>'If-Match-Header fehlt.'],428);
             $documentDate=trim((string)($data['documentDate']??date('Y-m-d')));$manual=isset($data['offerNumber'])?trim((string)$data['offerNumber']):null;
-            $result=$this->offerService->submitOffer($parameters['id'],$etag,$manual,$documentDate,filter_var($data['confirmIncomplete']??false,FILTER_VALIDATE_BOOL));
+            $result=$this->offerService->submitOffer($parameters['id'],$etag,$manual,$documentDate,filter_var($data['confirmIncomplete']??false,FILTER_VALIDATE_BOOL),fn()=>$this->requireOfferLock($request,$parameters['id']));
             $status=($result['submitted']??false)?200:((($result['validation']['errors']??[])!==[])?422:409);
             return Response::json($result,$status);
         }));
@@ -240,9 +268,9 @@ final readonly class Application
             return Response::redirect($result['projectId']!==''?'/projects/'.rawurlencode($result['projectId']):'/offers');
         }));
 
-        $this->router->add('GET','/api/offers/{id}/export',fn(Request $request,array $parameters):Response=>$this->protected(function()use($parameters){$export=$this->offerService->exportDraft($parameters['id']);$json=json_encode($export['offer'],JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n";return new Response($json,200,['Content-Type'=>'application/json; charset=utf-8','Content-Disposition'=>'attachment; filename="angebot-'.$parameters['id'].'.json"','ETag'=>'"'.$export['etag'].'"']);}));
+        $this->router->add('GET','/api/offers/{id}/export',fn(Request $request,array $parameters):Response=>$this->protected(function()use($parameters){$export=$this->offerService->exportDraft($parameters['id']);$visible=Session::can('costs.read')?$export['offer']:ConfidentialDataFilter::offer($export['offer']);$json=json_encode($visible,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n";return new Response($json,200,['Content-Type'=>'application/json; charset=utf-8','Content-Disposition'=>'attachment; filename="angebot-'.$parameters['id'].'.json"','ETag'=>'"'.$export['etag'].'"']);}));
         $this->router->add('POST','/api/offers/{id}/import-preview',fn(Request $request,array $parameters):Response=>$this->protected(function()use($request,$parameters){$this->requireCsrf($request,$request->headers['x-csrf-token']??null);$data=$this->jsonBody($request);$etag=trim((string)($request->headers['if-match']??''),'"');if($etag==='')return Response::json(['error'=>'If-Match-Header fehlt.'],428);return Response::json($this->offerService->previewImport($parameters['id'],$data,$etag));}));
-        $this->router->add('PUT','/api/offers/{id}/import',fn(Request $request,array $parameters):Response=>$this->protected(function()use($request,$parameters){$this->requireCsrf($request,$request->headers['x-csrf-token']??null);$data=$this->jsonBody($request);$etag=trim((string)($request->headers['if-match']??''),'"');if($etag==='')return Response::json(['error'=>'If-Match-Header fehlt.'],428);$new=$this->offerService->importExisting($parameters['id'],$data,$etag);return Response::json(['saved'=>true,'etag'=>$new],headers:['ETag'=>'"'.$new.'"']);}));
+        $this->router->add('PUT','/api/offers/{id}/import',fn(Request $request,array $parameters):Response=>$this->protected(function()use($request,$parameters){$this->requireCsrf($request,$request->headers['x-csrf-token']??null);$this->requireOfferLock($request,$parameters['id']);$data=$this->jsonBody($request);$etag=trim((string)($request->headers['if-match']??''),'"');if($etag==='')return Response::json(['error'=>'If-Match-Header fehlt.'],428);$new=$this->offerService->importExisting($parameters['id'],$data,$etag,fn()=>$this->requireOfferLock($request,$parameters['id']));return Response::json(['saved'=>true,'etag'=>$new],headers:['ETag'=>'"'.$new.'"']);}));
         $this->router->add('POST','/api/offers/import',fn(Request $request):Response=>$this->protected(function()use($request){$this->requireCsrf($request,$request->headers['x-csrf-token']??null);$data=$this->jsonBody($request);$project=trim((string)($data['projectId']??''))?:null;$customer=trim((string)($data['customerId']??''));$offer=$data['offer']??null;if($customer===''||!is_array($offer))return Response::json(['error'=>'Kunde und Angebotsdokument sind erforderlich.'],422);$id=$this->offerService->importNew($project,$offer,$customer);return Response::json(['id'=>$id,'url'=>'/offers/'.rawurlencode($id)],201);}));
         $this->router->add('POST','/api/offers/{id}/pdf',fn(Request $request,array $parameters):Response=>$this->protected(function()use($request,$parameters){$this->requireCsrf($request,$request->headers['x-csrf-token']??null);$loaded=$this->offerService->loadDraft($parameters['id']);if(($loaded['metadata']['status']??'draft')!=='draft'){$archive=$this->offerService->submittedPdf($parameters['id']);return new Response($archive['pdf'],200,['Content-Type'=>'application/pdf','Content-Disposition'=>'inline; filename="'.$archive['fileName'].'"','Cache-Control'=>'private, no-store']);}$offer=$this->jsonBody($request);$stored=$loaded['offer'];if(($offer['id']??null)!==$parameters['id']||($offer['projectId']??null)!==$stored['projectId'])return Response::json(['error'=>'Angebots- oder Projekt-ID stimmt nicht überein.'],422);$offer['offerNumber']=$stored['offerNumber']??null;$offer['revision']=$stored['revision']??0;$offer['status']='draft';$pdf=$this->offerPdfService->render($offer);$fileName=$this->offerPdfService->fileName($offer);return new Response($pdf,200,['Content-Type'=>'application/pdf','Content-Disposition'=>'inline; filename="'.$fileName.'"','Cache-Control'=>'no-store']);}));
         $this->router->add('POST','/api/offers/{id}/calculation-pdf',fn(Request $request,array $parameters):Response=>$this->protected(function()use($request,$parameters){$this->requireCsrf($request,$request->headers['x-csrf-token']??null);$loaded=$this->offerService->loadDraft($parameters['id']);$stored=$loaded['offer'];if(($loaded['metadata']['status']??'draft')==='draft'){$offer=$this->jsonBody($request);if(($offer['id']??null)!==$parameters['id']||($offer['projectId']??null)!==$stored['projectId'])return Response::json(['error'=>'Angebots- oder Projekt-ID stimmt nicht überein.'],422);$offer['offerNumber']=$stored['offerNumber']??null;$offer['revision']=$stored['revision']??0;$offer['status']='draft';}else{$offer=$stored;}$pdf=$this->internalCalculationPdfService->render($offer);$fileName=$this->internalCalculationPdfService->fileName($offer);return new Response($pdf,200,['Content-Type'=>'application/pdf','Content-Disposition'=>'inline; filename="'.$fileName.'"','Cache-Control'=>'no-store']);}));
@@ -264,5 +292,12 @@ final readonly class Application
         if (!Session::verifyCsrf($token)) {
             throw new CsrfException('Sicherheitsprüfung fehlgeschlagen.');
         }
+    }
+
+    private function requireOfferLock(Request $request,string $offerId):void
+    {
+        $metadata=$this->offers->find($offerId);if($metadata!==null&&($metadata['status']??'draft')!=='draft')return;
+        $user=Session::user();if($user===null)throw new AccessDeniedException('offers.write');
+        $this->documentLocks->assertOwned('offer',$offerId,$user,(string)($request->headers['x-document-lock']??''));
     }
 }
