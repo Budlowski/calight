@@ -19,6 +19,8 @@ final readonly class CustomerProjectController
     {
         $router->add('GET', '/customers', fn (): Response => $this->page(fn () => $this->view->render('customers/index')));
         $router->add('GET', '/projects', fn (): Response => $this->page(fn () => $this->view->render('projects/index')));
+        $router->add('GET','/customers/{id}',fn(Request $r,array $p):Response=>$this->page(fn()=>$this->view->render('customers/show',['customer'=>$this->service->customer($p['id'])])));
+        $router->add('GET','/projects/{id}/edit',fn(Request $r,array $p):Response=>$this->page(fn()=>$this->view->render('projects/edit',['project'=>$this->service->project($p['id'])])));
         $router->add('GET', '/api/customer-projects', fn (): Response => $this->api(fn () => Response::json($this->service->overview())));
         $router->add('POST', '/api/customers', fn (Request $r): Response => $this->mutation($r, fn ($d) => $this->service->createCustomer($d), 201));
         $router->add('PUT', '/api/customers/{id}', fn (Request $r, array $p): Response => $this->mutation($r, fn ($d) => $this->service->updateCustomer($p['id'], $d)));

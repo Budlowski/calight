@@ -15,6 +15,7 @@ final readonly class DailyReportController
     public function register(Router $router):void
     {
         $router->add('GET','/daily-reports',fn(Request $request):Response=>$this->view->render('daily-reports/index',['initialOrderId'=>(string)($request->query['order']??''),'initialReportId'=>(string)($request->query['open']??'')]));
+        $router->add('GET','/daily-reports/{id}',fn(Request $request,array $parameters):Response=>$this->view->render('daily-reports/show',['reportId'=>$parameters['id']]));
         $router->add('GET','/api/daily-reports/reference-data',fn():Response=>Response::json($this->service->referenceData($this->actor())));
         $router->add('GET','/api/daily-reports',fn():Response=>Response::json(['reports'=>$this->service->overview($this->actor())]));
         $router->add('GET','/api/daily-reports/order/{id}/targets',fn(Request $request,array $parameters):Response=>$this->respond(fn()=>$this->service->orderTargets($parameters['id'],$this->actor())));

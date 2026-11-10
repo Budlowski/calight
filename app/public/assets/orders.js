@@ -1,76 +1,20 @@
 (() => {
   "use strict";
-  const root = document.querySelector("#orders-page");
-  if (!root) return;
-  const list = root.querySelector("[data-list]"), form = root.querySelector("[data-form]"),
-    search = root.querySelector("[data-search]"), status = root.querySelector("[data-status]"),
-    type = root.querySelector("[data-type]"), sort = root.querySelector("[data-sort]"),
-    count = root.querySelector("[data-count]"), reset = root.querySelector("[data-reset]"),
-    newButton = root.querySelector("[data-new-order]"), message = root.querySelector("[data-message]");
-  let orders = [], formDirty = false;
-  const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
-  const labels = { open: "Offen", in_progress: "In Bearbeitung", completed: "Abgeschlossen", invoiced: "Abgerechnet" };
-  const collator = new Intl.Collator("de-DE", { numeric: true, sensitivity: "base" });
-  const date = (value, withTime = false) => new Intl.DateTimeFormat("de-DE", withTime ? { dateStyle: "short", timeStyle: "short" } : { dateStyle: "short" }).format(new Date(value));
-
-  function notify(text, kind = "error") {
-    message.textContent = text;
-    message.className = `notice notice-${kind}`;
-    message.hidden = false;
-  }
-  function render() {
-    const query = search.value.trim().toLocaleLowerCase("de-DE");
-    const rows = orders.filter((order) => (!status.value || order.status === status.value)
-      && (!type.value || order.orderType === type.value)
-      && (!query || `${order.orderNumber} ${order.title} ${order.customerName} ${order.customerNumber || ""} ${order.projectName || ""} ${order.projectNumber || ""} ${order.sourceOfferNumber || ""}`.toLocaleLowerCase("de-DE").includes(query)));
-    rows.sort((a, b) => sort.value === "number" ? collator.compare(a.orderNumber, b.orderNumber)
-      : sort.value === "title" ? collator.compare(a.title, b.title) : String(b.updatedAt).localeCompare(String(a.updatedAt)));
-    count.textContent = `${rows.length} von ${orders.length}`;
-    reset.disabled = !query && !status.value && !type.value && sort.value === "updated";
-    list.innerHTML = rows.map((order) => {
-      const source = order.orderType === "offer"
-        ? `Angebot ${esc(order.sourceOfferNumber || "ohne Nummer")}${Number(order.sourceRevision) > 0 ? ` · Revision ${Number(order.sourceRevision)}` : ""}`
-        : "Direkter Regieauftrag";
-      return `<article class="service-list-item management-card"><div class="service-list-main"><div class="management-card-head"><span class="service-number">${esc(order.orderNumber)}</span><span class="status-badge status-${esc(order.status)}">${labels[order.status] || esc(order.status)}</span></div><strong>${esc(order.title)}</strong><div class="management-card-facts"><span>${esc(order.customerName)}</span><span>${esc(order.projectName || "Ohne Projekt")}</span><span>${source}</span></div><span class="muted">Auftragsdatum ${date(order.orderDate)} · geändert ${date(order.updatedAt, true)}</span></div><div class="service-list-actions"><a class="button button-light button-small" data-icon="eye" href="/orders/${encodeURIComponent(order.id)}">Ansehen</a></div></article>`;
-    }).join("") || '<p class="card empty-state">Keine Aufträge entsprechen der aktuellen Auswahl.</p>';
-  }
-  async function load() {
-    list.innerHTML = '<p class="card empty-state">Aufträge werden geladen …</p>';
-    const response = await fetch("/api/orders", { credentials: "same-origin" }), result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Aufträge konnten nicht geladen werden.");
-    orders = result.orders; render();
-  }
-  async function confirmDiscard() {
-    return !formDirty || CalightModal.confirm({ title: "Ungespeicherte Eingaben", content: "Den begonnenen Regieauftrag verwerfen?", confirmLabel: "Verwerfen", danger: true });
-  }
-
-  for (const element of [search, status, type, sort]) element.addEventListener(element === search ? "input" : "change", render);
-  reset.addEventListener("click", () => { search.value = ""; status.value = ""; type.value = ""; sort.value = "updated"; render(); search.focus(); });
-  newButton.addEventListener("click", async () => {
-    if (!(await confirmDiscard())) return;
-    form.reset(); form.hidden = false; newButton.setAttribute("aria-expanded", "true"); formDirty = false; message.hidden = true; form.elements.customerId.focus();
-  });
-  root.querySelector("[data-cancel]").addEventListener("click", async () => {
-    if (!(await confirmDiscard())) return;
-    form.reset(); form.hidden = true; newButton.setAttribute("aria-expanded", "false"); formDirty = false;
-  });
-  form.addEventListener("input", () => { formDirty = true; });
-  form.elements.customerId.addEventListener("change", () => {
-    const customerId = form.elements.customerId.value;
-    for (const option of form.elements.projectId.options) if (option.value) option.hidden = option.dataset.customerId !== customerId;
-    if (form.elements.projectId.selectedOptions[0]?.hidden) form.elements.projectId.value = "";
-  });
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const submit = form.querySelector('[type="submit"]');
-    submit.disabled = true; message.hidden = true;
-    try {
-      const response = await fetch("/api/orders", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", "X-CSRF-Token": root.dataset.csrf }, body: JSON.stringify(Object.fromEntries(new FormData(form))) });
-      const result = await response.json();
-      if (!response.ok) throw new Error((result.details || [result.error]).filter(Boolean).join(" ") || "Auftrag konnte nicht angelegt werden.");
-      formDirty = false; location.assign(`/orders/${encodeURIComponent(result.data.id)}`);
-    } catch (error) { submit.disabled = false; notify(error.message); }
-  });
-  window.addEventListener("beforeunload", (event) => { if (formDirty) { event.preventDefault(); event.returnValue = ""; } });
-  load().catch((error) => notify(error.message));
+  const root=document.querySelector("#orders-page");if(!root)return;
+  const results=root.querySelector("[data-list]"),search=root.querySelector("[data-search]"),status=root.querySelector("[data-status]"),type=root.querySelector("[data-type]"),sort=root.querySelector("[data-sort]"),count=root.querySelector("[data-count]"),reset=root.querySelector("[data-reset]"),message=root.querySelector("[data-message]");
+  let orders=[],visible=[];
+  const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+  const labels={open:"Offen",in_progress:"In Bearbeitung",completed:"Abgeschlossen",invoiced:"Abgerechnet"};
+  const collator=new Intl.Collator("de-DE",{numeric:true,sensitivity:"base"});
+  const date=(value,withTime=false)=>new Intl.DateTimeFormat("de-DE",withTime?{dateStyle:"short",timeStyle:"short"}:{dateStyle:"short"}).format(new Date(value));
+  const notify=(text,kind="error")=>{message.textContent=text;message.className=`notice notice-${kind}`;message.hidden=false;};
+  const source=order=>order.orderType==="offer"?`Angebot ${order.sourceOfferNumber||"ohne Nummer"}${Number(order.sourceRevision)>0?` · Revision ${Number(order.sourceRevision)}`:""}`:"Regieauftrag";
+  function card(order){return `<article class="overview-card" tabindex="0" data-href="/orders/${encodeURIComponent(order.id)}"><div class="management-card-head"><span class="service-number">${esc(order.orderNumber)}</span><span class="status-badge status-${esc(order.status)}">${labels[order.status]||esc(order.status)}</span></div><div class="overview-card-title" title="${esc(order.title)}">${esc(order.title)}</div><div class="overview-card-meta"><span>${esc(order.customerName)}</span><span>${esc(order.projectName||"Ohne Projekt")}</span><span>${esc(source(order))}</span><span>${date(order.orderDate)}</span></div><div class="overview-card-actions"><a class="button button-light button-small" data-icon="eye" href="/orders/${encodeURIComponent(order.id)}">Ansehen</a></div></article>`;}
+  function table(){return `<div class="overview-table-wrap"><table class="overview-table"><thead><tr><th>Auftragsnummer</th><th>Bezeichnung</th><th>Kunde</th><th>Projekt</th><th>Auftragsart</th><th>Status</th><th>Auftragsdatum</th><th>Aktionen</th></tr></thead><tbody>${visible.map(order=>`<tr tabindex="0" data-href="/orders/${encodeURIComponent(order.id)}"><td class="cell-number">${esc(order.orderNumber)}</td><td class="cell-title" title="${esc(order.title)}">${esc(order.title)}</td><td>${esc(order.customerName)}</td><td>${esc(order.projectName||"Ohne Projekt")}</td><td>${esc(source(order))}</td><td><span class="status-badge status-${esc(order.status)}">${labels[order.status]||esc(order.status)}</span></td><td class="cell-date">${date(order.orderDate)}</td><td class="cell-actions"><a class="mini-button" data-icon="eye" href="/orders/${encodeURIComponent(order.id)}">Ansehen</a></td></tr>`).join("")}</tbody></table></div>`;}
+  function paint(view){results.innerHTML=!visible.length?'<p class="overview-empty">Keine Aufträge entsprechen der aktuellen Auswahl.</p>':view==="cards"?`<div class="overview-card-grid">${visible.map(card).join("")}</div>`:table();}
+  const view=CalightListView.create({root,module:"orders",render:paint});CalightListView.enableRowNavigation(results);
+  function render(){const query=search.value.trim().toLocaleLowerCase("de-DE");visible=orders.filter(order=>(!status.value||order.status===status.value)&&(!type.value||order.orderType===type.value)&&(!query||`${order.orderNumber} ${order.title} ${order.customerName} ${order.customerNumber||""} ${order.projectName||""} ${order.projectNumber||""} ${order.sourceOfferNumber||""}`.toLocaleLowerCase("de-DE").includes(query))).sort((a,b)=>sort.value==="number"?collator.compare(a.orderNumber,b.orderNumber):sort.value==="title"?collator.compare(a.title,b.title):String(b.updatedAt).localeCompare(String(a.updatedAt)));count.textContent=`${visible.length} von ${orders.length}`;reset.disabled=!query&&!status.value&&!type.value&&sort.value==="updated";view.render();}
+  async function load(){results.innerHTML='<p class="overview-empty">Aufträge werden geladen …</p>';const response=await fetch("/api/orders",{credentials:"same-origin"}),result=await response.json();if(!response.ok)throw Error(result.error||"Aufträge konnten nicht geladen werden.");orders=result.orders;render();}
+  function newOrder(){const form=root.querySelector("[data-order-template]").content.firstElementChild.cloneNode(true);let dirty=false;form.addEventListener("input",()=>dirty=true);form.elements.customerId.addEventListener("change",()=>{const customer=form.elements.customerId.value;for(const option of form.elements.projectId.options)if(option.value)option.hidden=option.dataset.customerId!==customer;if(form.elements.projectId.selectedOptions[0]?.hidden)form.elements.projectId.value="";dirty=true;});const error=form.querySelector("[data-dialog-error]");CalightModal.open({title:"Regieauftrag anlegen",content:form,confirmClose:{isDirty:()=>dirty,message:"Den begonnenen Regieauftrag verwerfen?"},actions:[{label:"Abbrechen",value:null},{label:"Auftrag anlegen",primary:true,validate:true,onClick:async()=>{error.hidden=true;try{const response=await fetch("/api/orders",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":root.dataset.csrf},body:JSON.stringify(Object.fromEntries(new FormData(form)))}),result=await response.json();if(!response.ok)throw Error((result.details||[result.error]).filter(Boolean).join(" "));dirty=false;location.assign(`/orders/${encodeURIComponent(result.data.id)}`);}catch(exception){error.textContent=exception.message;error.hidden=false;return false;}}}],initialFocus:'[name="customerId"]'});}
+  for(const element of[search,status,type,sort])element.addEventListener(element===search?"input":"change",render);reset.addEventListener("click",()=>{search.value="";status.value="";type.value="";sort.value="updated";render();search.focus();});root.querySelector("[data-new-order]").addEventListener("click",newOrder);load().catch(error=>notify(error.message));
 })();

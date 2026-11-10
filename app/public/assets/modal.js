@@ -11,7 +11,39 @@
     footer = dialog.querySelector("[data-modal-actions]");
   let resolveCurrent = null,
     previousFocus = null,
-    outsideCloses = true;
+    outsideCloses = true,
+    closeGuard = null,
+    confirmingClose = false;
+
+  async function requestClose(value = null) {
+    if (closeGuard?.isDirty?.() && !confirmingClose) {
+      confirmingClose = true;
+      const savedActions = [...footer.children];
+      const warning = document.createElement("p");
+      warning.className = "notice notice-warning global-modal-discard-warning";
+      warning.textContent = closeGuard.message || "Ungespeicherte Eingaben wirklich verwerfen?";
+      content.prepend(warning);
+      const continueButton = document.createElement("button");
+      continueButton.type = "button";
+      continueButton.className = "button button-light";
+      continueButton.textContent = "Weiter bearbeiten";
+      continueButton.onclick = () => {
+        warning.remove();
+        footer.replaceChildren(...savedActions);
+        confirmingClose = false;
+        focusable()[0]?.focus();
+      };
+      const discardButton = document.createElement("button");
+      discardButton.type = "button";
+      discardButton.className = "button button-danger-light";
+      discardButton.textContent = "Verwerfen";
+      discardButton.onclick = () => close(value);
+      footer.replaceChildren(continueButton, discardButton);
+      continueButton.focus();
+      return;
+    }
+    close(value);
+  }
 
   function close(value = null) {
     if (!dialog.open) return;
@@ -21,6 +53,8 @@
     resolve?.(value);
     previousFocus?.focus?.();
     previousFocus = null;
+    closeGuard = null;
+    confirmingClose = false;
   }
 
   function focusable() {
@@ -36,11 +70,13 @@
     content: body,
     actions = [{ label: "Schließen", value: null }],
     closeOnOutside = true,
+    confirmClose = null,
     initialFocus = null,
   }) {
     if (dialog.open) close(null);
     previousFocus = document.activeElement;
     outsideCloses = closeOnOutside;
+    closeGuard = confirmClose;
     title.textContent = heading;
     content.replaceChildren();
     if (body instanceof Node) content.append(body);
@@ -77,7 +113,7 @@
             if (dialog.open) button.disabled = false;
           }
         }
-        close(action.value);
+        requestClose(action.value);
       });
       footer.append(button);
     }
@@ -113,10 +149,10 @@
 
   dialog
     .querySelector("[data-modal-close]")
-    .addEventListener("click", () => close(null));
+    .addEventListener("click", () => requestClose(null));
   dialog.addEventListener("cancel", (event) => {
     event.preventDefault();
-    close(null);
+    requestClose(null);
   });
   dialog.addEventListener("click", (event) => {
     if (!outsideCloses || event.target !== dialog) return;
@@ -128,7 +164,7 @@
       event.clientY < rect.top ||
       event.clientY > rect.bottom
     )
-      close(null);
+      requestClose(null);
   });
   dialog.addEventListener("submit", (event) => {
     if (!(event.target instanceof HTMLFormElement)) return;

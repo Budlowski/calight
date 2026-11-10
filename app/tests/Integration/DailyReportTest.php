@@ -40,6 +40,8 @@ final class DailyReportTest extends TestCase
             $technicianOverview=$service->overview(['id'=>$ids['technician'],'role'=>'technician']);$this->assertTrue(!isset($technicianOverview[0]['total_labor_cost']));
             $duplicateEntry=$updated['entries'][0];$this->assertThrows(DailyReportValidationException::class,fn()=>$service->update($report['id'],['version'=>$updated['version'],'reportDate'=>'2026-11-10','title'=>'Montage','activities'=>'Doppelte Zeile','entries'=>[['id'=>$duplicateEntry['id'],'employeeId'=>$employee['id'],'durationHours'=>'1.000','targetKey'=>$duplicateEntry['targetKey']],['id'=>$duplicateEntry['id'],'employeeId'=>$employee['id'],'durationHours'=>'1.000','targetKey'=>$duplicateEntry['targetKey']]]],$office));
             $this->assertThrows(DailyReportValidationException::class,fn()=>$service->update($report['id'],['version'=>$report['version'],'reportDate'=>'2026-11-10','title'=>'Veraltet','activities'=>'Veralteter Stand','entries'=>[]],$office));
+            $shell=$service->create(['orderId'=>$ids['order'],'reportDate'=>'2026-11-10','title'=>'Grunddaten','activities'=>'','entries'=>[]],$office);$this->assertSame('',$shell['activities']);
+            $this->assertThrows(DailyReportValidationException::class,fn()=>$service->update($shell['id'],['version'=>$shell['version'],'reportDate'=>'2026-11-10','title'=>'Grunddaten','activities'=>'','entries'=>[]],$office));
         }finally{$this->remove($tmp);}
     }
 

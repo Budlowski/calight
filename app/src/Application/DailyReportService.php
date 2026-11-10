@@ -48,7 +48,7 @@ final readonly class DailyReportService
     public function create(array $input,array $actor):array
     {
         $orderId=trim((string)($input['orderId']??''));$order=$this->orders->find($orderId);if($order===null)throw new DailyReportValidationException(['Auftrag wurde nicht gefunden.']);$this->assertOrderAccess($order,$actor);
-        $values=$this->validateReport($input);$id=Uuid::v4();$now=Clock::now();$entries=$this->validateEntries($input['entries']??[],$id,$orderId,$values['report_date'],$actor,$now,[]);
+        $values=$this->validateReport($input,true);$id=Uuid::v4();$now=Clock::now();$entries=$this->validateEntries($input['entries']??[],$id,$orderId,$values['report_date'],$actor,$now,[]);
         $this->pdo->exec('BEGIN IMMEDIATE');try{$this->reports->insertReport(['id'=>$id,'order_id'=>$orderId,'report_date'=>$values['report_date'],'title'=>$values['title'],'activities'=>$values['activities'],'notes'=>$values['notes'],'created_by_user_id'=>$actor['id'],'created_at'=>$now,'updated_at'=>$now]);$this->reports->replaceEntries($id,$entries);$this->pdo->commit();}catch(Throwable $e){if($this->pdo->inTransaction())$this->pdo->rollBack();throw$e;}
         return$this->detail($id,$actor);
     }
@@ -81,10 +81,10 @@ final readonly class DailyReportService
     }
 
     /** @param array<string,mixed> $input @return array{report_date:string,title:string,activities:string,notes:string} */
-    private function validateReport(array $input):array
+    private function validateReport(array $input,bool $allowEmptyActivities=false):array
     {
         $date=(string)($input['reportDate']??'');$title=trim((string)($input['title']??''));$activities=trim((string)($input['activities']??''));$notes=trim((string)($input['notes']??''));$errors=[];
-        if(!preg_match('/^\d{4}-\d{2}-\d{2}$/D',$date)||!checkdate((int)substr($date,5,2),(int)substr($date,8,2),(int)substr($date,0,4)))$errors[]='Das Berichtsdatum ist ungültig.';if(mb_strlen($title)>200)$errors[]='Die Bezeichnung darf höchstens 200 Zeichen lang sein.';if($activities===''||mb_strlen($activities)>10000)$errors[]='Die Tätigkeitsbeschreibung ist erforderlich und darf höchstens 10.000 Zeichen lang sein.';if(mb_strlen($notes)>10000)$errors[]='Bemerkungen dürfen höchstens 10.000 Zeichen lang sein.';if($errors!==[])throw new DailyReportValidationException($errors);return['report_date'=>$date,'title'=>$title,'activities'=>$activities,'notes'=>$notes];
+        if(!preg_match('/^\d{4}-\d{2}-\d{2}$/D',$date)||!checkdate((int)substr($date,5,2),(int)substr($date,8,2),(int)substr($date,0,4)))$errors[]='Das Berichtsdatum ist ungültig.';if(mb_strlen($title)>200)$errors[]='Die Bezeichnung darf höchstens 200 Zeichen lang sein.';if((!$allowEmptyActivities&&$activities==='')||mb_strlen($activities)>10000)$errors[]='Die Tätigkeitsbeschreibung ist erforderlich und darf höchstens 10.000 Zeichen lang sein.';if(mb_strlen($notes)>10000)$errors[]='Bemerkungen dürfen höchstens 10.000 Zeichen lang sein.';if($errors!==[])throw new DailyReportValidationException($errors);return['report_date'=>$date,'title'=>$title,'activities'=>$activities,'notes'=>$notes];
     }
 
     /** @param mixed $raw @param array<string,mixed> $actor @return list<array<string,mixed>> */

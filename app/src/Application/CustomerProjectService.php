@@ -15,6 +15,10 @@ use Throwable;
 
 final readonly class CustomerProjectService
 {
+    /** @return array<string,mixed> */
+    public function customer(string $id):array{return $this->customerById($id);}
+    /** @return array<string,mixed> */
+    public function project(string $id):array{return $this->projectById($id);}
     public function __construct(private CustomerProjectRepository $repository, private NumberRangeRepository $numberRanges)
     {
     }

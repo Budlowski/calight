@@ -6,8 +6,9 @@
     <title><?= $escape($title ?? 'Kalkulationssoftware') ?></title>
     <link rel="stylesheet" href="/assets/app.css?v=<?= $escape((string) filemtime(dirname(__DIR__, 2) . '/public/assets/app.css')) ?>">
     <script src="/assets/modal.js?v=<?= $escape((string) filemtime(dirname(__DIR__, 2) . '/public/assets/modal.js')) ?>" defer></script>
+    <script src="/assets/list-view.js?v=<?= $escape((string) filemtime(dirname(__DIR__, 2) . '/public/assets/list-view.js')) ?>" defer></script>
 </head>
-<body>
+<body<?= $currentUser !== null ? ' data-user-id="'.$escape((string)$currentUser['id']).'"' : '' ?>>
 <?php if ($currentUser !== null): ?>
     <header class="topbar">
         <a class="brand" href="/dashboard">Calight</a>
