@@ -36,6 +36,9 @@ final class DailyReportTest extends TestCase
             $employeeService->save($employee['id'],['displayName'=>'Monteur Max','personnelNumber'=>'M-7','userId'=>$ids['technician'],'hourlyCostRate'=>'50.0000','active'=>true]);
             $entry=$report['entries'][0];$updated=$service->update($report['id'],['version'=>$report['version'],'reportDate'=>'2026-11-10','title'=>'Montage','activities'=>'Verteiler fertig','entries'=>[['id'=>$entry['id'],'employeeId'=>$employee['id'],'workDate'=>'2026-11-10','durationHours'=>'2.000','targetKey'=>$entry['targetKey']]]],$office);
             $this->assertSame('42.3333',$updated['entries'][0]['hourly_cost_rate_snapshot']);$this->assertSame('84.67',$updated['entries'][0]['labor_cost']);$this->assertSame(['hours'=>'2.000','costs'=>'84.67'],$service->orderTotals($ids['order']));
+            $officeOverview=$service->overview($office);$this->assertSame('84.67',$officeOverview[0]['total_labor_cost']);
+            $technicianOverview=$service->overview(['id'=>$ids['technician'],'role'=>'technician']);$this->assertTrue(!isset($technicianOverview[0]['total_labor_cost']));
+            $duplicateEntry=$updated['entries'][0];$this->assertThrows(DailyReportValidationException::class,fn()=>$service->update($report['id'],['version'=>$updated['version'],'reportDate'=>'2026-11-10','title'=>'Montage','activities'=>'Doppelte Zeile','entries'=>[['id'=>$duplicateEntry['id'],'employeeId'=>$employee['id'],'durationHours'=>'1.000','targetKey'=>$duplicateEntry['targetKey']],['id'=>$duplicateEntry['id'],'employeeId'=>$employee['id'],'durationHours'=>'1.000','targetKey'=>$duplicateEntry['targetKey']]]],$office));
             $this->assertThrows(DailyReportValidationException::class,fn()=>$service->update($report['id'],['version'=>$report['version'],'reportDate'=>'2026-11-10','title'=>'Veraltet','activities'=>'Veralteter Stand','entries'=>[]],$office));
         }finally{$this->remove($tmp);}
     }
