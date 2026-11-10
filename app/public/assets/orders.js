@@ -48,11 +48,11 @@
   reset.addEventListener("click", () => { search.value = ""; status.value = ""; type.value = ""; sort.value = "updated"; render(); search.focus(); });
   newButton.addEventListener("click", async () => {
     if (!(await confirmDiscard())) return;
-    form.reset(); form.hidden = false; formDirty = false; message.hidden = true; form.elements.customerId.focus();
+    form.reset(); form.hidden = false; newButton.setAttribute("aria-expanded", "true"); formDirty = false; message.hidden = true; form.elements.customerId.focus();
   });
   root.querySelector("[data-cancel]").addEventListener("click", async () => {
     if (!(await confirmDiscard())) return;
-    form.reset(); form.hidden = true; formDirty = false;
+    form.reset(); form.hidden = true; newButton.setAttribute("aria-expanded", "false"); formDirty = false;
   });
   form.addEventListener("input", () => { formDirty = true; });
   form.elements.customerId.addEventListener("change", () => {
