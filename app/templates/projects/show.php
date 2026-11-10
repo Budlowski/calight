@@ -11,7 +11,12 @@ $siteParts=array_filter([
 ]);
 $siteAddress=$siteParts!==[]?implode(', ',$siteParts):$project['site_address'];
 ?>
-<p class="breadcrumb"><a href="/projects">← Projekte</a></p>
+<nav class="breadcrumb" aria-label="Brotkrümelnavigation">
+    <ol>
+        <li><a href="/projects">Projekte</a></li>
+        <li aria-current="page"><?= $escape($project['name']) ?></li>
+    </ol>
+</nav>
 <header class="project-detail-head card">
     <div><span class="service-number"><?= $escape($project['project_number'] ?: 'Ohne Projektnummer') ?></span><h1><?= $escape($project['name']) ?></h1><p class="muted"><?= $escape($project['description'] ?: 'Keine Projektbeschreibung') ?></p></div>
     <span class="status-badge status-<?= $escape($project['status']) ?>"><?= $escape($statusLabels[$project['status']] ?? $project['status']) ?></span>

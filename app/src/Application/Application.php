@@ -180,6 +180,9 @@ final readonly class Application
         $this->router->add('GET', '/offers/{id}', fn (Request $request, array $parameters): Response => $this->protected(function () use ($parameters): Response {
             $draft = $this->offerService->loadDraft($parameters['id']);
             $draft['revisionHistory']=$this->offerService->revisionHistory($parameters['id']);
+            $draft['breadcrumbProject']=$draft['metadata']['project_id']!==null
+                ? $this->projects->find((string)$draft['metadata']['project_id'])
+                : null;
             return $this->view->render('offers/edit', $draft);
         }));
 
