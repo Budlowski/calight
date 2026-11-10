@@ -1,3 +1,8 @@
+-- Der Migrator führt die Datei in einer Transaktion aus. Die bestehende
+-- Revisionstabelle referenziert sich selbst; beim temporären Umbenennen darf
+-- SQLite diese Referenzen daher erst nach dem vollständigen Neuaufbau prüfen.
+PRAGMA defer_foreign_keys = ON;
+
 ALTER TABLE offers RENAME TO offers_before_optional_projects;
 
 CREATE TABLE offers (
