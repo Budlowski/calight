@@ -4,6 +4,7 @@
   if (!root) return;
   const list = document.querySelector("#offer-list"),
     search = document.querySelector("#offer-search"),
+    documentType = document.querySelector("#offer-document-type"),
     filter = document.querySelector("#offer-status"),
     sort = document.querySelector("#offer-sort"),
     resultCount = document.querySelector("#offer-result-count"),
@@ -73,11 +74,13 @@
   function render() {
     const q = search.value.trim().toLocaleLowerCase("de"),
       status = filter.value,
+      type = documentType.value,
       order = sort.value,
       rows = offers
         .filter(
           (o) =>
             (!status || o.status === status) &&
+            (!type || o.documentType === type) &&
             (!q ||
               `${o.title} ${o.customerName || ""} ${o.projectName || ""} ${o.projectNumber || ""} ${o.offerNumber || ""} ${o.orderNumber || ""}`
                 .toLocaleLowerCase("de-DE")
@@ -93,7 +96,7 @@
         });
     resultCount.textContent = `${rows.length} von ${offers.length}`;
     document.querySelector("#offer-reset").disabled =
-      !q && !status && order === "updated";
+      !q && !type && !status && order === "updated";
     list.innerHTML = rows.length
       ? rows
           .map(
@@ -104,14 +107,17 @@
               const projectAction = o.projectId
                 ? `<a class="button button-light button-small" data-icon="folder-kanban" href="/projects/${encodeURIComponent(o.projectId)}">Projekt</a>`
                 : "";
-              const documentLabel = o.documentType === "change_order" ? `<span class="status-badge">Nachtrag · ${esc(o.orderNumber || "Auftrag")}</span>` : "";
-              return `<article class="service-list-item management-card"><div class="service-list-main"><div class="management-card-head"><span class="service-number">${esc(o.offerNumber || (o.documentType === "change_order" ? "Nachtragsentwurf ohne Nummer" : "Entwurf ohne Angebotsnummer"))}${Number(o.revision || 0) > 0 ? ` · Revision ${Number(o.revision)}` : ""}</span><span>${documentLabel}<span class="status-badge status-${esc(o.status)}">${labels[o.status] || esc(o.status)}</span></span></div><strong>${esc(o.title)}</strong><span class="muted">${assignment}</span><span class="management-card-total">${euro(o.netTotal)} netto</span><span class="muted">${o.status === "draft" || !o.submittedAt ? `Zuletzt geändert ${date(o.updatedAt)}` : `Abgegeben ${date(o.submittedAt)}`}</span></div><div class="service-list-actions"><a class="button button-light button-small" data-icon="file-text" href="/offers/${encodeURIComponent(o.id)}">${o.status === "draft" ? "Öffnen" : "Ansehen"}</a>${projectAction}<button class="button button-light button-small" type="button" data-icon="copy" data-copy-offer="${o.id}">Kopieren</button>${o.status === "draft" ? `<button class="button button-light button-small button-danger-light" type="button" data-icon="trash" data-delete-offer="${o.id}" data-confirm-message="${o.documentType === "change_order" ? "Nachtragsentwurf" : "Angebotsentwurf"} ${esc(o.title)} endgültig löschen?">Löschen</button>` : ""}</div></article>`;
+              const isChangeOrder = o.documentType === "change_order",
+                documentLabel = isChangeOrder ? '<span class="status-badge document-type-badge">Nachtrag</span>' : "",
+                orderAction = isChangeOrder && o.orderId ? `<a class="button button-light button-small" data-icon="clipboard-list" href="/orders/${encodeURIComponent(o.orderId)}">Auftrag</a>` : "";
+              return `<article class="service-list-item management-card"><div class="service-list-main"><div class="management-card-head"><span class="service-number">${esc(o.offerNumber || (isChangeOrder ? "Nachtragsentwurf ohne Nummer" : "Angebotsentwurf ohne Nummer"))}${Number(o.revision || 0) > 0 ? ` · Revision ${Number(o.revision)}` : ""}</span><span class="management-card-badges">${documentLabel}<span class="status-badge status-${esc(o.status)}">${labels[o.status] || esc(o.status)}</span></span></div><strong>${esc(o.title)}</strong><div class="management-card-facts"><span>${assignment}</span>${isChangeOrder ? `<span>Auftrag ${esc(o.orderNumber || "ohne Nummer")}</span>` : ""}</div><span class="management-card-total">${euro(o.netTotal)} netto</span><span class="muted">${o.status === "draft" || !o.submittedAt ? `Zuletzt geändert ${date(o.updatedAt)}` : `Abgegeben ${date(o.submittedAt)}`}</span></div><div class="service-list-actions"><a class="button button-light button-small" data-icon="eye" href="/offers/${encodeURIComponent(o.id)}">${o.status === "draft" ? "Öffnen" : "Ansehen"}</a>${orderAction}${projectAction}<button class="button button-light button-small" type="button" data-icon="copy" data-copy-offer="${o.id}">Kopieren</button>${o.status === "draft" ? `<button class="button button-light button-small button-danger-light" type="button" data-icon="trash" data-delete-offer="${o.id}" data-confirm-message="${isChangeOrder ? "Nachtragsentwurf" : "Angebotsentwurf"} ${esc(o.title)} endgültig löschen?">Löschen</button>` : ""}</div></article>`;
             },
           )
           .join("")
       : '<p class="card muted">Keine Angebote gefunden.</p>';
   }
   async function load() {
+    list.innerHTML = '<p class="card empty-state">Angebote werden geladen …</p>';
     const response = await fetch("/api/offers", { credentials: "same-origin" }),
       result = await response.json();
     if (!response.ok)
@@ -120,10 +126,12 @@
     render();
   }
   search.addEventListener("input", render);
+  documentType.addEventListener("change", render);
   filter.addEventListener("change", render);
   sort.addEventListener("change", render);
   document.querySelector("#offer-reset").addEventListener("click", () => {
     search.value = "";
+    documentType.value = "";
     filter.value = "";
     sort.value = "updated";
     render();
@@ -193,7 +201,7 @@
         );
       offers = offers.filter((item) => item.id !== offer.id);
       render();
-      notify("Angebotsentwurf gelöscht.", "success");
+      notify(`${offer.documentType === "change_order" ? "Nachtragsentwurf" : "Angebotsentwurf"} gelöscht.`, "success");
     } catch (error) {
       button.disabled = false;
       notify(error.message);

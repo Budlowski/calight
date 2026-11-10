@@ -1358,8 +1358,8 @@
         const intro = document.createElement("p");
         intro.className = `notice ${blocking ? "notice-error" : "notice-warning"}`;
         intro.textContent = blocking
-          ? "Das Angebot kann noch nicht abgegeben werden. Bitte beheben Sie folgende Fehler:"
-          : "Das Angebot enthält Hinweise, die vor der Abgabe ausdrücklich bestätigt werden müssen:";
+          ? `${isChangeOrder ? "Der Nachtrag" : "Das Angebot"} kann noch nicht abgegeben werden. Bitte beheben Sie folgende Fehler:`
+          : `${isChangeOrder ? "Der Nachtrag" : "Das Angebot"} enthält Hinweise, die vor der Abgabe ausdrücklich bestätigt werden müssen:`;
         content.append(intro);
         for (const [heading, problems] of [["Fehler", errors], ["Warnungen", warnings]]) {
           if (!problems.length) continue;
@@ -1373,10 +1373,10 @@
           content.append(title, list);
         }
         if (blocking) {
-          await CalightModal.open({title:"Angebotsprüfung",content,actions:[{label:"Schließen",value:null,primary:true}]});
-          status.textContent = "Angebotsprüfung fehlgeschlagen";
+          await CalightModal.open({title:`${isChangeOrder ? "Nachtrags" : "Angebots"}prüfung`,content,actions:[{label:"Schließen",value:null,primary:true}]});
+          status.textContent = `${isChangeOrder ? "Nachtrags" : "Angebots"}prüfung fehlgeschlagen`;
         } else {
-          const confirmed = await CalightModal.confirm({title:"Angebotsprüfung bestätigen",content,confirmLabel:"Warnungen bestätigen und abgeben"});
+          const confirmed = await CalightModal.confirm({title:`${isChangeOrder ? "Nachtrags" : "Angebots"}prüfung bestätigen`,content,confirmLabel:"Warnungen bestätigen und abgeben"});
           if (confirmed) await performSubmission({ ...payload, confirmIncomplete: true });
           else status.textContent = "Abschluss abgebrochen";
         }
@@ -1386,7 +1386,7 @@
         throw new Error(
           (result.details || []).join(" ") ||
             result.error ||
-            "Angebot konnte nicht abgeschlossen werden.",
+            `${isChangeOrder ? "Nachtrag" : "Angebot"} konnte nicht abgeschlossen werden.`,
         );
       location.reload();
     } catch (error) {
@@ -1433,7 +1433,7 @@
           { method: "POST", credentials: "same-origin", headers: { "X-CSRF-Token": root.dataset.csrf } },
         ),
         result = await responsePayload(response);
-      if (!response.ok) throw new Error(result.error || "Angebot konnte nicht kopiert werden.");
+      if (!response.ok) throw new Error(result.error || `${isChangeOrder ? "Nachtrag" : "Angebot"} konnte nicht kopiert werden.`);
       location.assign(result.url);
     } catch (error) {
       status.textContent = error.message;
@@ -1441,8 +1441,8 @@
   }
   async function createRevision() {
     const confirmed = await CalightModal.confirm({
-      title: "Neue Angebotsrevision erstellen",
-      content: "Aus dem letzten abgegebenen Stand wird eine neue bearbeitbare Revision erstellt. Der bisherige Stand und seine PDF bleiben unverändert.",
+      title: `Neue ${isChangeOrder ? "Nachtrags" : "Angebots"}revision erstellen`,
+      content: `Aus dem letzten abgegebenen ${isChangeOrder ? "Nachtrags" : "Angebots"}stand wird eine neue bearbeitbare Revision erstellt. Der bisherige Stand und seine PDF bleiben unverändert.`,
       confirmLabel: "Revision erstellen",
     });
     if (!confirmed) return;
@@ -2061,7 +2061,7 @@
       savedHistoryState = comparableHistoryState();
       updateHistoryControls();
       saveButton.disabled = isReadOnly();
-      status.textContent = isReadOnly() ? "Schreibgeschützter Angebotsstand" : "";
+      status.textContent = isReadOnly() ? `Schreibgeschützter ${isChangeOrder ? "Nachtrags" : "Angebots"}stand` : "";
       scheduleCalculation();
     })
     .catch((x) => (status.textContent = x.message));
