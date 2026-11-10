@@ -17,16 +17,18 @@ final class OfferValidator
     {
         $errors = [];
         $seenIds = [];
-        $this->rejectUnknown($offer,['schemaVersion','id','projectId','offerNumber','revision','status','title','createdAt','updatedAt','submittedAt','documentDate','documentTerms','offerAdjustment','nodes','calculation'],'offer',$errors);
+        $this->rejectUnknown($offer,['schemaVersion','id','projectId','customerId','offerNumber','revision','status','title','createdAt','updatedAt','submittedAt','documentDate','documentTerms','offerAdjustment','nodes','calculation'],'offer',$errors);
 
         if (($offer['schemaVersion'] ?? null) !== 1) {
             $errors[] = 'schemaVersion muss 1 sein.';
         }
-        foreach (['id', 'projectId'] as $field) {
+        foreach (['id'] as $field) {
             if (!is_string($offer[$field] ?? null) || !Uuid::isValid($offer[$field])) {
                 $errors[] = $field . ' muss eine gueltige UUID sein.';
             }
         }
+        if(($offer['projectId']??null)!==null&&(!is_string($offer['projectId'])||!Uuid::isValid($offer['projectId'])))$errors[]='projectId muss eine gültige UUID oder null sein.';
+        if(array_key_exists('customerId',$offer)&&$offer['customerId']!==null&&(!is_string($offer['customerId'])||!Uuid::isValid($offer['customerId'])))$errors[]='customerId muss eine gültige UUID oder null sein.';
         if (!in_array($offer['status'] ?? null,['draft','submitted','commissioned','rejected'],true)) {
             $errors[] = 'Der Angebotsstatus ist ungültig.';
         }

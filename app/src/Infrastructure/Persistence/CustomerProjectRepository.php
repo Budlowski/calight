@@ -17,7 +17,7 @@ final readonly class CustomerProjectRepository
     {
         return $this->pdo->query('SELECT c.*,
             (SELECT COUNT(*) FROM projects p WHERE p.customer_id=c.id) AS project_count,
-            (SELECT COUNT(*) FROM offers o JOIN projects p ON p.id=o.project_id WHERE p.customer_id=c.id) AS offer_count
+            (SELECT COUNT(*) FROM offers o WHERE o.customer_id=c.id) AS offer_count
             FROM customers c
             ORDER BY c.active DESC, c.customer_number COLLATE NOCASE, c.company_name COLLATE NOCASE, c.last_name COLLATE NOCASE')->fetchAll();
     }

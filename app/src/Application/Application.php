@@ -16,6 +16,8 @@ use App\Http\MasterDataController;
 use App\Http\CustomerProjectController;
 use App\Http\OfferCalculationController;
 use App\Http\SettingsController;
+use App\Http\OrderController;
+use App\Domain\Order\OrderValidationException;
 use App\Infrastructure\Persistence\OfferConflictException;
 use App\Infrastructure\Persistence\OfferRepository;
 use App\Infrastructure\Persistence\ProjectRepository;
@@ -40,6 +42,7 @@ final readonly class Application
         private SettingsController $settingsController,
         private OfferPdfService $offerPdfService,
         private InternalCalculationPdfService $internalCalculationPdfService,
+        private OrderController $orderController,
     ) {
         $this->registerRoutes();
     }
@@ -56,6 +59,8 @@ final readonly class Application
             return Response::json(['error' => 'Validierung fehlgeschlagen.', 'details' => $exception->errors], 422);
         } catch (CustomerProjectValidationException $exception) {
             return Response::json(['error' => 'Validierung fehlgeschlagen.', 'details' => $exception->errors], 422);
+        } catch (OrderValidationException $exception) {
+            return Response::json(['error'=>'Validierung fehlgeschlagen.','details'=>$exception->errors],422);
         } catch (CsrfException $exception) {
             return new Response('Sicherheitsprüfung fehlgeschlagen.', 419, ['Content-Type' => 'text/plain; charset=utf-8']);
         } catch (Throwable $exception) {
@@ -70,6 +75,7 @@ final readonly class Application
         $this->customerProjectController->register($this->router);
         $this->offerCalculationController->register($this->router);
         $this->settingsController->register($this->router);
+        $this->orderController->register($this->router);
 
         $this->router->add('GET', '/', fn (): Response => Session::user() === null
             ? Response::redirect('/login')
@@ -153,7 +159,7 @@ final readonly class Application
         }));
 
         $this->router->add('GET', '/offers', fn (): Response => $this->protected(
-            fn (): Response => $this->view->render('offers/index', ['projects' => $this->projects->all()])
+            fn (): Response => $this->view->render('offers/index',['projects'=>$this->projects->all(),'customers'=>$this->projects->customers()])
         ));
 
         $this->router->add('GET', '/api/offers', fn (): Response => $this->protected(
@@ -165,9 +171,9 @@ final readonly class Application
             try { $data=json_decode($request->body,true,flags:JSON_THROW_ON_ERROR); }
             catch(JsonException){ return Response::json(['error'=>'Ungültiger JSON-Anfrageinhalt.'],400); }
             if(!is_array($data)) return Response::json(['error'=>'Der Anfrageinhalt muss ein JSON-Objekt sein.'],400);
-            $projectId=trim((string)($data['projectId']??'')); $title=trim((string)($data['title']??''));
-            if($projectId===''||$title==='') return Response::json(['error'=>'Projekt und Angebotsbezeichnung sind erforderlich.'],422);
-            $id=$this->offerService->createDraft($projectId,$title);
+            $projectId=trim((string)($data['projectId']??''))?:null;$customerId=trim((string)($data['customerId']??''));$title=trim((string)($data['title']??''));
+            if($customerId===''||$title==='')return Response::json(['error'=>'Kunde und Angebotsbezeichnung sind erforderlich.'],422);
+            $id=$this->offerService->createDraft($projectId,$title,$customerId);
             return Response::json(['id'=>$id,'url'=>'/offers/'.rawurlencode($id)],201);
         }));
 
@@ -228,13 +234,13 @@ final readonly class Application
         }));
         $this->router->add('POST','/offers/{id}/delete',fn(Request $request,array $parameters):Response=>$this->protected(function()use($request,$parameters):Response{
             $this->requireCsrf($request);$result=$this->offerService->deleteDraft($parameters['id']);Session::flash('success','Angebotsentwurf gelöscht.');
-            return Response::redirect('/projects/'.rawurlencode($result['projectId']));
+            return Response::redirect($result['projectId']!==''?'/projects/'.rawurlencode($result['projectId']):'/offers');
         }));
 
         $this->router->add('GET','/api/offers/{id}/export',fn(Request $request,array $parameters):Response=>$this->protected(function()use($parameters){$export=$this->offerService->exportDraft($parameters['id']);$json=json_encode($export['offer'],JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n";return new Response($json,200,['Content-Type'=>'application/json; charset=utf-8','Content-Disposition'=>'attachment; filename="angebot-'.$parameters['id'].'.json"','ETag'=>'"'.$export['etag'].'"']);}));
         $this->router->add('POST','/api/offers/{id}/import-preview',fn(Request $request,array $parameters):Response=>$this->protected(function()use($request,$parameters){$this->requireCsrf($request,$request->headers['x-csrf-token']??null);$data=$this->jsonBody($request);$etag=trim((string)($request->headers['if-match']??''),'"');if($etag==='')return Response::json(['error'=>'If-Match-Header fehlt.'],428);return Response::json($this->offerService->previewImport($parameters['id'],$data,$etag));}));
         $this->router->add('PUT','/api/offers/{id}/import',fn(Request $request,array $parameters):Response=>$this->protected(function()use($request,$parameters){$this->requireCsrf($request,$request->headers['x-csrf-token']??null);$data=$this->jsonBody($request);$etag=trim((string)($request->headers['if-match']??''),'"');if($etag==='')return Response::json(['error'=>'If-Match-Header fehlt.'],428);$new=$this->offerService->importExisting($parameters['id'],$data,$etag);return Response::json(['saved'=>true,'etag'=>$new],headers:['ETag'=>'"'.$new.'"']);}));
-        $this->router->add('POST','/api/offers/import',fn(Request $request):Response=>$this->protected(function()use($request){$this->requireCsrf($request,$request->headers['x-csrf-token']??null);$data=$this->jsonBody($request);$project=trim((string)($data['projectId']??''));$offer=$data['offer']??null;if($project===''||!is_array($offer))return Response::json(['error'=>'Projekt und Angebotsdokument sind erforderlich.'],422);$id=$this->offerService->importNew($project,$offer);return Response::json(['id'=>$id,'url'=>'/offers/'.rawurlencode($id)],201);}));
+        $this->router->add('POST','/api/offers/import',fn(Request $request):Response=>$this->protected(function()use($request){$this->requireCsrf($request,$request->headers['x-csrf-token']??null);$data=$this->jsonBody($request);$project=trim((string)($data['projectId']??''))?:null;$customer=trim((string)($data['customerId']??''));$offer=$data['offer']??null;if($customer===''||!is_array($offer))return Response::json(['error'=>'Kunde und Angebotsdokument sind erforderlich.'],422);$id=$this->offerService->importNew($project,$offer,$customer);return Response::json(['id'=>$id,'url'=>'/offers/'.rawurlencode($id)],201);}));
         $this->router->add('POST','/api/offers/{id}/pdf',fn(Request $request,array $parameters):Response=>$this->protected(function()use($request,$parameters){$this->requireCsrf($request,$request->headers['x-csrf-token']??null);$loaded=$this->offerService->loadDraft($parameters['id']);if(($loaded['metadata']['status']??'draft')!=='draft'){$archive=$this->offerService->submittedPdf($parameters['id']);return new Response($archive['pdf'],200,['Content-Type'=>'application/pdf','Content-Disposition'=>'inline; filename="'.$archive['fileName'].'"','Cache-Control'=>'private, no-store']);}$offer=$this->jsonBody($request);$stored=$loaded['offer'];if(($offer['id']??null)!==$parameters['id']||($offer['projectId']??null)!==$stored['projectId'])return Response::json(['error'=>'Angebots- oder Projekt-ID stimmt nicht überein.'],422);$offer['offerNumber']=$stored['offerNumber']??null;$offer['revision']=$stored['revision']??0;$offer['status']='draft';$pdf=$this->offerPdfService->render($offer);$fileName=$this->offerPdfService->fileName($offer);return new Response($pdf,200,['Content-Type'=>'application/pdf','Content-Disposition'=>'inline; filename="'.$fileName.'"','Cache-Control'=>'no-store']);}));
         $this->router->add('POST','/api/offers/{id}/calculation-pdf',fn(Request $request,array $parameters):Response=>$this->protected(function()use($request,$parameters){$this->requireCsrf($request,$request->headers['x-csrf-token']??null);$loaded=$this->offerService->loadDraft($parameters['id']);$stored=$loaded['offer'];if(($loaded['metadata']['status']??'draft')==='draft'){$offer=$this->jsonBody($request);if(($offer['id']??null)!==$parameters['id']||($offer['projectId']??null)!==$stored['projectId'])return Response::json(['error'=>'Angebots- oder Projekt-ID stimmt nicht überein.'],422);$offer['offerNumber']=$stored['offerNumber']??null;$offer['revision']=$stored['revision']??0;$offer['status']='draft';}else{$offer=$stored;}$pdf=$this->internalCalculationPdfService->render($offer);$fileName=$this->internalCalculationPdfService->fileName($offer);return new Response($pdf,200,['Content-Type'=>'application/pdf','Content-Disposition'=>'inline; filename="'.$fileName.'"','Cache-Control'=>'no-store']);}));
     }

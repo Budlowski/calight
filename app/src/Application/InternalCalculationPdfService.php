@@ -36,7 +36,7 @@ final readonly class InternalCalculationPdfService
     {
         $this->validator->validate($offer);
         $offer=$this->calculator->calculate($offer);
-        $project=$this->project((string)$offer['projectId']);
+        $project=$this->project($offer['projectId']!==null?(string)$offer['projectId']:null);
         $settings=$this->settings->get();
         $pdf=new SimplePdf();
         $numbers=new PdfNumberFormatter();
@@ -331,6 +331,6 @@ final readonly class InternalCalculationPdfService
     /** @param array<string,mixed> $settings */
     private function logo(SimplePdf $pdf,array $settings,float $left,float $right): void{if(!is_string($settings['logoData']??null)||!str_starts_with($settings['logoData'],'data:image/jpeg;base64,'))return;$data=base64_decode(substr($settings['logoData'],23),true);if($data===false)return;$width=(float)($settings['logoWidth']??180);$height=(float)($settings['logoHeight']??100);$x=($settings['logoPosition']??'right')==='left'?$left:$right-$width;$pdf->jpegContained($data,$x,800-$height,$width,$height);}
     /** @return array<string,mixed> */
-    private function project(string $id): array{$statement=$this->pdo->prepare('SELECT * FROM projects WHERE id=:id');$statement->execute(['id'=>$id]);$row=$statement->fetch();if(!is_array($row))throw new RuntimeException('Projekt wurde nicht gefunden.');return $row;}
+    private function project(?string $id):array{if($id===null)return['project_number'=>'','name'=>'Ohne Projekt'];$statement=$this->pdo->prepare('SELECT * FROM projects WHERE id=:id');$statement->execute(['id'=>$id]);$row=$statement->fetch();if(!is_array($row))throw new RuntimeException('Projekt wurde nicht gefunden.');return$row;}
     private function color(string $hex): string{$hex=ltrim($hex,'#');if(!preg_match('/^[0-9a-fA-F]{6}$/',$hex))return'0.08 0.35 0.54';return implode(' ',array_map(static fn(string $part):string=>(string)round(hexdec($part)/255,3),str_split($hex,2)));}
 }

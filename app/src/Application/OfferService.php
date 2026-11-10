@@ -35,17 +35,21 @@ final readonly class OfferService
     ) {
     }
 
-    public function createDraft(string $projectId, string $title): string
+    public function createDraft(?string $projectId,string $title,?string $customerId=null): string
     {
-        if ($this->projects->find($projectId) === null) {
-            throw new RuntimeException('Projekt wurde nicht gefunden.');
-        }
+        $project=$projectId!==null?$this->projects->find($projectId):null;
+        if($projectId!==null&&$project===null)throw new RuntimeException('Projekt wurde nicht gefunden.');
+        if($projectId!==null&&$customerId!==null&&$customerId!==''&&(string)($project['customer_id']??'')!==$customerId)throw new OfferValidationException(['Das Projekt gehört nicht zum ausgewählten Kunden.']);
+        $customerId=$projectId!==null?(string)($project['customer_id']??''):(string)$customerId;
+        if($customerId===''||!$this->customerExists($customerId))throw new OfferValidationException(['Ein gültiger Kunde ist erforderlich.']);
+        $storageKey=$projectId??$customerId;
 
         $offerId = Uuid::v4();
         $offer = [
             'schemaVersion' => 1,
             'id' => $offerId,
             'projectId' => $projectId,
+            'customerId'=>$customerId,
             'offerNumber' => null,
             'revision' => 0,
             'status' => 'draft',
@@ -56,9 +60,9 @@ final readonly class OfferService
             'nodes' => [],
         ];
 
-        $etag = $this->store->saveDraft($projectId, $offerId, $offer, null);
+        $etag = $this->store->saveDraft($storageKey, $offerId, $offer, null);
         try {
-            $this->offers->create($offerId, $projectId, $this->store->relativeDraftPath($projectId, $offerId), $etag);
+            $this->offers->create($offerId,$projectId,$customerId,$storageKey,$this->store->relativeDraftPath($storageKey,$offerId),$etag);
         } catch (Throwable $exception) {
             // Eine verwaiste JSON-Datei ist sicherer als ein DB-Eintrag ohne Datei und wird
             // durch die spaetere Konsistenzpruefung erkennbar. Archivierte Daten werden nie geloescht.
@@ -74,7 +78,7 @@ final readonly class OfferService
         $source['title'] = 'Kopie von ' . (string) $source['title'];
         $this->assignNewNodeIds($source['nodes']);
 
-        return $this->importNew((string) $source['projectId'], $source);
+        return $this->importNew($source['projectId']!==null?(string)$source['projectId']:null,$source,(string)($source['customerId']??''));
     }
 
     /** @return array{deleted:true,projectId:string} */
@@ -83,15 +87,15 @@ final readonly class OfferService
         $metadata=$this->offers->find($offerId);
         if($metadata===null)throw new RuntimeException('Angebotsentwurf wurde nicht gefunden.');
         if(($metadata['status']??null)!=='draft'||($metadata['offer_number']??null)!==null)throw new OfferValidationException(['Nur Angebotsentwürfe ohne Angebotsnummer können gelöscht werden.']);
-        $projectId=(string)$metadata['project_id'];$staged=null;
+        $storageKey=(string)$metadata['storage_key'];$projectId=$metadata['project_id']!==null?(string)$metadata['project_id']:'';$staged=null;
         $this->pdo->exec('BEGIN IMMEDIATE');
         try{
-            $staged=$this->store->stageDraftDeletion($projectId,$offerId);
+            $staged=$this->store->stageDraftDeletion($storageKey,$offerId);
             if(!$this->offers->deleteDraft($offerId))throw new RuntimeException('Angebotsentwurf konnte nicht aus der Datenbank gelöscht werden.');
             $this->pdo->commit();
         }catch(Throwable $exception){
             if($this->pdo->inTransaction())$this->pdo->rollBack();
-            if($staged!==null){try{$this->store->restoreStagedDeletion($staged,$projectId,$offerId);}catch(Throwable $restoreException){error_log($restoreException->getMessage());}}
+            if($staged!==null){try{$this->store->restoreStagedDeletion($staged,$storageKey,$offerId);}catch(Throwable $restoreException){error_log($restoreException->getMessage());}}
             throw$exception;
         }
         try{$this->store->finalizeStagedDeletion((string)$staged);}catch(Throwable $exception){error_log('Vorbereitete Angebotsdateien konnten nicht abschließend entfernt werden: '.$exception->getMessage());}
@@ -105,7 +109,8 @@ final readonly class OfferService
         foreach($this->offers->all() as $metadata){
             $calculated=$this->loadDraft((string)$metadata['id'])['offer'];
             $result[]=['id'=>$metadata['id'],'projectId'=>$metadata['project_id'],'projectName'=>$metadata['project_name'],
-                'projectNumber'=>$metadata['project_number'],'offerNumber'=>$metadata['effective_offer_number']??$metadata['offer_number'],'status'=>$metadata['status'],
+                'projectNumber'=>$metadata['project_number'],'customerId'=>$metadata['customer_id'],'customerName'=>$metadata['customer_name']??'',
+                'offerNumber'=>$metadata['effective_offer_number']??$metadata['offer_number'],'status'=>$metadata['status'],
                 'title'=>$calculated['title'],'updatedAt'=>$metadata['updated_at'],'submittedAt'=>$metadata['submitted_at']??null,
                 'documentDate'=>$metadata['document_date']??null,'revision'=>(int)($metadata['revision_number']??0),
                 'netTotal'=>$calculated['calculation']['netTotal']??'0.00'];
@@ -121,14 +126,15 @@ final readonly class OfferService
             throw new RuntimeException('Angebot wurde nicht gefunden.');
         }
         if($metadata['status']!=='draft'&&($metadata['snapshot_etag']??null)!==null){
-            $snapshot=$this->store->loadSnapshot((string)$metadata['project_id'],$offerId,(string)$metadata['snapshot_etag']);
+            $snapshot=$this->store->loadSnapshot((string)$metadata['storage_key'],$offerId,(string)$metadata['snapshot_etag']);
             return['metadata'=>$metadata,'offer'=>$snapshot,'etag'=>(string)$metadata['snapshot_etag']];
         }
-        $draft = $this->store->loadDraft((string) $metadata['project_id'], $offerId);
+        $draft = $this->store->loadDraft((string)$metadata['storage_key'],$offerId);
         if (!hash_equals((string) $metadata['draft_etag'], $draft['etag'])) {
             throw new RuntimeException('Angebotsdatei und Datenbankstand stimmen nicht ueberein.');
         }
-        return ['metadata' => $metadata, 'offer' => $this->calculator->calculate($draft['offer']), 'etag' => $draft['etag']];
+        $document=$draft['offer'];if(!array_key_exists('customerId',$document))$document['customerId']=$metadata['customer_id'];
+        return ['metadata'=>$metadata,'offer'=>$this->calculator->calculate($document),'etag'=>$draft['etag']];
     }
 
     /** @return array{offer: array<string,mixed>, etag: string} */
@@ -153,13 +159,13 @@ final readonly class OfferService
         }
         $revision=(int)($metadata['revision_number']??0);
         $expectedNumber=$revision===0?null:(string)($metadata['effective_offer_number']??'');
-        if(($offer['id']??null)!==$offerId||($offer['projectId']??null)!==$metadata['project_id']||($offer['status']??null)!=='draft'
+        if(($offer['id']??null)!==$offerId||($offer['projectId']??null)!==$metadata['project_id']||($offer['customerId']??null)!==$metadata['customer_id']||($offer['status']??null)!=='draft'
             ||($offer['offerNumber']??null)!==$expectedNumber||($offer['revision']??null)!==$revision
             ||array_key_exists('submittedAt',$offer)||array_key_exists('documentDate',$offer)){
             throw new OfferValidationException(['Status, Angebotsnummer, Revision und Abschlussdaten dürfen nicht über die Entwurfsspeicherung verändert werden.']);
         }
 
-        $previousDraft = $this->store->loadDraft((string) $metadata['project_id'], $offerId);
+        $previousDraft = $this->store->loadDraft((string)$metadata['storage_key'],$offerId);
         $newEtag = null;
         $this->pdo->exec('BEGIN IMMEDIATE');
         try {
@@ -167,7 +173,7 @@ final readonly class OfferService
             $offer['updatedAt'] = Clock::now();
             (new OfferValidator())->validate($offer);
             $this->calculator->calculate($offer); // Fachliche Berechnung einschließlich negativer Nettosumme prüfen.
-            $newEtag = $this->store->saveDraft((string) $metadata['project_id'], $offerId, $offer, $expectedEtag);
+            $newEtag = $this->store->saveDraft((string)$metadata['storage_key'],$offerId,$offer,$expectedEtag);
             if (!$this->offers->updateEtag($offerId, $expectedEtag, $newEtag)) {
                 throw new OfferConflictException('Der Entwurf wurde zwischenzeitlich geaendert. Bitte neu laden.');
             }
@@ -184,7 +190,7 @@ final readonly class OfferService
             if ($newEtag !== null) {
                 try {
                     $this->store->saveDraft(
-                        (string) $metadata['project_id'],
+                        (string)$metadata['storage_key'],
                         $offerId,
                         $previousDraft['offer'],
                         $newEtag,
@@ -204,25 +210,25 @@ final readonly class OfferService
         if($metadata===null)throw new RuntimeException('Angebot wurde nicht gefunden.');
         if(($metadata['status']??'draft')==='draft')throw new OfferValidationException(['Eine Revision kann nur aus einem abgegebenen Angebotsstand erstellt werden.']);
         $rootId=(string)($metadata['revision_root_id']??$metadata['id']);
-        $newId='';$projectId=(string)$metadata['project_id'];
+        $newId='';$projectId=$metadata['project_id']!==null?(string)$metadata['project_id']:null;$storageKey=(string)$metadata['storage_key'];$customerId=(string)$metadata['customer_id'];
         $this->pdo->exec('BEGIN IMMEDIATE');
         try{
             $open=$this->offers->openRevision($rootId);
             if($open!==null){$this->pdo->commit();return['id'=>(string)$open['id'],'url'=>'/offers/'.rawurlencode((string)$open['id']),'created'=>false,'revision'=>(int)$open['revision_number']];}
             $latest=$this->offers->latestRevision($rootId);
             if($latest===null||($latest['status']??'draft')==='draft'||($latest['snapshot_etag']??null)===null)throw new OfferConflictException('Der letzte abgegebene Angebotsstand ist nicht verfügbar.');
-            $source=$this->store->loadSnapshot($projectId,(string)$latest['id'],(string)$latest['snapshot_etag']);
+            $source=$this->store->loadSnapshot($storageKey,(string)$latest['id'],(string)$latest['snapshot_etag']);
             $revision=(int)$latest['revision_number']+1;$newId=Uuid::v4();$now=Clock::now();
-            $source['id']=$newId;$source['projectId']=$projectId;$source['offerNumber']=(string)$latest['effective_offer_number'];
+            $source['id']=$newId;$source['projectId']=$projectId;$source['customerId']=$customerId;$source['offerNumber']=(string)$latest['effective_offer_number'];
             $source['revision']=$revision;$source['status']='draft';$source['createdAt']=$now;$source['updatedAt']=$now;
             unset($source['submittedAt'],$source['documentDate']);
             $source=(new OfferNormalizer())->normalize($source);(new OfferValidator())->validate($source);$this->calculator->calculate($source);
-            $etag=$this->store->saveDraft($projectId,$newId,$source,null);
-            $this->offers->createRevision($newId,$projectId,$this->store->relativeDraftPath($projectId,$newId),$etag,$rootId,$revision,(string)$latest['id']);
+            $etag=$this->store->saveDraft($storageKey,$newId,$source,null);
+            $this->offers->createRevision($newId,$projectId,$customerId,$storageKey,$this->store->relativeDraftPath($storageKey,$newId),$etag,$rootId,$revision,(string)$latest['id']);
             $this->pdo->commit();return['id'=>$newId,'url'=>'/offers/'.rawurlencode($newId),'created'=>true,'revision'=>$revision];
         }catch(Throwable $exception){
             if($this->pdo->inTransaction())$this->pdo->rollBack();
-            if($newId!==''){try{$staged=$this->store->stageDraftDeletion($projectId,$newId);$this->store->finalizeStagedDeletion($staged);}catch(Throwable $cleanup){error_log($cleanup->getMessage());}}
+            if($newId!==''){try{$staged=$this->store->stageDraftDeletion($storageKey,$newId);$this->store->finalizeStagedDeletion($staged);}catch(Throwable $cleanup){error_log($cleanup->getMessage());}}
             if($exception instanceof PDOException&&str_starts_with((string)$exception->getCode(),'23'))throw new OfferConflictException('Für dieses Angebot besteht bereits eine offene Revision.');
             throw$exception;
         }
@@ -255,7 +261,7 @@ final readonly class OfferService
         }
         $date=DateTimeImmutable::createFromFormat('!Y-m-d',$documentDate);
         if($date===false||$date->format('Y-m-d')!==$documentDate)throw new OfferValidationException(['Das Dokumentdatum ist ungültig.']);
-        $projectId=(string)$metadata['project_id'];
+        $projectId=(string)$metadata['storage_key'];
         $this->pdo->exec('BEGIN IMMEDIATE');$published=false;
         try{
             return$this->store->withExclusiveLock($projectId,$offerId,function()use($offerId,$expectedEtag,$manualNumber,$documentDate,$confirmIncomplete,$projectId,&$published):array{
@@ -270,7 +276,7 @@ final readonly class OfferService
                 if(!hash_equals($expectedEtag,$draft['etag']))throw new OfferConflictException('Der Entwurf wurde zwischenzeitlich geändert. Bitte neu laden.');
                 $calculated=null;$calculationErrors=[];
                 try{$calculated=$this->calculator->calculate($draft['offer']);}catch(Throwable $exception){$calculationErrors[]=$exception->getMessage()?:'Die Angebotskalkulation ist nicht berechenbar.';}
-                $validation=(new OfferSubmissionValidator())->inspect($draft['offer'],$calculated,$this->projects->find($projectId),$calculationErrors);
+                $validation=(new OfferSubmissionValidator())->inspect($draft['offer'],$calculated,$metadata['project_id']!==null?$this->projects->find((string)$metadata['project_id']):null,$calculationErrors,$this->customer((string)$metadata['customer_id']));
                 if($validation['errors']!==[]||($validation['warnings']!==[]&&!$confirmIncomplete)){
                     $this->pdo->rollBack();
                     $hasIncomplete=array_filter($validation['warnings'],fn(array $item):bool=>$item['code']==='incomplete_cost_basis')!==[];
@@ -315,7 +321,7 @@ final readonly class OfferService
     {
         if($this->pdfService===null)throw new RuntimeException('PDF-Erzeugung ist nicht konfiguriert.');
         $metadata=$this->offers->find($offerId);if($metadata===null||($metadata['submitted_pdf_sha256']??null)===null)throw new RuntimeException('Archivierte Angebots-PDF wurde nicht gefunden.');
-        $pdf=$this->store->loadSubmittedPdf((string)$metadata['project_id'],$offerId,(string)$metadata['submitted_pdf_sha256']);
+        $pdf=$this->store->loadSubmittedPdf((string)$metadata['storage_key'],$offerId,(string)$metadata['submitted_pdf_sha256']);
         return['pdf'=>$pdf,'fileName'=>$this->pdfService->fileName(['offerNumber'=>$metadata['effective_offer_number']??$metadata['offer_number'],'documentDate'=>$metadata['document_date'],'revision'=>(int)($metadata['revision_number']??0)])];
     }
 
@@ -331,7 +337,8 @@ final readonly class OfferService
         }
         $prepared = $this->prepareImport(
             $imported,
-            (string) $current['offer']['projectId'],
+            $current['offer']['projectId']!==null?(string)$current['offer']['projectId']:null,
+            (string)$current['offer']['customerId'],
             $offerId,
             (string) $current['offer']['createdAt'],
         );
@@ -364,24 +371,25 @@ final readonly class OfferService
     }
 
     /** @param array<string,mixed> $imported */
-    public function importNew(string $projectId, array $imported): string
+    public function importNew(?string $projectId,array $imported,?string $customerId=null): string
     {
-        if ($this->projects->find($projectId) === null) {
-            throw new RuntimeException('Projekt wurde nicht gefunden.');
-        }
+        $project=$projectId!==null?$this->projects->find($projectId):null;if($projectId!==null&&$project===null)throw new RuntimeException('Projekt wurde nicht gefunden.');if($projectId!==null&&$customerId!==null&&$customerId!==''&&(string)($project['customer_id']??'')!==$customerId)throw new OfferValidationException(['Das Projekt gehört nicht zum ausgewählten Kunden.']);
+        $customerId=$projectId!==null?(string)($project['customer_id']??''):(string)$customerId;if($customerId===''||!$this->customerExists($customerId))throw new OfferValidationException(['Ein gültiger Kunde ist erforderlich.']);
+        $storageKey=$projectId??$customerId;
         $id = Uuid::v4();
-        $prepared = $this->prepareImport($imported, $projectId, $id, Clock::now());
-        $etag = $this->store->saveDraft($projectId, $id, $prepared, null);
-        $this->offers->create($id, $projectId, $this->store->relativeDraftPath($projectId, $id), $etag);
+        $prepared=$this->prepareImport($imported,$projectId,$customerId,$id,Clock::now());
+        $etag=$this->store->saveDraft($storageKey,$id,$prepared,null);
+        $this->offers->create($id,$projectId,$customerId,$storageKey,$this->store->relativeDraftPath($storageKey,$id),$etag);
         return $id;
     }
 
     /** @param array<string,mixed> $offer @return array<string,mixed> */
-    private function prepareImport(array $offer, string $projectId, string $offerId, string $createdAt): array
+    private function prepareImport(array $offer,?string $projectId,string $customerId,string $offerId,string $createdAt):array
     {
         $offer['schemaVersion'] = 1;
         $offer['id'] = $offerId;
         $offer['projectId'] = $projectId;
+        $offer['customerId']=$customerId;
         $offer['offerNumber'] = null;
         $offer['revision'] = 0;
         $offer['status'] = 'draft';
@@ -393,6 +401,10 @@ final readonly class OfferService
         $this->calculator->calculate($offer);
         return $offer;
     }
+
+    private function customerExists(string $id):bool{return $this->customer($id)!==null;}
+    /** @return array<string,mixed>|null */
+    private function customer(string $id):?array{$statement=$this->pdo->prepare('SELECT * FROM customers WHERE id=:id');$statement->execute(['id'=>$id]);$row=$statement->fetch();return is_array($row)?$row:null;}
 
     /** @param list<array<string,mixed>> $nodes */
     private function countNodes(array $nodes): int

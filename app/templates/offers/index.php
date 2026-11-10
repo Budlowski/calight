@@ -6,8 +6,9 @@
     <div class="master-split management-split offer-management-split">
         <div id="offer-list" class="service-list management-list"></div>
         <form id="new-offer-form" class="card form-stack master-editor management-editor" hidden>
-            <div class="editor-heading"><div><h2>Angebotsentwurf</h2><p class="muted">Neues Angebot einem Projekt zuordnen.</p></div></div>
-            <label>Projekt<select name="projectId" required><option value="">Projekt auswählen …</option><?php foreach($projects as $project): ?><option value="<?= $escape($project['id']) ?>"><?= $escape(($project['project_number']?:'Ohne Nr.').' · '.$project['name']) ?></option><?php endforeach; ?></select></label>
+            <div class="editor-heading"><div><h2>Angebotsentwurf</h2><p class="muted">Kunde ist erforderlich, ein Projekt bleibt optional.</p></div></div>
+            <label>Kunde<select name="customerId" required><option value="">Kunde auswählen …</option><?php foreach($customers as $customer): ?><option value="<?= $escape($customer['id']) ?>"><?= $escape(($customer['customer_number']?:'Ohne Nr.').' · '.$customer['name']) ?></option><?php endforeach; ?></select></label>
+            <label>Projekt (optional)<select name="projectId"><option value="">Ohne Projekt</option><?php foreach($projects as $project): ?><option value="<?= $escape($project['id']) ?>" data-customer-id="<?= $escape((string)$project['customer_id']) ?>"><?= $escape(($project['project_number']?:'Ohne Nr.').' · '.$project['name']) ?></option><?php endforeach; ?></select></label>
             <label>Bezeichnung<input name="title" maxlength="200" required></label>
             <p class="notice">Beim Anlegen oder Importieren wird noch keine Angebotsnummer vergeben.</p>
             <div class="form-actions"><button class="button" type="submit" data-icon="save">Entwurf anlegen</button><button class="button button-light" id="import-new-offer" type="button" data-icon="file-up">JSON importieren</button><button class="button button-light" type="button" data-cancel>Abbrechen</button></div>

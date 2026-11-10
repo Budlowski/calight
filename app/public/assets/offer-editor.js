@@ -1457,9 +1457,16 @@
       status.textContent = error.message;
     }
   }
+  async function createOrder(){
+    if(!(await CalightModal.confirm({title:"Auftrag erstellen",content:"Aus genau dieser angenommenen Angebotsrevision wird eine unveränderliche Auftragsgrundlage erstellt.",confirmLabel:"Auftrag erstellen"})))return;
+    const response=await fetch(`/api/offers/${encodeURIComponent(root.dataset.offerId)}/order`,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":root.dataset.csrf},body:"{}"}),result=await responsePayload(response);
+    if(!response.ok){status.textContent=(result.details||[]).join(" ")||result.error||"Auftrag konnte nicht erstellt werden.";return;}
+    location.assign(`/orders/${encodeURIComponent((result.data??result).id)}`);
+  }
   root.querySelector("[data-submit-offer]")?.addEventListener("click", submitOffer);
   root.querySelector("[data-copy-current]")?.addEventListener("click", copyCurrentOffer);
   root.querySelector("[data-create-revision]")?.addEventListener("click", createRevision);
+  root.querySelector("[data-create-order]")?.addEventListener("click",createOrder);
   root.querySelectorAll("[data-change-status]").forEach((button) =>
     button.addEventListener("click", () => changeLifecycleStatus(button.dataset.changeStatus)),
   );

@@ -19,6 +19,7 @@ final readonly class ProjectRepository
     {
         return $this->pdo->query('SELECT * FROM projects ORDER BY created_at DESC')->fetchAll();
     }
+    /** @return list<array<string,mixed>> */ public function customers():array{return$this->pdo->query("SELECT id,customer_number,CASE WHEN customer_type='company' THEN company_name ELSE trim(first_name||' '||last_name) END name FROM customers WHERE active=1 ORDER BY name")->fetchAll();}
 
     /** @return array<string,mixed>|null */
     public function find(string $id): ?array
@@ -41,14 +42,19 @@ final readonly class ProjectRepository
     {
         $id = Uuid::v4();
         $now = Clock::now();
+        $customerId=null;
+        if(trim($customerName)!==''){
+            $customerId=Uuid::v4();$customer=$this->pdo->prepare("INSERT INTO customers(id,customer_type,company_name,first_name,last_name,country,created_at,updated_at) VALUES(:id,'company',:name,'','','Deutschland',:created,:updated)");$customer->execute(['id'=>$customerId,'name'=>$customerName,'created'=>$now,'updated'=>$now]);
+        }
         $statement = $this->pdo->prepare(
-            'INSERT INTO projects (id, name, customer_name, site_address, created_at, updated_at)
-             VALUES (:id, :name, :customer_name, :site_address, :created_at, :updated_at)'
+            'INSERT INTO projects (id,name,customer_id,customer_name,site_address,created_at,updated_at)
+             VALUES (:id,:name,:customer_id,:customer_name,:site_address,:created_at,:updated_at)'
         );
         $statement->execute([
             'id' => $id,
             'name' => $name,
             'customer_name' => $customerName,
+            'customer_id'=>$customerId,
             'site_address' => $siteAddress,
             'created_at' => $now,
             'updated_at' => $now,

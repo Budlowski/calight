@@ -20,7 +20,7 @@ final readonly class OfferJsonStore
     public function saveDraft(string $projectId, string $offerId, array $offer, ?string $expectedEtag): string
     {
         $this->assertIdentifiers($projectId, $offerId);
-        if (($offer['id'] ?? null) !== $offerId || ($offer['projectId'] ?? null) !== $projectId) {
+        if (($offer['id'] ?? null) !== $offerId) {
             throw new RuntimeException('Pfad-IDs und Angebotsinhalt stimmen nicht ueberein.');
         }
         $this->validator->validate($offer);

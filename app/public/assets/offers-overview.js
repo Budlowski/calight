@@ -68,7 +68,7 @@
     form.hidden = false;
     formDirty = false;
     message.hidden = true;
-    form.elements.projectId.focus();
+    form.elements.customerId.focus();
   }
   function render() {
     const q = search.value.trim().toLocaleLowerCase("de"),
@@ -79,7 +79,7 @@
           (o) =>
             (!status || o.status === status) &&
             (!q ||
-              `${o.title} ${o.projectName} ${o.projectNumber || ""} ${o.offerNumber || ""}`
+              `${o.title} ${o.customerName || ""} ${o.projectName || ""} ${o.projectNumber || ""} ${o.offerNumber || ""}`
                 .toLocaleLowerCase("de-DE")
                 .includes(q)),
         )
@@ -97,8 +97,15 @@
     list.innerHTML = rows.length
       ? rows
           .map(
-            (o) =>
-              `<article class="service-list-item management-card"><div class="service-list-main"><div class="management-card-head"><span class="service-number">${esc(o.offerNumber || "Entwurf ohne Angebotsnummer")}${Number(o.revision || 0) > 0 ? ` · Revision ${Number(o.revision)}` : ""}</span><span class="status-badge status-${esc(o.status)}">${labels[o.status] || esc(o.status)}</span></div><strong>${esc(o.title)}</strong><span class="muted">${esc(o.projectNumber || "Ohne Projektnummer")} · ${esc(o.projectName)}</span><span class="management-card-total">${euro(o.netTotal)} netto</span><span class="muted">${o.status === "draft" || !o.submittedAt ? `Zuletzt geändert ${date(o.updatedAt)}` : `Abgegeben ${date(o.submittedAt)}`}</span></div><div class="service-list-actions"><a class="button button-light button-small" data-icon="file-text" href="/offers/${encodeURIComponent(o.id)}">${o.status === "draft" ? "Öffnen" : "Ansehen"}</a><a class="button button-light button-small" data-icon="folder-kanban" href="/projects/${encodeURIComponent(o.projectId)}">Projekt</a><button class="button button-light button-small" type="button" data-icon="copy" data-copy-offer="${o.id}">Kopieren</button>${o.status === "draft" ? `<button class="button button-light button-small button-danger-light" type="button" data-icon="trash" data-delete-offer="${o.id}" data-confirm-message="Angebotsentwurf ${esc(o.title)} endgültig löschen?">Löschen</button>` : ""}</div></article>`,
+            (o) => {
+              const assignment = o.projectId
+                ? `${esc(o.projectNumber || "Ohne Projektnummer")} · ${esc(o.projectName)}`
+                : `${esc(o.customerName)} · Ohne Projekt`;
+              const projectAction = o.projectId
+                ? `<a class="button button-light button-small" data-icon="folder-kanban" href="/projects/${encodeURIComponent(o.projectId)}">Projekt</a>`
+                : "";
+              return `<article class="service-list-item management-card"><div class="service-list-main"><div class="management-card-head"><span class="service-number">${esc(o.offerNumber || "Entwurf ohne Angebotsnummer")}${Number(o.revision || 0) > 0 ? ` · Revision ${Number(o.revision)}` : ""}</span><span class="status-badge status-${esc(o.status)}">${labels[o.status] || esc(o.status)}</span></div><strong>${esc(o.title)}</strong><span class="muted">${assignment}</span><span class="management-card-total">${euro(o.netTotal)} netto</span><span class="muted">${o.status === "draft" || !o.submittedAt ? `Zuletzt geändert ${date(o.updatedAt)}` : `Abgegeben ${date(o.submittedAt)}`}</span></div><div class="service-list-actions"><a class="button button-light button-small" data-icon="file-text" href="/offers/${encodeURIComponent(o.id)}">${o.status === "draft" ? "Öffnen" : "Ansehen"}</a>${projectAction}<button class="button button-light button-small" type="button" data-icon="copy" data-copy-offer="${o.id}">Kopieren</button>${o.status === "draft" ? `<button class="button button-light button-small button-danger-light" type="button" data-icon="trash" data-delete-offer="${o.id}" data-confirm-message="Angebotsentwurf ${esc(o.title)} endgültig löschen?">Löschen</button>` : ""}</div></article>`;
+            },
           )
           .join("")
       : '<p class="card muted">Keine Angebote gefunden.</p>';
@@ -129,6 +136,11 @@
   });
   form.addEventListener("input", () => {
     formDirty = true;
+  });
+  form.elements.customerId.addEventListener("change",()=>{
+    const customerId=form.elements.customerId.value;
+    for(const option of form.elements.projectId.options){if(!option.value)continue;option.hidden=option.dataset.customerId!==customerId;}
+    if(form.elements.projectId.selectedOptions[0]?.hidden)form.elements.projectId.value="";
   });
   list.addEventListener("click", async (event) => {
     const copyButton = event.target.closest("[data-copy-offer]");
@@ -197,6 +209,7 @@
         },
         body: JSON.stringify({
           projectId: form.elements.projectId.value,
+          customerId: form.elements.customerId.value,
           title: form.elements.title.value,
         }),
       }),
@@ -207,8 +220,8 @@
     location.assign(result.url);
   });
   importButton.onclick = () => {
-    if (!form.elements.projectId.value)
-      return notify("Bitte zuerst ein Projekt auswählen.");
+    if (!form.elements.customerId.value)
+      return notify("Bitte zuerst einen Kunden auswählen.");
     importFile.click();
   };
   importFile.onchange = async () => {
@@ -227,6 +240,7 @@
           },
           body: JSON.stringify({
             projectId: form.elements.projectId.value,
+            customerId: form.elements.customerId.value,
             offer,
           }),
         }),

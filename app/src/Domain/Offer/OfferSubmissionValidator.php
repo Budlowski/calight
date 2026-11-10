@@ -17,15 +17,15 @@ final readonly class OfferSubmissionValidator
      * @param list<string> $calculationErrors
      * @return array{errors:list<array<string,mixed>>,warnings:list<array<string,mixed>>}
      */
-    public function inspect(array $offer,?array $calculated,?array $project,array $calculationErrors=[]):array
+    public function inspect(array $offer,?array $calculated,?array $project,array $calculationErrors=[],?array $customer=null):array
     {
         $errors=[];$warnings=[];
         try{(new OfferValidator())->validate($offer);}catch(OfferValidationException $exception){
             foreach($exception->errors as $message)$errors[]=$this->problem('invalid_structure',$message);
         }
         if(trim((string)($offer['title']??''))==='')$errors[]=$this->problem('missing_title','Die Angebotsbezeichnung fehlt.');
-        if($project===null)$errors[]=$this->problem('missing_project','Das Angebot ist keinem vorhandenen Projekt zugeordnet.');
-        elseif(trim((string)($project['customer_id']??''))===''&&trim((string)($project['customer_name']??''))==='')$errors[]=$this->problem('missing_customer','Dem Projekt ist kein Kunde zugeordnet.');
+        if($customer===null&&$project!==null&&(trim((string)($project['customer_id']??''))!==''||trim((string)($project['customer_name']??''))!==''))$customer=['id'=>$project['customer_id']??null];
+        if($customer===null)$errors[]=$this->problem('missing_customer','Dem Angebot ist kein Kunde zugeordnet.');
         foreach($calculationErrors as $message)$errors[]=$this->problem('invalid_calculation',$message);
         if($calculated!==null){
             $regular=0;$this->inspectNodes($calculated['nodes']??[],$errors,$warnings,$regular,false);

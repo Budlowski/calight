@@ -10,6 +10,7 @@ use App\Http\MasterDataController;
 use App\Http\CustomerProjectController;
 use App\Http\OfferCalculationController;
 use App\Http\SettingsController;
+use App\Http\OrderController;
 use App\Domain\Offer\OfferCalculator;
 use App\Http\Router;
 use App\Infrastructure\Database\ConnectionFactory;
@@ -21,6 +22,7 @@ use App\Infrastructure\Persistence\MasterDataRepository;
 use App\Infrastructure\Persistence\NumberRangeRepository;
 use App\Infrastructure\Persistence\CustomerProjectRepository;
 use App\Infrastructure\Persistence\DocumentSettingsRepository;
+use App\Infrastructure\Persistence\OrderRepository;
 use App\View\View;
 use PDO;
 
@@ -57,6 +59,7 @@ final readonly class Bootstrap
         $settingsService=new DocumentSettingsService($documentSettingsRepository);
         $offerPdfService=new OfferPdfService($this->pdo,$documentSettingsRepository,new OfferValidator(),$offerCalculator);
         $offerService=new OfferService($this->pdo,$projects,$offers,$store,$offerCalculator,$numberRanges,$offerPdfService);
+        $orderService=new OrderService($this->pdo,new OrderRepository($this->pdo),$offers,$offerService,$numberRanges);
 
         return new Application(
             new Router(),
@@ -71,6 +74,7 @@ final readonly class Bootstrap
             new SettingsController($view,$settingsService),
             $offerPdfService,
             new InternalCalculationPdfService($this->pdo,$documentSettingsRepository,new OfferValidator(),$offerCalculator),
+            new OrderController($view,$orderService),
         );
     }
 }
