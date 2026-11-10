@@ -70,6 +70,11 @@
   const toolbar = root.querySelector(".offer-tree-toolbar");
   const undoButton = root.querySelector("[data-undo]"),
     redoButton = root.querySelector("[data-redo]");
+  const takeoverButton = root.querySelector("[data-lock-takeover]");
+  if (takeoverButton) {
+    takeoverButton.classList.remove("button-small");
+    saveButton.before(takeoverButton);
+  }
   const structureScroll = root.querySelector(".offer-structure-scroll");
   const offerHeaderScroll = structureScroll.querySelector(
       ".offer-header-scroll",
@@ -2125,11 +2130,12 @@
       savedHistoryState = comparableHistoryState();
       updateHistoryControls();
       saveButton.disabled = isReadOnly();
+      if (takeoverButton) takeoverButton.hidden = true;
       if (permissionReadOnly) status.textContent = "Keine Berechtigung zur Bearbeitung";
       else if (lifecycleStatus !== "draft") status.textContent = `Schreibgeschützter ${isChangeOrder ? "Nachtrags" : "Angebots"}stand`;
       else if (!lock.granted) {
         status.textContent = lock.error ? lock.error.message : `In Bearbeitung durch ${lockOwner} – schreibgeschützt`;
-        const takeover = root.querySelector("[data-lock-takeover]"); if (takeover) takeover.hidden = !!lock.error;
+        if (takeoverButton) takeoverButton.hidden = !!lock.error;
       } else status.textContent = "Bearbeitungssperre aktiv";
       scheduleCalculation();
     })

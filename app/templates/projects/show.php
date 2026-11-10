@@ -19,7 +19,7 @@ $siteAddress=$siteParts!==[]?implode(', ',$siteParts):$project['site_address'];
 </nav>
 <header class="project-detail-head card">
     <div><span class="service-number"><?= $escape($project['project_number'] ?: 'Ohne Projektnummer') ?></span><h1><?= $escape($project['name']) ?></h1><p class="muted"><?= $escape($project['description'] ?: 'Keine Projektbeschreibung') ?></p></div>
-    <div class="form-actions"><span class="status-badge status-<?= $escape($project['status']) ?>"><?= $escape($statusLabels[$project['status']] ?? $project['status']) ?></span><a class="button button-light" data-icon="file-text" href="/projects/<?= $escape(rawurlencode($project['id'])) ?>/edit">Projekt bearbeiten</a></div>
+    <div class="form-actions"><span class="status-badge status-<?= $escape($project['status']) ?>"><?= $escape($statusLabels[$project['status']] ?? $project['status']) ?></span><a class="button button-light" data-icon="square-pen" href="/projects/<?= $escape(rawurlencode($project['id'])) ?>/edit">Projekt bearbeiten</a></div>
     <dl class="project-facts"><div><dt>Kunde</dt><dd><?= $escape($customerName ?: '–') ?></dd></div><div><dt>Baustelle</dt><dd><?= $escape($siteAddress ?: '–') ?></dd></div><div><dt>Ansprechpartner</dt><dd><?= $escape($project['contact_name'] ?: '–') ?><?php if($project['contact_function']): ?><span class="muted"> · <?= $escape($project['contact_function']) ?></span><?php endif; ?><?php if($project['contact_email'] || $project['contact_phone']): ?><small><?= $escape(implode(' · ',array_filter([$project['contact_email'],$project['contact_phone']]))) ?></small><?php endif; ?></dd></div></dl>
 </header>
 <div class="project-offer-layout">

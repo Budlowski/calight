@@ -21,7 +21,7 @@ $money=static function(?string $value):string{
                 <div class="document-status-line"><span class="status-badge status-<?= $escape($order['status']) ?>"><?= $escape($labels[$order['status']]) ?></span><span><?= $escape($order['orderType']==='offer'?'Angebotsauftrag':'Regieauftrag') ?></span></div>
             </div>
             <div class="order-detail-actions">
-                <button class="button button-light" type="button" data-edit-order data-icon="file-text">Bearbeiten</button>
+                <button class="button button-light" type="button" data-edit-order data-icon="square-pen">Bearbeiten</button>
                 <?php if(isset($next[$order['status']])): ?><button class="button" type="button" data-next-status="<?= $escape($next[$order['status']]) ?>" data-next-status-label="<?= $escape($labels[$next[$order['status']]]) ?>" data-icon="refresh-cw"><?= $escape($labels[$next[$order['status']]]) ?> setzen</button><?php endif; ?>
             </div>
         </div>

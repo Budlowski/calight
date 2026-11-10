@@ -15,6 +15,7 @@
         ['[data-down]', 'arrow-down'],
         ['[data-component-copy], [data-copy]', 'copy'],
         ['[data-component-remove], [data-remove]', 'trash'],
+        ['[data-trailing-edit], [data-supplier-edit], [data-cost-edit], [data-service-edit], [data-edit], [data-edit-order]', 'square-pen'],
         ['[data-add-manual], [data-add-cost], [data-save-new]', 'plus'],
         ['[data-preview-prices]', 'refresh-cw'],
         ['[data-save-master], [data-update-existing]', 'save']
@@ -75,7 +76,9 @@
 
     document.addEventListener('click', async event => {
         const control = event.target.closest('button, a');
-        if (!control || control.disabled || !isDestructiveControl(control)) return;
+        // Das Bestätigungsmodal ist bereits die Sicherheitsgrenze. Seine eigene
+        // Löschaktion darf nicht erneut vom globalen Interceptor abgefangen werden.
+        if (!control || control.closest('.global-modal') || control.disabled || !isDestructiveControl(control)) return;
         if (confirmedControls.has(control)) {
             confirmedControls.delete(control);
             return;
