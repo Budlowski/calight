@@ -111,5 +111,5 @@ final readonly class DailyReportService
     private function canEdit(array $report,array $actor):bool{return($actor['role']??'')!=='technician'||(string)$report['created_by_user_id']===(string)$actor['id'];}
     /** @param list<array<string,mixed>> $employees @param array<string,mixed> $actor @return list<array<string,mixed>> */
     private function visibleEmployees(array $employees,array $actor):array{if($this->canReadCosts($actor))return$employees;foreach($employees as &$employee)unset($employee['hourly_cost_rate']);unset($employee);return$employees;}
-    /** @param array<string,mixed> $actor */ private function canReadCosts(array $actor):bool{return\App\Security\RolePermissions::allows((string)($actor['role']??''),'costs.read');}
+    /** @param array<string,mixed> $actor */ private function canReadCosts(array $actor):bool{return \App\Security\RolePermissions::allows((string)($actor['role']??''),'costs.read');}
 }
