@@ -13,6 +13,8 @@ use App\Http\SettingsController;
 use App\Http\OrderController;
 use App\Http\DocumentLockController;
 use App\Http\UserAccessController;
+use App\Http\EmployeeController;
+use App\Http\DailyReportController;
 use App\Domain\Offer\OfferCalculator;
 use App\Http\Router;
 use App\Infrastructure\Database\ConnectionFactory;
@@ -26,6 +28,8 @@ use App\Infrastructure\Persistence\CustomerProjectRepository;
 use App\Infrastructure\Persistence\DocumentSettingsRepository;
 use App\Infrastructure\Persistence\OrderRepository;
 use App\Infrastructure\Persistence\DocumentLockRepository;
+use App\Infrastructure\Persistence\EmployeeRepository;
+use App\Infrastructure\Persistence\DailyReportRepository;
 use App\View\View;
 use PDO;
 
@@ -65,6 +69,8 @@ final readonly class Bootstrap
         $orderService=new OrderService($this->pdo,new OrderRepository($this->pdo),$offers,$offerService,$numberRanges);
         $documentLockService=new DocumentLockService($this->pdo,new DocumentLockRepository($this->pdo));
         $userRepository=new UserRepository($this->pdo);
+        $employeeRepository=new EmployeeRepository($this->pdo);
+        $dailyReportService=new DailyReportService($this->pdo,new DailyReportRepository($this->pdo),$employeeRepository,new OrderRepository($this->pdo));
 
         return new Application(
             new Router(),
@@ -79,10 +85,12 @@ final readonly class Bootstrap
             new SettingsController($view,$settingsService),
             $offerPdfService,
             new InternalCalculationPdfService($this->pdo,$documentSettingsRepository,new OfferValidator(),$offerCalculator),
-            new OrderController($view,$orderService),
+            new OrderController($view,$orderService,$dailyReportService),
             new DocumentLockController($documentLockService),
             $documentLockService,
             new UserAccessController(new UserAccessService($userRepository)),
+            new EmployeeController($view,new EmployeeService($employeeRepository,$userRepository)),
+            new DailyReportController($view,$dailyReportService),
         );
     }
 }

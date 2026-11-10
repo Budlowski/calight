@@ -106,7 +106,7 @@ Die folgenden Funktionen sind geplant und teilweise noch nicht implementiert.
 | 2.4 | Angebotsabgabe, Prüfung, Archivierung und Statusverwaltung | Implementiert, weitere Tests ausstehend |
 | 2.5 | Angebotsrevisionen und Nachträge | Geplant |
 | 3.1 | Auftragsverwaltung, optionale Projekte und direkte Regieaufträge | Geplant |
-| 3.2 | Bautagesberichte, Zeit- und Materialerfassung | Geplant |
+| 3.2 | Bautagesberichte, Zeit- und Materialerfassung | In Umsetzung: Mitarbeiter und Zeiterfassung implementiert |
 | 3.3 | Aufmaße für Angebotsarbeiten | Geplant |
 | 3.4 | Rapporte für Regiearbeiten | Geplant |
 | 3.5 | Nachkalkulation und Soll-Ist-Vergleich | Geplant |

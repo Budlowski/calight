@@ -20,6 +20,8 @@ final class SecurityTest extends TestCase
         $this->assertTrue(!RolePermissions::allows('office','users.manage'));
         $this->assertTrue(RolePermissions::allows('technician','orders.read'));
         $this->assertTrue(RolePermissions::allows('technician','reports.write'));
+        $this->assertTrue(RolePermissions::allows('technician','reports.read'));
+        $this->assertTrue(RolePermissions::allows('office','employees.manage'));
         $this->assertTrue(!RolePermissions::allows('technician','offers.write'));
         $this->assertTrue(!RolePermissions::allows('technician','costs.read'));
     }
@@ -28,8 +30,10 @@ final class SecurityTest extends TestCase
     {
         $write=new Request('PUT','/api/offers/id',[],[],[],'');
         $internalPdf=new Request('POST','/api/offers/id/calculation-pdf',[],[],[],'');
+        $reportWrite=new Request('PUT','/api/daily-reports/id',[],[],[],'');
         $this->assertSame(['offers.write'],AuthorizationPolicy::required($write));
         $this->assertSame(['offers.read','costs.read'],AuthorizationPolicy::required($internalPdf));
+        $this->assertSame(['reports.write'],AuthorizationPolicy::required($reportWrite));
         $denied=AuthorizationPolicy::deniedResponse($write);$this->assertSame(403,$denied->status);$this->assertTrue(str_contains($denied->body,'Keine Berechtigung'));
     }
 

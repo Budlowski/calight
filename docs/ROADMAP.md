@@ -17,7 +17,7 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 | 2.4 | Angebotsabgabe, Validierung, Snapshot, archivierte PDF, Status | Implementiert; Integrationstests teilweise ausstehend |
 | 2.5 | Angebotsrevisionen und Nachträge | Geplant |
 | 3.1 | Auftragsverwaltung, projektfreie Angebote, direkte Regieaufträge | Geplant |
-| 3.2 | Bautagesberichte und interne Ist-Erfassung | Geplant |
+| 3.2 | Bautagesberichte und interne Ist-Erfassung | In Umsetzung: Mitarbeiter und Zeiterfassung implementiert |
 | 3.3 | Aufmaße für vereinbarte Angebotsleistungen | Geplant |
 | 3.4 | Rapporte für Regieleistungen | Geplant |
 | 3.5 | Nachkalkulation und Soll-Ist-Vergleich | Geplant |

@@ -28,7 +28,7 @@
             <a href="/orders" data-icon="clipboard-list">Aufträge</a>
 
             <span class="sidebar-section-label">Ausführung &amp; Abrechnung</span>
-            <a href="#" aria-disabled="true" tabindex="-1" data-icon="calendar-days">Bautagesberichte</a>
+            <a href="/daily-reports" data-icon="calendar-days">Bautagesberichte</a>
             <a href="#" aria-disabled="true" tabindex="-1" data-icon="ruler">Aufmaße</a>
             <a href="#" aria-disabled="true" tabindex="-1" data-icon="clipboard-check">Rapporte</a>
             <a href="#" aria-disabled="true" tabindex="-1" data-icon="package">Bestellungen</a>

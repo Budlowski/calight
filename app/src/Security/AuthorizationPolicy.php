@@ -17,6 +17,8 @@ final class AuthorizationPolicy
         if ($path === '/' || $path === '/login' || $path === '/logout') return [];
         if ($path === '/dashboard') return ['dashboard.read'];
         if (str_starts_with($path, '/api/users')) return ['users.manage'];
+        if ($path === '/settings/employees' || str_starts_with($path, '/api/employees')) return ['employees.manage', 'costs.read'];
+        if (str_starts_with($path, '/daily-reports') || str_starts_with($path, '/api/daily-reports')) return [$write ? 'reports.write' : 'reports.read'];
         if (preg_match('#^/projects/[^/]+/offers$#', $path) === 1) return ['projects.read', 'offers.write'];
         if (preg_match('#^/api/offers/[^/]+/order$#', $path) === 1) return ['offers.read', 'orders.write'];
         if (preg_match('#^/api/change-orders/[^/]+/accept$#', $path) === 1) return ['offers.write', 'orders.write'];

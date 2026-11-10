@@ -108,7 +108,7 @@
     const visible = element => element && !element.hidden && element.getClientRects().length > 0;
     const editorForms = [
         '#cost-item-form', '#service-form', '#category-form', '#supplier-form',
-        '#customer-form', '#project-form', '#settings-form'
+        '#customer-form', '#project-form', '#settings-form', '#employee-form', '#daily-report-form'
     ];
 
     document.addEventListener('keydown', event => {

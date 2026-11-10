@@ -20,6 +20,8 @@ use App\Http\SettingsController;
 use App\Http\OrderController;
 use App\Http\DocumentLockController;
 use App\Http\UserAccessController;
+use App\Http\EmployeeController;
+use App\Http\DailyReportController;
 use App\Domain\Order\OrderValidationException;
 use App\Domain\DocumentLockException;
 use App\Infrastructure\Persistence\OfferConflictException;
@@ -52,6 +54,8 @@ final readonly class Application
         private DocumentLockController $documentLockController,
         private DocumentLockService $documentLocks,
         private UserAccessController $userAccessController,
+        private EmployeeController $employeeController,
+        private DailyReportController $dailyReportController,
     ) {
         $this->registerRoutes();
     }
@@ -65,9 +69,9 @@ final readonly class Application
                 if($currentUser===null){Session::logout();return str_starts_with($request->path,'/api/')?Response::json(['error'=>'Anmeldung erforderlich.'],401):Response::redirect('/login');}
                 Session::refreshUser($currentUser);
             }
-            if (Session::user() !== null) {
-                foreach (AuthorizationPolicy::required($request) as $permission) Session::require($permission);
-            }
+            $requiredPermissions=AuthorizationPolicy::required($request);
+            if($requiredPermissions!==[]&&Session::user()===null)return str_starts_with($request->path,'/api/')?Response::json(['error'=>'Anmeldung erforderlich.'],401):Response::redirect('/login');
+            foreach($requiredPermissions as $permission)Session::require($permission);
             return $this->router->dispatch($request);
         } catch (AccessDeniedException) {
             return AuthorizationPolicy::deniedResponse($request);
@@ -100,6 +104,8 @@ final readonly class Application
         $this->orderController->register($this->router);
         $this->documentLockController->register($this->router);
         $this->userAccessController->register($this->router);
+        $this->employeeController->register($this->router);
+        $this->dailyReportController->register($this->router);
 
         $this->router->add('GET', '/', fn (): Response => Session::user() === null
             ? Response::redirect('/login')
