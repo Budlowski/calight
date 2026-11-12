@@ -88,7 +88,7 @@ final class MeasurementTest extends TestCase
             $overview = $service->forOrder($order['id'], $office);
             $this->assertSame(['positions' => 4, 'started' => 3, 'complete' => 2, 'overrun' => 0], $overview['progress']);
             $this->assertSame('67.50', $overview['measurements'][2]['netTotal']);
-            $this->assertSame('469.50', $overview['completedNetTotal']);
+            $this->assertSame('470.00', $overview['completedNetTotal'], '67,50 + 146,25 + 56,25 + 200,00 (Nachtrag).');
 
             // Historische Sicht: das erste Aufmaß zeigt nur vorher abgeschlossene Mengen als „bisher“.
             $this->assertSame('0.000', $this->position($service->detail($first['id'], $office), $keys['meter'])['previousQuantity']);
