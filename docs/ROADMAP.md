@@ -1,6 +1,6 @@
 # Calight – Entwicklungsroadmap
 
-**Stand:** 09.11.2026  
+**Stand:** 12.11.2026  
 **Status:** Fachliche Zielplanung. Noch nicht implementierte Funktionen sind ausdrücklich als geplant gekennzeichnet.
 
 Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftragsabwicklung im Handwerk und Dienstleistungsbereich**. Sie unterstützt die Kalkulation und soll künftig die Ausführung, Leistungsnachweise und Nachkalkulation begleiten. Rechnungsstellung und Buchhaltung bleiben in externen Anwendungen wie Lexware.
@@ -15,9 +15,10 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 | 1 | Kunden, Projekte, Artikel- und Positionsstamm | Abgeschlossen laut Entwicklungsstand |
 | 2.1–2.3 | Angebotseditor, Kalkulation, PDF und JSON | Abgeschlossen laut Entwicklungsstand |
 | 2.4 | Angebotsabgabe, Validierung, Snapshot, archivierte PDF, Status | Implementiert; Integrationstests teilweise ausstehend |
-| 2.5 | Angebotsrevisionen und Nachträge | Geplant |
-| 3.1 | Auftragsverwaltung, projektfreie Angebote, direkte Regieaufträge | Geplant |
-| 3.2 | Bautagesberichte und interne Ist-Erfassung | In Umsetzung: Mitarbeiter und Zeiterfassung implementiert |
+| 2.5 | Angebotsrevisionen und Nachträge | Implementiert (Revisionen `0017`, Nachträge `0019`) |
+| 3.1 | Auftragsverwaltung, projektfreie Angebote, direkte Regieaufträge | Implementiert (`0018`), Rollen und Bearbeitungssperren (`0020`) |
+| 3.2 | Bautagesberichte und interne Ist-Erfassung | In Umsetzung: Mitarbeiter, Berichte und Zeiterfassung implementiert (`0021`); Material, Fotos und PDF geplant |
+| 3.2.1.x | Einheitliche Übersichts- und Detailseiten; serverseitige Pagination, Sortierung und URL-basierter Listenstatus | Implementiert (`0022`) |
 | 3.3 | Aufmaße für vereinbarte Angebotsleistungen | Geplant |
 | 3.4 | Rapporte für Regieleistungen | Geplant |
 | 3.5 | Nachkalkulation und Soll-Ist-Vergleich | Geplant |
@@ -96,7 +97,7 @@ Aufmaße, Rapporte und Bautagesberichte sind **unabhängig** voneinander. Innerh
 
 ### Projekte werden optional
 
-Derzeit ist für neue Angebote noch ein Projekt erforderlich. Diese Pflicht soll entfallen.
+Umgesetzt: Für neue Angebote ist nur noch ein Kunde erforderlich, das Projekt ist optional.
 
 - **Kunde ist Pflicht, Projekt ist optional** bei neuen Angeboten.
 - Angebote ohne Projekt erstellen, verwalten, abgeben und bei Bedarf später einem Projekt zuordnen, ohne abgegebene Dokumente nachträglich zu verändern.

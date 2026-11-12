@@ -49,12 +49,9 @@ Vor einer Änderung sind die betroffenen Implementierungen und Dokumente zu lese
 
 ### Bekannte Dokumentationsabweichungen
 
-Stand 12.11.2026 sind Teile von `docs/README.md` und `docs/ROADMAP.md` veraltet:
+Stand 12.11.2026 sind Teile von `docs/README.md` veraltet (die Statustabelle in `docs/ROADMAP.md` wurde mit Phase 3.2.1.3 nachgezogen):
 
-- Revisionen (Migration `0017`), Aufträge und projektfreie Angebote (`0018`) sowie Nachträge (`0019`) sind implementiert, obwohl die Roadmap sie teilweise als geplant bezeichnet.
-- Rollen, Berechtigungen und Angebots-Bearbeitungssperren (`0020`) sind implementiert.
-- Mitarbeiter, Bautagesberichte und Zeiterfassung (`0021`) sind implementiert.
-- Die Roadmap-Aussage, neue Angebote benötigten derzeit noch ein Projekt, ist überholt: Kunde ist Pflicht, Projekt ist optional.
+- Revisionen (Migration `0017`), Aufträge und projektfreie Angebote (`0018`), Nachträge (`0019`), Rollen/Sperren (`0020`) sowie Mitarbeiter, Bautagesberichte und Zeiterfassung (`0021`) sind implementiert, obwohl die README-Roadmap sie teilweise als geplant bezeichnet.
 - `app/config/offer-schema-v1.json` bezeichnet `projectId` noch ausschließlich als UUID und bildet nicht alle später ergänzten Dokumentfelder ab. Der tatsächliche Import- und Speichervertrag ergibt sich aus `OfferValidator`, `OfferNormalizer`, `OfferService` und den Tests. Das Schema nicht isoliert als einzige Wahrheit behandeln.
 - `docs/README.md` nennt Ansprechpartnerverwaltung in der Roadmap als geplant, obwohl Kundenkontakte und mehrere Adressen seit Migration `0007` vorhanden sind. Eine weitergehende Kontakt-/CardDAV-Integration bleibt geplant.
 
@@ -348,6 +345,19 @@ Der aktuelle Standard aus Phase 3.2.1.2 gilt für Kunden, Projekte, Angebote, Au
 - Bei vielen Nebenaktionen ein bestehendes Drei-Punkte-/Kontextmenü verwenden.
 - Breadcrumbs sind echte Links; letzter Eintrag ist die aktuelle Seite.
 - Leere, Lade-, Fehler-, Erfolg- und deaktivierte Zustände müssen verständlich sein.
+
+### Listenstatus, Pagination und Sortierung
+
+Seit Phase 3.2.1.3 gilt für die fünf Übersichten:
+
+- Suche, Filter, Sortierung und Pagination laufen **serverseitig**. Keine Liste lädt alle Datensätze, um im Browser zu filtern oder zu blättern.
+- Backend: `Support\ListQuery` validiert Parameter (`q`, Modulfilter, `sort`, `dir`, `page`, `per_page` mit 10/25/50/100), `Infrastructure\Persistence\Paginator` baut Zähl- und Seitenabfrage. Jedes Repository definiert seine sortierbaren SQL-Ausdrücke als Whitelist (`*_SORTS` mit natürlicher Richtung) und einen eindeutigen Tie-Breaker. Nutzereingaben gelangen nur als gebundene Parameter in SQL.
+- Listen-APIs antworten mit `{data: {items, total, page, perPage, pageCount, sort, dir}}`; zu große Seitenzahlen werden auf die letzte Seite begrenzt.
+- Textsuche nutzt die in `ConnectionFactory` registrierte SQLite-Funktion `calight_fold()` für Unicode-gerechte Groß-/Kleinschreibung. Direkt erzeugte PDO-Verbindungen ohne diese Funktion können die Listensuche nicht ausführen.
+- Werte aus Dokument-JSON, die gelistet oder sortiert werden (Angebotstitel und -nettosumme), werden in SQLite gespiegelt: `offers.list_*` wird über `list_etag` als veraltet erkannt und von `OfferService` beim Listenabruf aktualisiert. Für sortierbare Geldwerte nur zum Ordnen `CAST(... AS REAL)` verwenden; angezeigte Beträge bleiben exakte Dezimalstrings.
+- Frontend: `CalightListView.createListPage` in `list-view.js` hält URL, Bedienelemente, Browser-History, Sortierköpfe (`header()`), Sortierauswahl und Pagination synchron. Module liefern nur Endpunkt, Filterfelder, Sortierdefinitionen und Tabellen-/Karteninhalt.
+- Die URL ist die maßgebliche Quelle des Listenstatus; Standardwerte stehen nicht in der URL. Nur die Tabellen-/Kartenansicht liegt in `localStorage`. Suche erzeugt pro Eingabe höchstens einen History-Eintrag; Filter, Sortierung und Seitenwechsel sind über Zurück/Vorwärts nachvollziehbar.
+- Neue Sortierfelder müssen im Repository (`*_SORTS`) und in der Moduldefinition im JavaScript (`sorts`) mit gleicher natürlicher Richtung ergänzt werden.
 
 ### Buttons, Icons und Status
 
