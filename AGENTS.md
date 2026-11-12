@@ -1,0 +1,527 @@
+# AGENTS.md – Verbindliche Arbeitsgrundlage für Calight
+
+Diese Datei gilt für das gesamte Repository. Sie richtet sich modellunabhängig an Codex, Claude Code und andere Entwicklungsagenten. Lies sie vor jeder Entwicklungsaufgabe vollständig. Ergänzende Anweisungen in tiefer liegenden `AGENTS.md`-Dateien gelten nur für deren Verzeichnis; derzeit existieren keine solchen Ergänzungen.
+
+Die Schlüsselwörter **MUSS**, **DARF NICHT**, **SOLL** und **SOLLTE** kennzeichnen verbindliche Regeln beziehungsweise begründete Empfehlungen. Bei Widersprüchen haben explizite aktuelle Benutzeranforderungen Vorrang. Fachliche Widersprüche zwischen Auftrag, Code und Dokumentation sind offenzulegen, nicht stillschweigend umzudeuten.
+
+## 1. Projekt in Kürze
+
+Calight ist eine schlanke, selbst gehostete Open-Source-Anwendung für Handwerksbetriebe und Dienstleister. Der Schwerpunkt liegt auf:
+
+- Artikel- und Positionsstammdaten;
+- nachvollziehbarer Angebotskalkulation;
+- Kunden, optionalen Projekten, Angeboten, Revisionen und Aufträgen;
+- unveränderlichen abgegebenen Dokumentständen;
+- Nachträgen, Mitarbeitern, Bautagesberichten und Ist-Zeiten;
+- einer schrittweisen Erweiterung zur Ausführungsdokumentation und Nachkalkulation.
+
+Calight ist **keine Buchhaltungs- oder Fakturasoftware**. Rechnungen und Buchhaltung bleiben in externen Anwendungen wie Lexware. Calight darf externe Rechnungsnummern oder Abrechnungsstände künftig referenzieren, soll Lexware aber nicht nachbauen.
+
+### Projektphilosophie
+
+- Self-Hosting ohne Cloudzwang oder externe Laufzeitdienste.
+- Der reguläre Betrieb muss ohne Internetverbindung möglich sein. Lokale Assets statt CDN verwenden.
+- Einfache Installation und Wartung, primär mit Docker.
+- Verständlicher, modularer und langfristig wartbarer Code.
+- Möglichst wenige Abhängigkeiten; keine unnötigen Frameworks oder Abstraktionsschichten.
+- Professionelle, kompakte und konsistente Bedienung auf Desktop, Tablet und Smartphone.
+- Mehrbenutzerbetrieb mit serverseitigen Rechten, Datenintegrität und nachvollziehbaren Änderungen.
+- Bestehende Installationen, JSON-Dokumente und Archive langfristig kompatibel halten.
+- Overengineering vermeiden. Die kleinste robuste, fachlich richtige Lösung ist vorzuziehen.
+
+## 2. Verlässliche Informationsquellen
+
+Vor einer Änderung sind die betroffenen Implementierungen und Dokumente zu lesen. Frühere Chats stehen neuen Agenten möglicherweise nicht zur Verfügung und sind keine verlässliche Repository-Quelle.
+
+| Quelle | Aufgabe und Verbindlichkeit |
+|---|---|
+| `AGENTS.md` | Verbindliche Arbeits-, Architektur-, Sicherheits- und Qualitätsregeln für Entwicklungsagenten. |
+| `CLAUDE.md` | Kurzer Einstieg für Claude Code; verweist auf diese Datei und ersetzt sie nicht. |
+| `docs/README.md` | Öffentliche Projektbeschreibung, Installation, Betrieb und allgemeiner Einstieg. Im Repository gibt es derzeit keine `README.md` im Hauptverzeichnis. |
+| `docs/ROADMAP.md` | Fachliches Zielbild und geplante Phasen. Statusangaben können dem lokalen Implementierungsstand hinterherhinken. |
+| `docs/offer-json-schema.md` und `app/config/offer-schema-v1.json` | Beschreibung beziehungsweise maschinenlesbare Ausgangsdefinition des Angebotsformats. Immer zusätzlich Validator und Normalizer prüfen. |
+| `docs/kalkulationsbausteine.md` | Preisquellen und Kalkulationsverhalten. |
+| `docs/master-data-json.md` | Vollständiger Import/Export einzelner Stammdatenbereiche. |
+| `docs/pdf-templates.md` | Fachliche Regeln des Angebotsdrucks und der Dokumenteinstellungen. |
+| `app/migrations/*.sql` | Tatsächlich eingeführtes SQLite-Schema und historische Datenmigrationen. |
+| `app/src`, `app/templates`, `app/public/assets` | Maßgeblicher aktueller Implementierungsstand. |
+| `app/tests` und `.github/workflows/quality.yml` | Erwartetes Verhalten und automatisierte Qualitätsprüfungen. |
+
+### Bekannte Dokumentationsabweichungen
+
+Stand 12.11.2026 sind Teile von `docs/README.md` und `docs/ROADMAP.md` veraltet:
+
+- Revisionen (Migration `0017`), Aufträge und projektfreie Angebote (`0018`) sowie Nachträge (`0019`) sind implementiert, obwohl die Roadmap sie teilweise als geplant bezeichnet.
+- Rollen, Berechtigungen und Angebots-Bearbeitungssperren (`0020`) sind implementiert.
+- Mitarbeiter, Bautagesberichte und Zeiterfassung (`0021`) sind implementiert.
+- Die Roadmap-Aussage, neue Angebote benötigten derzeit noch ein Projekt, ist überholt: Kunde ist Pflicht, Projekt ist optional.
+- `app/config/offer-schema-v1.json` bezeichnet `projectId` noch ausschließlich als UUID und bildet nicht alle später ergänzten Dokumentfelder ab. Der tatsächliche Import- und Speichervertrag ergibt sich aus `OfferValidator`, `OfferNormalizer`, `OfferService` und den Tests. Das Schema nicht isoliert als einzige Wahrheit behandeln.
+- `docs/README.md` nennt Ansprechpartnerverwaltung in der Roadmap als geplant, obwohl Kundenkontakte und mehrere Adressen seit Migration `0007` vorhanden sind. Eine weitergehende Kontakt-/CardDAV-Integration bleibt geplant.
+
+Diese Hinweise sind keine Erlaubnis, Dokumente oder Verträge nebenbei umzuschreiben. Bei einer betroffenen Aufgabe den Ist-Zustand prüfen und Abweichungen gezielt korrigieren oder im Abschlussbericht nennen.
+
+## 3. Technischer Stack und Repository-Aufbau
+
+### Verbindlicher Stack
+
+- PHP `^8.4`, Apache und SQLite.
+- Serverseitig gerenderte PHP-Templates in `app/templates`.
+- HTML, CSS und Vanilla JavaScript; kein Frontend-Buildsystem erforderlich.
+- Composer mit PSR-4-Autoloading für `App\` aus `app/src`.
+- `brick/math` ist die einzige fachliche Composer-Bibliothek und dient exakter Dezimalarithmetik.
+- Projekteigene PDF-Infrastruktur `App\Infrastructure\Pdf\SimplePdf`; **kein mPDF**.
+- Angebotsinhalte als JSON-Dateien, Metadaten und übrige Fachdatensätze in SQLite.
+- Docker/Compose als primärer Bereitstellungsweg.
+
+React, Vue, Svelte, Angular, zusätzliche UI-Frameworks, ORMs, Microservices oder neue PDF-Bibliotheken dürfen nur nach ausdrücklichem Auftrag eingeführt werden. Externe CDNs und Cloud-Abhängigkeiten sind mit dem Offline-Ziel unvereinbar.
+
+### Wichtige Pfade
+
+```text
+.
+├── app/
+│   ├── bin/console                 # migrate, user:create
+│   ├── config/                     # Laufzeitkonfiguration und Angebots-Schema
+│   ├── migrations/                 # additive, sortierte SQL-Migrationen
+│   ├── public/                     # Apache DocumentRoot, Front Controller, Assets
+│   ├── src/
+│   │   ├── Application/            # Anwendungsservices und Bootstrap
+│   │   ├── Domain/                 # Kalkulation, Validierung, Fachausnahmen
+│   │   ├── Http/                   # Router, Request/Response, Controller, Session
+│   │   ├── Infrastructure/         # SQLite, Repositories, JSON- und PDF-Speicher
+│   │   ├── Security/               # Rollen, Autorisierung, vertrauliche Daten
+│   │   ├── Support/                # Uhr, UUID und kleine Hilfen
+│   │   └── View/                   # Template-Rendering
+│   ├── templates/                  # Seiten und gemeinsames Layout
+│   └── tests/                      # eigener PHP-Testläufer, Unit/Integration/JS
+├── docs/                            # öffentliche und fachliche Dokumentation
+├── .github/workflows/quality.yml    # CI
+├── Dockerfile
+└── compose.yml
+```
+
+Laufzeitdaten liegen außerhalb des Anwendungscodes in den über `Config` konfigurierten Verzeichnissen:
+
+- `APP_DATABASE_PATH` – SQLite-Datei;
+- `APP_OFFERS_PATH` – Entwürfe, Snapshots und archivierte Angebots-PDFs;
+- `APP_DOCUMENTS_PATH` – Dokumentdaten;
+- `APP_TEMPLATES_PATH` – Vorlagendaten.
+
+In Docker sind diese Pfade Unterverzeichnisse von `/var/www/data` im Volume `calight-data`. Datenbanken, Angebote, Dokumente, Logs, `.env` und andere Laufzeitdateien dürfen nicht eingecheckt werden.
+
+### Laufzeitfluss
+
+1. `app/public/index.php` lädt Composer, `Bootstrap`, Session und Request.
+2. `Application\Bootstrap` verdrahtet PDO, Repositories, Services und Controller ohne Dependency-Injection-Framework.
+3. `Application` registriert Kernrouten und führt vor dem Router die zentrale `AuthorizationPolicy` aus.
+4. Controller übersetzen HTTP in Service-Aufrufe; Fachlogik gehört in Domain- oder Application-Klassen.
+5. Repositories kapseln vorbereitete SQL-Abfragen. Templates geben bereits vorbereitete Daten aus und escapen über `$escape`.
+
+Diese Schichtung SOLL beibehalten werden. Geschäftsregeln nicht in Templates oder parallel im JavaScript implementieren. Das Frontend darf Vorschauen und Interaktion anbieten; der Server bleibt maßgeblich für Validierung, Berechnung, Autorisierung und Persistenz.
+
+## 4. Fachliche Grundregeln
+
+### 4.1 IDs, Geschäftsnummern und Nummernkreise
+
+- Interne Beziehungen verwenden UUIDs. Sichtbare Geschäftsnummern sind davon strikt getrennt.
+- Nummernkreise liegen in `number_ranges`; vergebene Werte werden in `assigned_numbers` dauerhaft reserviert.
+- Vergabe erfolgt serverseitig und transaktionssicher über `NumberRangeRepository`/SQLite.
+- Vergebene Nummern dürfen nicht wiederverwendet werden. Lücken sind zulässig.
+- Manuelle Nummern müssen eindeutig sein und verändern den automatischen Zähler nicht.
+- Formate verwenden insbesondere `{K}`, `{JJJJ}`, `{JJ}`, `{MM}` und `{NR}`; Reset kann nie, jährlich oder monatlich erfolgen.
+- Eine Entwurfserstellung darf keine verbindliche Angebots- oder Nachtragsnummer verbrauchen.
+- Bestehende Kreise umfassen unter anderem Kunden, Projekte, Stammpositionen, Angebote, Aufträge und Nachträge. Nachträge verwenden den Kreis `change_order` mit Standardpräfix `NA`.
+- Rechnungsnummern werden nicht durch Calight vergeben. Externe Lexware-Referenzen sind fachlich davon getrennt.
+
+Keine zweite Nummernlogik in einem Controller oder Frontend anlegen.
+
+### 4.2 Dezimalwerte und Berechnung
+
+- Verbindliche Berechnungen verwenden `Brick\Math\BigDecimal`, niemals PHP-Floats.
+- `Domain\Calculation\Decimal` definiert: Kosten 4, Mengen 3, Zeiten 3, Prozente 2, Geld 2 Nachkommastellen.
+- Intern/API/JSON werden Dezimalstrings mit Punkt verwendet; die UI formatiert deutsch.
+- Kaufmännische Rundung erfolgt mit `RoundingMode::HalfUp` an den fachlich festgelegten Stellen.
+- Der `PriceCalculator` rundet den kalkulierten Einheitspreis auf zwei Stellen, dann den Positionsgesamtpreis. Einzelne Bausteine dürfen nicht vorzeitig gerundet werden.
+- Ein manueller Verkaufspreis ändert interne Kosten und Kalkulationsbausteine nicht.
+- Kalkulations- und Summenlogik aus `OfferCalculator`, `PriceCalculator` und `DocumentTaxCalculator` wiederverwenden. Keine zweite Berechnungsengine in PDF, Controller oder JavaScript schaffen.
+
+### 4.3 Stammdaten
+
+- Der Artikelstamm (`cost_items`) umfasst Material, Lohn, Fremdleistungen und sonstige Kosten.
+- Stammartikel enthalten Kosten-/Einkaufspreis, Zuschlag und daraus berechneten Verkaufspreis; Lieferant und Lieferantenartikelnummer sind optional.
+- Der Positionsstamm (`service_templates`) enthält wiederverwendbare Leistungspositionen mit beliebig vielen Kalkulationsbausteinen.
+- Kategorien sind hierarchisch; Zyklen und ungültige Referenzen müssen verhindert werden.
+- Lieferanten und Schlepptexte sind eigenständige Stammdaten.
+- `priceMode=master` bedeutet: Preis stammt aus Artikelstamm, wird aber nur durch eine ausdrücklich ausgelöste Aktualisierung übernommen.
+- `priceMode=manual` bedeutet eigener, vom Artikelstamm unabhängiger Kostenpreis/Aufschlag. Legacy `locked` wird als `manual` normalisiert.
+- Eine Stammdatenreferenz darf gespeicherte Dokumente niemals beim Öffnen unbemerkt verändern.
+- Vollständiger JSON-Austausch erfolgt je Bereich (`categories`, `suppliers`, `cost-items`, `trailing-texts`, `services`), transaktional und ohne implizites Löschen fehlender Datensätze. Reihenfolge bei Systemübertragung gemäß `docs/master-data-json.md` beachten.
+
+### 4.4 Kunden und Projekte
+
+- Kunden sind zentrale Geschäftspartner in SQLite. Automatische oder manuelle Kundennummern sind zulässig.
+- Privatpersonen und Unternehmen, Hauptdaten, Kontakte und mehrere Adressen werden unterstützt.
+- Referenzierte Kunden dürfen nicht physisch gelöscht werden; Archivierung erhält Beziehungen und Nummern.
+- Projekte gehören höchstens einem Kunden und sind eine **optionale** organisatorische Klammer.
+- Angebote und Aufträge dürfen ohne Projekt existieren; ein Kunde bleibt Pflicht.
+- Keine Dummy-Kunden oder Dummy-Projekte automatisch erzeugen.
+- Baustellenadresse und Ansprechpartner eines Projekts sind unabhängig von der Rechnungsadresse.
+- Bestehende projektfreie und ältere projektgebundene Datensätze müssen weiter lesbar bleiben.
+
+### 4.5 Angebote und Angebots-JSON
+
+- Angebotsmetadaten liegen in SQLite (`offers`), der vollständige Entwurf in `APP_OFFERS_PATH`.
+- `OfferJsonStore` schreibt `draft.json` atomar über eine temporäre Datei und Dateisperre.
+- Das aktuelle Dokumentformat trägt `schemaVersion: 1`. Neue kompatible Felder sind sorgfältig durch Validator, Normalizer, Speicherung, Import/Export, Berechnung, UI und Tests zu führen.
+- Titel können beliebig tief verschachtelt sein. Knoten sind Titel, Position oder Text.
+- Positionen unterstützen normal, Bedarf und Alternative. Ausgeschlossene Titel vererben ihre Ausschlusswirkung an Unterelemente.
+- Bedarf und Alternative werden angeboten und bepreist, zählen aber nicht zur regulären Angebots- und übergeordneten Normalsumme.
+- Berechnete Felder werden serverseitig erzeugt und nicht im kanonischen Entwurfs-/Export-JSON gespeichert.
+- Importierte Berechnungsergebnisse sind nicht vertrauenswürdig und werden verworfen; IDs und geschützte Dokumentidentität werden validiert.
+- Ein Schlepptext in einer Position ist ein unabhängiger Snapshot und wird nicht automatisch aus dem Stamm aktualisiert.
+- JSON-Import in einen bestehenden Entwurf benötigt Vorschau, Bestätigung und aktuellen ETag.
+- Kunden-PDF und interne Kalkulations-PDF sind getrennte Ausgaben. Vertrauliche Kosten dürfen nie in den normalen Angebotsdruck gelangen.
+
+### 4.6 Prüfung, Abgabe, Status und Unveränderlichkeit
+
+- Entwürfe haben Status `draft` und zunächst keine Geschäftsnummer.
+- Bei erster verbindlicher Abgabe führt `OfferSubmissionValidator` die zentrale Prüfung aus. Blockierende Fehler und ausdrücklich zu bestätigende Warnungen bleiben getrennt.
+- Der Abschluss vergibt die Nummer, erzeugt `snapshot.json` und `submitted.pdf`, speichert SHA-256-Prüfsummen und markiert Dateien schreibgeschützt.
+- Abgegebene Stände dürfen inhaltlich **niemals** verändert, neu berechnet oder aus aktuellen Stammdaten/PDF-Einstellungen nachgeneriert werden.
+- Das archivierte Kunden-PDF ist der verbindliche Originaldruck. Eine interne Kalkulations-PDF darf es nicht ersetzen.
+- Statuswerte sind `draft`, `submitted` (Abgegeben), `commissioned` (Angenommen) und `rejected` (Abgelehnt).
+- Inhaltsänderungen sind nur am Entwurf zulässig. Geschäftsstatuswechsel verändern weder Snapshot noch PDF.
+- Die API muss Schreibschutz, Prüfung und Konfliktschutz ebenso durchsetzen wie die UI.
+
+### 4.7 Revisionen
+
+- Eine neue Revision entsteht aus einem bereits abgegebenen Stand, bleibt unter derselben Angebotsnummer und erhält eine fortlaufende `revision_number`.
+- Revision 0 wird in der Oberfläche nicht ausdrücklich als „Revision 0“ bezeichnet.
+- Jede abgegebene Revision besitzt eigene unveränderliche Snapshot- und PDF-Dateien.
+- Pro Revisionskette darf höchstens ein Entwurf offen und höchstens eine Revision angenommen sein; partielle eindeutige SQLite-Indizes sichern dies zusätzlich.
+- `revision_root_id` und `previous_revision_id` bilden die Historie. Vorherige Revisionen nicht überschreiben.
+- Kopieren erzeugt einen neuen unabhängigen Entwurf ohne Geschäftsnummer, keine heimliche Revision.
+
+### 4.8 Aufträge
+
+- Ein Angebotsauftrag kann nur aus einer angenommenen normalen Angebotsrevision entstehen. Dieselbe Revision darf nicht doppelt beauftragt werden.
+- Die Auftragsgrundlage wird als unveränderliches `basis_json` mit SHA-256-Prüfsumme gespeichert. Angebots-, Stamm- oder Kundendatenänderungen dürfen sie nicht verändern.
+- Direkte Regieaufträge benötigen einen Kunden, aber weder Angebot noch Projekt. Für sie keine fiktive ursprüngliche Auftragssumme erzeugen.
+- Auftragsstatus folgen ausschließlich `open → in_progress → completed → invoiced` (Offen → In Bearbeitung → Abgeschlossen → Abgerechnet).
+- Statuswechsel werden transaktional in `order_status_history` protokolliert.
+- Auftragsbezeichnung und optionale Beschreibung dürfen separat bearbeitet werden; Nummer, Herkunft und Snapshots bleiben unverändert.
+- `invoiced` bedeutet nachgehaltenen Geschäftsstatus, nicht eigene Rechnungsstellung durch Calight.
+
+### 4.9 Nachträge
+
+- Nachträge sind `offers` mit `document_type=change_order` und gehören zu genau einem Auftrag.
+- Sie verwenden den vorhandenen Angebotseditor, dieselbe Kalkulation, Abgabeprüfung, Revisionen und PDF-Infrastruktur.
+- Nachträge erhalten erst bei Abgabe eine eigene Nummer aus dem Nummernkreis `change_order`/`NA`.
+- Ein Nachtrag wird nur über den zugehörigen Auftrag angenommen. Allgemeine Angebots-Statusaktionen dürfen diese Regel nicht umgehen.
+- Erst der angenommene Nachtrag wird als unveränderliche zusätzliche Auftragsgrundlage in `order_addenda` übernommen.
+- `offer_revision_id` und `revision_root_id` sind eindeutig; doppelte Übernahme ist verboten.
+- Der ursprüngliche Auftragssnapshot bleibt unverändert. Ursprüngliche Summe, angenommene Nachträge und aktuelle Gesamtauftragssumme bleiben getrennt.
+- Offene oder abgelehnte Nachträge zählen nicht zur Auftragssumme.
+
+### 4.10 Benutzer, Mitarbeiter und vertrauliche Kosten
+
+- Benutzerkonten authentifizieren Personen. Mitarbeiter bilden interne Arbeitskräfte für Zeit- und Kostenbuchungen ab. Es sind bewusst verschiedene Konzepte.
+- Ein Mitarbeiter kann optional genau einem Benutzer zugeordnet sein. Mitarbeiter ohne Login und Benutzer ohne Mitarbeiterdatensatz sind zulässig.
+- Mitarbeiter besitzen Anzeigename, optionale Personalnummer, internen Stundenkostensatz und Aktivstatus.
+- Der interne Stundenkostensatz ist tatsächlicher kalkulatorischer Personalaufwand, kein Verkaufssatz und keine Angebots-Lohnkostengruppe.
+- Beim Zeitbucheintrag werden Kostensatz und Lohnkosten als historischer Snapshot gespeichert. Spätere Mitarbeiteränderungen dürfen alte Buchungen nicht verändern.
+- Deaktivierung erhält historische Beziehungen.
+
+### 4.11 Bautagesberichte und Zeiterfassung
+
+- Bautagesberichte gehören immer zu einem Auftrag und dokumentieren die tatsächliche Ausführung. Mehrere Berichte pro Auftrag und Tag sind zulässig.
+- Ein Bericht enthält Datum, optionale Bezeichnung, Tätigkeit, Bemerkungen und mehrere Zeiteinträge.
+- Zeiteinträge enthalten Mitarbeiter, Arbeitsdatum, Dauer, optionale Tätigkeit und optional ein stabiles Ziel in der Auftragsgrundlage.
+- Zuordnung erfolgt anhand interner IDs als Auftrag, Titel oder Position; niemals anhand sichtbarer Nummern oder Texte.
+- Ziele können aus ursprünglicher Auftragsgrundlage oder angenommenem Nachtrag stammen. Direkte Regieaufträge ohne Struktur bleiben auf Auftragsebene.
+- Dauer × Kostensatz-Snapshot ergibt die Ist-Lohnkosten mit exakter Dezimalarithmetik.
+- Kostenfelder werden nur mit `costs.read` ausgeliefert/angezeigt.
+- Techniker sehen nur freigegebene Aufträge (derzeit nicht Status `open`), buchen nur eigene Zeiten und bearbeiten nur eigene Berichte.
+- Berichte verwenden ihre eigene Versionsnummer für konkurrierende Änderungen. Sie benötigen bewusst keine globale Auftragssperre.
+
+### 4.12 Fachliche Abgrenzung späterer Module
+
+Folgende Punkte sind Zielbild, soweit nicht durch aktuelle Migrationen/Code implementiert:
+
+- **Bautagesbericht:** interne Tagesdokumentation und Ist-Erfassung; kein abrechenbarer Leistungsnachweis.
+- **Aufmaß:** späterer Nachweis ausgeführter Mengen vereinbarter Angebotsleistungen; keine Rechnung und kein Materialverbrauch.
+- **Rapport:** späterer Nachweis abrechenbarer Regieleistungen; nicht automatisch identisch mit internen Zeiten.
+- **Nachkalkulation:** späterer Soll-Ist-Vergleich aus unveränderlichen Grundlagen, Ist-Kosten und separat erfasster Erlösseite.
+- **Abrechnungstracking:** später nur Referenzen auf extern erstellte Rechnungen und Status. Keine Faktura oder Zahlungsbuchhaltung.
+- Bestellungen, Fotos, Materialverbrauch, CardDAV und mobile Monteuransicht sind noch keine allgemein implementierten Prozesse, solange Code und Migrationen nichts anderes zeigen.
+
+**Ein Bautagesbericht ist kein Rapport. Ein Aufmaß ist keine Rechnung. Calight ersetzt keine Rechnungsstellung.** Künftige Module dürfen diese Datenarten nicht aus Bequemlichkeit vermischen.
+
+## 5. Sicherheit, Rechte und Konkurrenzschutz
+
+### Rollen und Berechtigungen
+
+`Security\RolePermissions` definiert feste Gruppen:
+
+- `admin`: alle Rechte (`*`);
+- `office`: Kunden, Projekte, Angebote, Aufträge, Stammdaten, Kosten, Einstellungen, Mitarbeiter und Berichte gemäß Matrix;
+- `technician`: Dashboard, freigegebene Aufträge und Berichte; keine vertraulichen Kosten.
+
+Die historische Rolle `employee` wird nur für bereits bestehende PHP-Sessions als Vollzugriff toleriert; Datenbankrollen sind `admin`, `office`, `technician`. Migration `0020` hat bestehende Benutzer zu Administratoren übernommen, um Rechteverlust zu verhindern.
+
+Verbindliche Regeln:
+
+- `AuthorizationPolicy` ist die zentrale HTTP-Rechtematrix. Neue Routen MÜSSEN dort passend eingeordnet werden.
+- Servicebezogene Zusatzregeln, etwa „Techniker nur eigene Berichte“, bleiben serverseitig im zuständigen Service.
+- UI-Ausblendung ist Komfort, niemals Sicherheitsgrenze.
+- Fehlende Rechte liefern für APIs HTTP 403 mit „Keine Berechtigung“.
+- `ConfidentialDataFilter` und gezielte Response-Filter schützen Kosten, Deckungsbeiträge und Kalkulationsdetails. Neue Listen-/Export-APIs müssen auf Datenlecks geprüft werden.
+- Keine parallele improvisierte Rollenmatrix in Controller oder JavaScript anlegen.
+
+### Authentifizierung und Konten
+
+- Bestehende Session-Authentifizierung weiterverwenden, keine zweite Authentifizierung einführen.
+- Nur aktive Benutzer können angemeldet bleiben; `Application::handle` aktualisiert Sitzungsrolle/-name aus der Datenbank.
+- Login regeneriert die Session-ID. Cookies sind `HttpOnly`, `SameSite=Lax` und bei `APP_SECURE_COOKIES=1` sicher.
+- Passwörter werden mit PHP `password_hash`/`password_verify` verwaltet; CLI-Mindestlänge ist acht Zeichen.
+- Das letzte aktive Administratorkonto darf nicht deaktiviert oder herabgestuft werden.
+- Zugangsdaten, Hashes und Sessions dürfen weder geloggt noch exportiert werden.
+
+### CSRF, Validierung und SQL
+
+- Jede zustandsändernde Browser-/API-Anfrage benötigt den bestehenden CSRF-Schutz. JSON-APIs verwenden üblicherweise `X-CSRF-Token`.
+- Eingaben serverseitig validieren; `required`, Clientprüfungen und Modale verbessern nur die Bedienung.
+- SQL-Werte über vorbereitete PDO-Abfragen binden. Keine Nutzereingaben in SQL konkatenieren.
+- HTML über `$escape` ausgeben. Nur bewusst erzeugtes, geprüftes Markup darf ungeescaped sein.
+- API-Fehlercodes unterscheiden: 401 Anmeldung, 403 Rechte, 409 Fach-/Versionskonflikt, 419 CSRF, 422 Validierung, 423 Sperre, 428 fehlende Vorbedingung, soweit bestehender Vertrag.
+
+### Bearbeitungssperren und ETags
+
+- Angebotsentwürfe verwenden eine kurzlebige serverseitige Bearbeitungssperre (`document_locks`, derzeit 120 Sekunden).
+- Nur der Eigentümer mit gültigem Lock-Token darf schreiben; aktive Bearbeitung verlängert die Sperre. Abgelaufene Sperren dürfen nicht dauerhaft blockieren.
+- Nur Administratoren dürfen eine fremde Sperre bewusst übernehmen. Die eigene Sperre ist kein Übernahmefall.
+- Sperren gelten pro Dokument, niemals pauschal für den gesamten Auftrag.
+- ETag/`If-Match`, Datenbankversion und Dateisperre bleiben zusätzlicher Optimistic-Locking-Schutz. Eine Bearbeitungssperre ersetzt ETags nicht.
+- Bautagesberichte verwenden Versionsprüfung, damit mehrere Benutzer verschiedene Berichte desselben Auftrags parallel bearbeiten können.
+
+## 6. Datenbank, Dateien und Migrationen
+
+- SQLite-Verbindungen aktivieren Fremdschlüssel, `busy_timeout=5000` und WAL-Modus.
+- Migrationen sind lexikografisch sortierte, versionierte SQL-Dateien in `app/migrations`; `schema_migrations` protokolliert jede Anwendung.
+- Neue Schemaänderungen ausschließlich als nächste additive Migration anlegen. Bereits veröffentlichte Migrationen nicht nachträglich verändern.
+- Migrationen müssen in einer Transaktion laufen, vorhandene Daten übernehmen und Fremdschlüssel/Indizes/Checks bewusst behandeln.
+- Für komplexe Tabellenneubauten unter SQLite bestehende Beziehungen, Self-References und `PRAGMA defer_foreign_keys` prüfen; Migration `0018` ist ein relevantes Beispiel.
+- Keine produktive Datenbank löschen, zurücksetzen, leeren oder als Experiment migrieren.
+- Migrationen niemals eigenständig gegen eine produktive Installation ausführen. Nur den erforderlichen Befehl dokumentieren.
+- Tests dürfen ausschließlich temporäre isolierte SQLite-Dateien und temporäre Angebotsverzeichnisse verwenden.
+- Entwürfe, Snapshots und PDFs nicht durch Reparaturskripte stillschweigend verändern.
+- Atomare Dateischreibweise, Prüfsummen und Transaktionsgrenzen bei kombinierten Datei-/DB-Vorgängen erhalten. Fehlschläge müssen aufräumen oder zurückrollen.
+- Löschregeln bewusst wählen: Geschäfts- und Archivdaten meist `RESTRICT`; abhängige reine Bearbeitungsdaten nur bei fachlich sicherem Besitz `CASCADE`.
+
+Vor jeder Migration sind Upgrade-Pfad, Datenübernahme, Downtime/Locking, eindeutige Indizes und Verhalten alter Datensätze zu prüfen.
+
+## 7. Frontend- und UI-Konventionen
+
+### Gemeinsame Bausteine
+
+- `app/templates/layout/app.php`: Topbar, berechtigungsabhängige Sidebar, Flashmeldungen, globale Assets.
+- `app/public/assets/app.css`: zentrale Variablen, Buttons, Karten, Tabellen, Formulare, Breadcrumbs, Badges, responsive Regeln.
+- `app/public/assets/calight.js`: gemeinsame Fetch-/Form-/Format-Hilfen; vor neuer Logik prüfen.
+- `app/public/assets/modal.js`: globales natives `<dialog>` mit Fokusmanagement, Tastaturbedienung, Validierung und Dirty-Guard.
+- `app/public/assets/list-view.js`: persistenter Karten-/Tabellenumschalter und zugängliche Zeilen-/Kartennavigation.
+- `app/public/assets/ui.js`: Lucide-Icon-Dekoration, Aktionsmenüs, globale Löschbestätigung und `Strg/Cmd+S`.
+- Lokale Lucide-SVGs liegen in `app/public/assets/icons/lucide`; keine CDN-Icons.
+
+Vor einer neuen UI-Komponente vorhandene Helfer und CSS-Klassen durchsuchen und wiederverwenden.
+
+### Übersichts- und Detailseiten
+
+Der aktuelle Standard aus Phase 3.2.1.2 gilt für Kunden, Projekte, Angebote, Aufträge und Bautagesberichte:
+
+- Übersichten nutzen die volle Inhaltsbreite für Suche, Filter, Sortierung und Ergebnisse.
+- Kein dauerhaft sichtbares großes Erstellungs-/Bearbeitungsformular neben der Liste.
+- Einheitlicher Seitenkopf mit Beschreibung und primärer „Neu“-Aktion.
+- Kompakte Neuanlage im globalen Dialog; komplexe Bearbeitung auf eigener Detailseite.
+- Tabellenansicht ist Desktop-Standard, Kartenansicht Mobil-Standard; bewusste Auswahl wird pro Benutzer/Modul in `localStorage` gespeichert.
+- Karten und Tabellenzeilen dürfen den Datensatz öffnen. Redundante „Öffnen/Ansehen“-Aktionen vermeiden.
+- Aktionen innerhalb klickbarer Zeilen müssen die Zeilennavigation stoppen.
+- Bei vielen Nebenaktionen ein bestehendes Drei-Punkte-/Kontextmenü verwenden.
+- Breadcrumbs sind echte Links; letzter Eintrag ist die aktuelle Seite.
+- Leere, Lade-, Fehler-, Erfolg- und deaktivierte Zustände müssen verständlich sein.
+
+### Buttons, Icons und Status
+
+- Primäre Aktionen: `.button` (blau). Sekundäre Aktionen: `.button-light`/`.table-action`.
+- Destruktive Aktionen: weiß/rot umrandet (`.button-danger-light`, `.danger-text`, `.icon-button-danger`), **niemals dunkelblauer Hintergrund**.
+- Reine Kopier- und Löschaktionen dürfen kompakte Icon-Buttons ohne Text verwenden, benötigen aber `aria-label` und `title`.
+- „Bearbeiten“ verwendet das lokale Lucide-Icon `square-pen`.
+- Gleiche Aktion erhält überall dasselbe Icon und dieselbe deutsche Beschriftung.
+- Status mit `.status-badge` und vorhandenen Statusklassen darstellen; fachliche Statuswerte nicht nur für Farben umbenennen.
+- Buttons einer Zeile/Karte rechts ausrichten, wenn das gemeinsame Layout dies vorsieht.
+- Alle Lösch-/Entfernen-Aktionen müssen über `CalightModal.confirm` beziehungsweise den globalen Interceptor bestätigt werden. Kein natives `confirm()`/`alert()` einführen.
+
+### Formulare und Zugänglichkeit
+
+- Labels, Pflichtstern und Eingaben so ausrichten, dass Felder derselben Zeile gleich hoch starten.
+- Zusammengehörige Felder semantisch gruppieren; lange Formulare gehören auf Detailseiten, nicht in überladene Modale.
+- Native Elemente und sichtbare Fokuszustände beibehalten. Icon-only-Buttons brauchen zugängliche Namen.
+- Escape, Fokus-Rückgabe, Fokusfalle und Schutz ungespeicherter Dialogwerte über das globale Modal lösen.
+- `Strg+S`/`Cmd+S` über vorhandene globale Logik integrieren, nicht pro Seite neu erfinden.
+- Das wiederverwendbare Schrittdesign verwendet `.step-section-heading`, `.step-section-number` und `.step-section-actions`.
+- Responsive Verhalten ohne globales horizontales Seiten-Overflow; Tabellen dürfen in ihrem eigenen Wrapper horizontal scrollen.
+- Keine unnötigen Inline-Styles, duplizierten CSS-Blöcke oder seitenindividuellen Varianten bei vorhandener gemeinsamer Lösung.
+
+### Angebotseditor
+
+- Bestehenden Editor und seine Zustandsverwaltung erweitern, keinen zweiten Editor bauen.
+- Verschachtelung, Drag-and-drop, Mehrfachaufklappen, Suche, Undo/Redo, Dirty-State, Lock und Read-only-Modus erhalten.
+- Reine UI-Zustände wie Aufklappen und Filtern gehören nicht in Angebots-JSON oder Undo-History.
+- Snapshot-basierte Undo/Redo-History bleibt browserlokal und ist kein Auditlog.
+- Abgegebene/angenommene/abgelehnte Dokumente sauber read-only rendern; keine verbliebenen Event-Handler dürfen lokale Inhaltsänderungen verursachen.
+- Serverberechnung bleibt autoritativ; asynchrone Antworten dürfen neueren oder wiederhergestellten Zustand nicht überschreiben.
+
+## 8. Coding- und Architekturregeln
+
+### Verbindlich für neuen oder geänderten Code
+
+- `declare(strict_types=1);` in PHP-Dateien beibehalten.
+- Verständliche Klassen-, Methoden- und Variablennamen verwenden.
+- PHP möglichst PSR-12-konform und JavaScript/CSS konsistent formatieren.
+- Keine minifizierten, extrem langen oder dicht aneinandergeketteten neuen Quellcodezeilen.
+- Kleine, klar abgegrenzte Funktionen; Kommentare erklären fachliche Gründe und Sicherheitsgrenzen, nicht triviale Syntax.
+- Bestehende Services, Repositories, Controller, Domain-Logik und UI-Helfer wiederverwenden.
+- Fachlogik nur einmal implementieren. PDF, Listenansicht und Frontend konsumieren Ergebnisse, berechnen sie nicht unabhängig neu.
+- Keine unnötigen globalen Zustände. Bestehende globale Browser-Helfer (`CalightModal`, `CalightListView`) nur gezielt erweitern.
+- Exceptions und HTTP-Antworten müssen verständliche deutsche Meldungen liefern, ohne interne Pfade oder Geheimnisse preiszugeben.
+- Öffentliche Verträge (JSON, APIs, gespeicherte Dokumente) kompatibel erweitern oder eine ausdrücklich geplante Migration vorsehen.
+
+Im Bestand existieren einige sehr kompakte Einzeiler, besonders in jüngeren PHP-/JavaScript-Dateien. Das ist technischer Bestand, **kein Stilvorbild**. Bei gezielten Änderungen darf der unmittelbar betroffene Bereich lesbarer formatiert werden; keine globale Formatierungs- oder Refactoring-Aktion ohne Auftrag.
+
+### Änderungsscope
+
+- Nur den für die Aufgabe erforderlichen Bereich verändern.
+- Keine „bei Gelegenheit“-Umbauten oder neue allgemeine Engines ohne nachgewiesenen Nutzen.
+- Große Klassen nur gezielt refaktorieren, wenn die konkrete Aufgabe dadurch sicherer oder deutlich wartbarer wird.
+- Keine grundlegende Architekturentscheidung eigenmächtig ändern.
+- Bei unklarer Fachentscheidung zuerst Code, Tests, Git-Historie und Dokumentation prüfen; verbleibende Entscheidung offen benennen.
+
+## 9. Tests und Qualitätssicherung
+
+### Vorhandene Struktur
+
+- `app/tests/run.php` ist ein projektspezifischer Testläufer, kein PHPUnit.
+- `app/tests/Unit` prüft Kalkulation, Validierung, Normalisierung, Sicherheit und PDF-Bausteine.
+- `app/tests/Integration` prüft Migrationen, Persistenz, Stammdaten, Kunden/Projekte, Angebotsabgabe/-revision, Aufträge, Nachträge, Rechte/Sperren und Bautagesberichte.
+- `app/tests/js` enthält Node-basierte JavaScript-Tests.
+- Composer-Script `test` ruft `php tests/run.php` auf.
+- GitHub Actions installiert Abhängigkeiten, validiert Composer, prüft PHP-Syntax, führt PHP-Tests und JS-Syntax aus, validiert Compose und baut das Image.
+
+### Verbindliche Agentenregel
+
+**Entwicklungsagenten dürfen PHP-Unit- und PHP-Integrationstests in diesem Projekt nicht eigenständig ausführen.** Das gilt auch für `composer test`, `php app/tests/run.php` und indirekte Befehle, die diesen Läufer starten. Der Projektinhaber führt sie in seiner Entwicklungsumgebung aus.
+
+Agenten SOLLEN relevante PHP-Tests erstellen oder aktualisieren, sofern eine Fachänderung dies erfordert, aber sie als **nicht ausgeführt** melden.
+
+Zulässig, sofern Werkzeuge vorhanden und die Aufgabe nichts anderes sagt:
+
+```bash
+find app/public/assets -name '*.js' -print0 | xargs -0 -n1 node --check
+node --test app/tests/js/*.test.js
+composer validate --strict --working-dir=app
+docker compose config --quiet
+git diff --check
+```
+
+Eine PHP-Syntaxprüfung mit `php -l` ist eine statische Prüfung, kein PHP-Test, und darf grundsätzlich ausgeführt werden. Bei einer reinen Dokumentationsaufgabe ist sie unnötig.
+
+Keine erfolgreichen Browser-, PHP-, Docker- oder Datenbankprüfungen behaupten, wenn sie nicht tatsächlich liefen. Nicht verfügbare Werkzeuge, ausgelassene PHP-Tests und noch manuell zu prüfende Abläufe im Abschlussbericht nennen.
+
+### Testdaten
+
+- Tests müssen temporäre Verzeichnisse und isolierte SQLite-Datenbanken erzeugen und zuverlässig aufräumen.
+- Niemals `database/app.sqlite`, Docker-Volumes oder konfigurierte Produktionspfade für Tests verwenden.
+- Kritische Regeln serverseitig testen: Rechte, CSRF/Lock-Voraussetzungen, ETags/Versionen, Transaktionen, Unveränderlichkeit, Rundung und vertrauliche Daten.
+
+## 10. Git und Arbeitsablauf
+
+### Vor Beginn
+
+1. `git status --short` prüfen.
+2. Aktuellen Branch und relevante Historie prüfen.
+3. Uncommittete Änderungen als Eigentum des Benutzers behandeln.
+4. Betroffene Dokumentation, Codepfade, Migrationen und Tests lesen.
+
+### Während der Arbeit
+
+- Fremde Änderungen nicht überschreiben oder „aufräumen“.
+- Keine destruktiven Befehle wie `git reset --hard`, `git clean -fd` oder unaufgefordertes Checkout/Restore.
+- Keine produktiven Daten, Volumes, `.env` oder Zugangsdaten verändern.
+- Änderungen in nachvollziehbaren Schritten implementieren und fokussierte Diffs prüfen.
+- Bei einem unerwartet schmutzigen oder überlappenden Bereich stoppen und den Konflikt melden, statt zu raten.
+
+### Abschluss
+
+- `git diff` und `git diff --check` prüfen.
+- Zulässige Prüfungen ausführen; PHP-Tests ausdrücklich dem Besitzer überlassen.
+- Kleine, logisch abgegrenzte lokale Commits bevorzugen.
+- Nur committen, wenn der Auftrag dies verlangt oder die laufende Aufgabenvereinbarung es ausdrücklich vorsieht.
+- **Niemals eigenständig pushen.** Ein Push ist nur nach ausdrücklicher aktueller Anweisung zulässig.
+- Abschlussbericht nennt Änderungen, Prüfungen, ausgelassene Prüfungen, Migrationen, manuelle Checks, Commit-Hash und verbleibenden Git-Status.
+
+Empfohlener Ablauf größerer Aufgaben:
+
+1. Ist-Zustand und Datenverträge analysieren.
+2. Fachliche Anforderungen und Sicherheitsgrenzen klären.
+3. Wiederverwendbare Komponenten identifizieren.
+4. Datenmodelländerungen zuerst migrationssicher planen.
+5. Backendregeln und danach UI implementieren.
+6. Relevante Tests ergänzen, aber PHP-Tests nicht ausführen.
+7. Zulässige statische/JS-Prüfungen durchführen.
+8. Diffs, Datenlecks, Rechte und Kompatibilität kontrollieren.
+9. Lokal committen, falls beauftragt.
+10. Ehrlich und knapp berichten.
+
+## 11. Zusammenarbeit verschiedener Entwicklungsagenten
+
+- Das Repository ist die gemeinsame technische Wissensgrundlage. Keine Kenntnis früherer Chats voraussetzen.
+- Vorhandene Entscheidungen und Komponenten zuerst verstehen; nicht bei jedem Agentenwechsel neu entwerfen.
+- Widersprüche zwischen Code, Tests und Dokumentation offen benennen.
+- Keine parallelen Projektregeln, Rechte- oder Berechnungsmodelle einführen.
+- Git-Historie und uncommittierte Änderungen respektieren.
+- Bei Arbeitsteilung Zuständigkeiten und Dateibereiche klar trennen. Jeder Agent prüft dennoch die für seine Änderung geltenden Regeln selbst.
+- Übergaben müssen konkrete geänderte Pfade, nicht ausgeführte Prüfungen und offene Risiken nennen.
+- Autonomie ist erwünscht, solange fachliche Integrität, Sicherheit, Kompatibilität und der vereinbarte Scope eingehalten werden.
+
+## 12. Typische Fehler, die zu vermeiden sind
+
+- Dokumentations-Roadmap als aktuellen Implementierungsstand behandeln, ohne Code/Migrationen zu prüfen.
+- `projectId` wieder verpflichtend machen oder Dummy-Projekte anlegen.
+- Angebotsnummer beim Entwurf verbrauchen.
+- Abgegebene Snapshots/PDFs neu berechnen oder überschreiben.
+- Stammdatenpreise beim Öffnen automatisch in Dokumente übernehmen.
+- Floats für Geld, Mengen, Zuschläge oder Stundenkosten verwenden.
+- Bedarf/Alternative in reguläre Summen einrechnen.
+- Nachtrag wie eine normale Revision behandeln oder doppelt in den Auftrag übernehmen.
+- Auftragsgrundlage statt einer separaten Nachtragsgrundlage verändern.
+- Bautagesbericht, Rapport, Aufmaß und Rechnung vermischen.
+- Vertrauliche Kosten nur im Frontend verstecken, aber in API/Export ausliefern.
+- Neue Route ohne `AuthorizationPolicy`, CSRF, Validierung oder Konfliktschutz ergänzen.
+- Lock als Ersatz für ETag verwenden oder einen ganzen Auftrag wegen eines einzelnen Dokuments sperren.
+- Eigenen Modal-, Bestätigungs-, Listenansichts- oder Icon-Mechanismus parallel zu den globalen Helfern bauen.
+- Native `alert()`/`confirm()` verwenden.
+- Rote Löschaktion auf dunkelblauem Primärbutton darstellen.
+- Große Formulare dauerhaft auf Übersichtsseiten anzeigen.
+- Externe Laufzeitassets/CDNs oder unnötige Abhängigkeiten einführen.
+- Produktionsmigrationen oder PHP-Tests eigenständig ausführen.
+- Testresultate, Browserprüfung oder visuelle Qualität behaupten, ohne sie geprüft zu haben.
+
+## 13. Pflege dieser Datei
+
+Diese Datei enthält dauerhafte Grundsätze, keine detaillierte Feature-Chronik. Bei Architektur- oder Prozessänderungen muss sie zusammen mit den betroffenen Fach- und Installationsdokumenten aktualisiert werden. Neue Regeln sollen:
+
+- auf aktuellem Code oder einer ausdrücklichen fachlichen Entscheidung beruhen;
+- Ist-Zustand und Planung klar trennen;
+- konkrete Pfade oder Komponenten nennen, wenn dies die Regel prüfbar macht;
+- bestehende Abschnitte präzisieren statt widersprüchliche Duplikate anzuhängen.
+
+Ausführliche Installationsbefehle bleiben in `docs/README.md`, Phasenplanung in `docs/ROADMAP.md` und formatspezifische Details in den jeweiligen Dokumenten unter `docs/`.
