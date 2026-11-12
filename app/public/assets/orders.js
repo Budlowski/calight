@@ -4,27 +4,17 @@
   const root = document.querySelector("#orders-page");
   if (!root) return;
 
-  const { esc, api, format, collator, normalize, matches, notify } = Calight;
-  const results = root.querySelector("[data-list]");
-  const search = root.querySelector("[data-search]");
-  const status = root.querySelector("[data-status]");
-  const type = root.querySelector("[data-type]");
-  const sort = root.querySelector("[data-sort]");
-  const count = root.querySelector("[data-count]");
-  const reset = root.querySelector("[data-reset]");
-  const message = root.querySelector("[data-message]");
+  const { esc, api, format } = Calight;
   const labels = { open: "Offen", in_progress: "In Bearbeitung", completed: "Abgeschlossen", invoiced: "Abgerechnet" };
-
-  let orders = [];
-  let visible = [];
 
   const href = (order) => `/orders/${encodeURIComponent(order.id)}`;
   const badge = (order) => `<span class="status-badge status-${esc(order.status)}">${esc(labels[order.status] || order.status)}</span>`;
+  const total = (order) => (order.contractNetTotal === null ? "–" : format.money(order.contractNetTotal));
   const source = (order) => order.orderType === "offer"
     ? `Angebot ${order.sourceOfferNumber || "ohne Nummer"}${Number(order.sourceRevision) > 0 ? ` · Revision ${Number(order.sourceRevision)}` : ""}`
     : "Regieauftrag";
 
-  const card = (order) => `
+  const renderCard = (order) => `
     <article class="overview-card" tabindex="0" data-href="${href(order)}">
       <div class="management-card-head"><span class="service-number">${esc(order.orderNumber)}</span>${badge(order)}</div>
       <div class="overview-card-title" title="${esc(order.title)}">${esc(order.title)}</div>
@@ -33,57 +23,55 @@
         <span>${esc(order.projectName || "Ohne Projekt")}</span>
         <span>${esc(source(order))}</span>
         <span>${format.date(order.orderDate)}</span>
+        ${order.contractNetTotal !== null ? `<span>${total(order)} netto</span>` : ""}
       </div>
     </article>`;
 
-  const table = () => `
-    <div class="overview-table-wrap"><table class="overview-table">
-      <thead><tr><th>Auftragsnummer</th><th>Bezeichnung</th><th>Kunde</th><th>Projekt</th><th>Auftragsart</th><th>Status</th><th>Auftragsdatum</th></tr></thead>
-      <tbody>${visible.map((order) => `
-        <tr tabindex="0" data-href="${href(order)}">
-          <td class="cell-number">${esc(order.orderNumber)}</td>
-          <td class="cell-title" title="${esc(order.title)}">${esc(order.title)}</td>
-          <td>${esc(order.customerName)}</td>
-          <td>${esc(order.projectName || "Ohne Projekt")}</td>
-          <td>${esc(source(order))}</td>
-          <td>${badge(order)}</td>
-          <td class="cell-date">${format.date(order.orderDate)}</td>
-        </tr>`).join("")}</tbody>
-    </table></div>`;
+  const renderTable = (orders, header) => `
+    <thead><tr>
+      ${header("number", "Auftragsnummer", "cell-number")}${header("title", "Bezeichnung")}${header("customer", "Kunde")}
+      <th>Projekt</th><th>Auftragsart</th>${header("status", "Status", "cell-status")}${header("date", "Auftragsdatum", "cell-date")}
+      ${header("total", "Auftragssumme", "cell-money")}
+    </tr></thead>
+    <tbody>${orders.map((order) => `
+      <tr tabindex="0" data-href="${href(order)}">
+        <td class="cell-number">${esc(order.orderNumber)}</td>
+        <td class="cell-title" title="${esc(order.title)}">${esc(order.title)}</td>
+        <td class="cell-text" title="${esc(order.customerName)}">${esc(order.customerName)}</td>
+        <td class="cell-text" title="${esc(order.projectName || "")}">${esc(order.projectName || "Ohne Projekt")}</td>
+        <td class="cell-text">${esc(source(order))}</td>
+        <td class="cell-status">${badge(order)}</td>
+        <td class="cell-date">${format.date(order.orderDate)}</td>
+        <td class="cell-money">${total(order)}</td>
+      </tr>`).join("")}</tbody>`;
 
-  function paint(view) {
-    if (!visible.length) {
-      results.innerHTML = '<p class="overview-empty">Keine Aufträge entsprechen der aktuellen Auswahl.</p>';
-      return;
-    }
-    results.innerHTML = view === "cards" ? `<div class="overview-card-grid">${visible.map(card).join("")}</div>` : table();
-  }
-
-  const view = CalightListView.create({ root, module: "orders", render: paint });
-  CalightListView.enableRowNavigation(results);
-
-  function render() {
-    const query = normalize(search.value.trim());
-    visible = orders
-      .filter((order) => (!status.value || order.status === status.value)
-        && (!type.value || order.orderType === type.value)
-        && matches(query, order.orderNumber, order.title, order.customerName, order.customerNumber,
-          order.projectName, order.projectNumber, order.sourceOfferNumber))
-      .sort((a, b) => {
-        if (sort.value === "number") return collator.compare(a.orderNumber, b.orderNumber);
-        if (sort.value === "title") return collator.compare(a.title, b.title);
-        return String(b.updatedAt).localeCompare(String(a.updatedAt));
-      });
-    count.textContent = `${visible.length} von ${orders.length}`;
-    reset.disabled = !query && !status.value && !type.value && sort.value === "updated";
-    view.render();
-  }
-
-  async function load() {
-    results.innerHTML = '<p class="overview-empty">Aufträge werden geladen …</p>';
-    orders = (await api("/api/orders")).orders;
-    render();
-  }
+  const list = CalightListView.createListPage({
+    root,
+    module: "orders",
+    endpoint: "/api/orders",
+    results: root.querySelector("[data-list]"),
+    search: root.querySelector("[data-search]"),
+    filters: { status: root.querySelector("[data-status]"), type: root.querySelector("[data-type]") },
+    sortSelect: root.querySelector("[data-sort]"),
+    count: root.querySelector("[data-count]"),
+    reset: root.querySelector("[data-reset]"),
+    message: root.querySelector("[data-message]"),
+    defaultSort: "updated",
+    sorts: {
+      updated: { label: "Zuletzt geändert", type: "date", dir: "desc" },
+      number: { label: "Auftragsnummer", dir: "asc" },
+      title: { label: "Bezeichnung", dir: "asc" },
+      customer: { label: "Kunde", dir: "asc" },
+      status: { label: "Status", dir: "asc" },
+      date: { label: "Auftragsdatum", type: "date", dir: "desc" },
+      total: { label: "Auftragssumme", type: "number", dir: "desc" },
+    },
+    emptyText: "Noch keine Aufträge vorhanden.",
+    noMatchText: "Keine Aufträge entsprechen der aktuellen Auswahl.",
+    loadingText: "Aufträge werden geladen …",
+    renderTable,
+    renderCard,
+  });
 
   function newOrder() {
     const form = root.querySelector("[data-order-template]").content.firstElementChild.cloneNode(true);
@@ -101,15 +89,6 @@
     });
   }
 
-  for (const element of [search, status, type, sort]) element.addEventListener(element === search ? "input" : "change", render);
-  reset.addEventListener("click", () => {
-    search.value = "";
-    status.value = "";
-    type.value = "";
-    sort.value = "updated";
-    render();
-    search.focus();
-  });
   root.querySelector("[data-new-order]")?.addEventListener("click", newOrder);
-  load().catch((error) => notify(message, error.message));
+  list.start();
 })();

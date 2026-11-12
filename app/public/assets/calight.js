@@ -10,9 +10,9 @@
 
   // Liefert `data` (bzw. das ganze Ergebnis) oder wirft einen Fehler mit der
   // Servermeldung. Validierungsdetails haben Vorrang vor der allgemeinen Meldung.
-  async function api(path, { method = "GET", body } = {}) {
+  async function api(path, { method = "GET", body, signal } = {}) {
     const headers = { Accept: "application/json" };
-    const options = { method, credentials: "same-origin", headers };
+    const options = { method, credentials: "same-origin", headers, signal };
     if (method !== "GET") headers["X-CSRF-Token"] = csrfToken();
     if (body !== undefined) {
       headers["Content-Type"] = "application/json";

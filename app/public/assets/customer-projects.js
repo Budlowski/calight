@@ -1,28 +1,23 @@
-// Übersichtsseiten für Kunden und Projekte. Beide teilen sich denselben
-// Datenendpunkt; `data-page` entscheidet, welche Liste angezeigt wird.
+// Übersichtsseiten für Kunden und Projekte; `data-page` wählt das Modul.
 (() => {
   "use strict";
 
   const root = document.querySelector("#customer-project-app");
   if (!root) return;
 
-  const { esc, api, format, collator, normalize, matches, notify } = Calight;
+  const { esc, api, format, notify } = Calight;
   const page = root.dataset.page;
+  const isCustomers = page === "customers";
   const canWrite = root.dataset.canWrite === "1";
   const message = root.querySelector("#admin-message");
-  const list = root.querySelector(page === "customers" ? "#customer-list" : "#project-list");
+  const results = root.querySelector(isCustomers ? "#customer-list" : "#project-list");
   const projectStatuses = { draft: "Entwurf", active: "Aktiv", completed: "Abgeschlossen", archived: "Archiviert" };
-
-  let customers = [];
-  let projects = [];
-  let visible = [];
 
   const customerHref = (item) => `/customers/${encodeURIComponent(item.id)}`;
   const projectHref = (item) => `/projects/${encodeURIComponent(item.id)}`;
   const customerType = (item) => (item.customerType === "company" ? "Unternehmen" : "Privatperson");
   const place = (...parts) => parts.filter(Boolean).join(" ");
   const projectBadge = (item) => `<span class="status-badge status-${esc(item.status)}">${esc(projectStatuses[item.status] || item.status)}</span>`;
-  const empty = (text) => `<p class="overview-empty">${text}</p>`;
 
   function customerActions(item) {
     if (!canWrite) return "";
@@ -36,135 +31,119 @@
     return `<a class="icon-button" data-icon="square-pen" href="${projectHref(item)}/edit" title="Bearbeiten" aria-label="Bearbeiten"></a>`;
   }
 
-  function renderCustomers(view) {
-    if (!visible.length) {
-      list.innerHTML = empty("Keine Kunden entsprechen der aktuellen Auswahl.");
-      return;
-    }
-    if (view === "cards") {
-      list.innerHTML = `<div class="overview-card-grid">${visible.map((item) => `
-        <article class="overview-card${item.active ? "" : " archived-row"}" tabindex="0" data-href="${customerHref(item)}">
-          <div class="management-card-head"><span class="service-number">${esc(item.customerNumber || "Ohne Nr.")}</span><span class="status-badge">${customerType(item)}</span></div>
-          <div class="overview-card-title" title="${esc(item.displayName)}">${esc(item.displayName)}</div>
-          <div class="overview-card-meta">
-            <span>${esc(place(item.postalCode, item.city) || "Kein Ort")}</span>
-            <span>${item.contacts.length} Ansprechpartner</span>
-            <span>${item.projectCount} Projekte</span>
-            <span>${item.offerCount} Angebote</span>
-          </div>
-          ${canWrite ? `<div class="overview-card-actions">${customerActions(item)}</div>` : ""}
-        </article>`).join("")}</div>`;
-      return;
-    }
-    list.innerHTML = `
-      <div class="overview-table-wrap"><table class="overview-table">
-        <thead><tr><th>Kundennummer</th><th>Name / Firma</th><th>Ort</th><th>Kundentyp</th><th class="cell-money">Ansprechpartner</th><th class="cell-money">Projekte</th><th class="cell-money">Angebote</th>${canWrite ? "<th>Aktionen</th>" : ""}</tr></thead>
-        <tbody>${visible.map((item) => `
-          <tr tabindex="0" data-href="${customerHref(item)}"${item.active ? "" : ' class="archived-row"'}>
-            <td class="cell-number">${esc(item.customerNumber || "Ohne Nr.")}</td>
-            <td class="cell-title" title="${esc(item.displayName)}">${esc(item.displayName)}</td>
-            <td>${esc(place(item.postalCode, item.city) || "–")}</td>
-            <td>${customerType(item)}</td>
-            <td class="cell-money">${item.contacts.length}</td>
-            <td class="cell-money">${item.projectCount}</td>
-            <td class="cell-money">${item.offerCount}</td>
-            ${canWrite ? `<td class="cell-actions">${customerActions(item)}</td>` : ""}
-          </tr>`).join("")}</tbody>
-      </table></div>`;
-  }
+  const customerCard = (item) => `
+    <article class="overview-card${item.active ? "" : " archived-row"}" tabindex="0" data-href="${customerHref(item)}">
+      <div class="management-card-head"><span class="service-number">${esc(item.customerNumber || "Ohne Nr.")}</span><span class="status-badge">${customerType(item)}</span></div>
+      <div class="overview-card-title" title="${esc(item.displayName)}">${esc(item.displayName)}</div>
+      <div class="overview-card-meta">
+        <span>${esc(place(item.postalCode, item.city) || "Kein Ort")}</span>
+        <span>${item.contactCount} Ansprechpartner</span>
+        <span>${item.projectCount} Projekte</span>
+        <span>${item.offerCount} Angebote</span>
+      </div>
+      ${canWrite ? `<div class="overview-card-actions">${customerActions(item)}</div>` : ""}
+    </article>`;
 
-  function renderProjects(view) {
-    if (!visible.length) {
-      list.innerHTML = empty("Keine Projekte entsprechen der aktuellen Auswahl.");
-      return;
-    }
-    if (view === "cards") {
-      list.innerHTML = `<div class="overview-card-grid">${visible.map((item) => `
-        <article class="overview-card${item.status === "archived" ? " archived-row" : ""}" tabindex="0" data-href="${projectHref(item)}">
-          <div class="management-card-head"><span class="service-number">${esc(item.projectNumber || "Ohne Nr.")}</span>${projectBadge(item)}</div>
-          <div class="overview-card-title" title="${esc(item.name)}">${esc(item.name)}</div>
-          <div class="overview-card-meta">
-            <span>${esc(item.customerName || "Kein Kunde")}</span>
-            <span>${esc(place(item.sitePostalCode, item.siteCity) || "Kein Baustellenort")}</span>
-            <span>${item.offerCount} Angebote</span>
-            <span>Geändert ${format.date(item.updatedAt)}</span>
-          </div>
-          ${canWrite ? `<div class="overview-card-actions">${projectActions(item)}</div>` : ""}
-        </article>`).join("")}</div>`;
-      return;
-    }
-    list.innerHTML = `
-      <div class="overview-table-wrap"><table class="overview-table">
-        <thead><tr><th>Projektnummer</th><th>Projektbezeichnung</th><th>Kunde</th><th>Status</th><th>Baustellenort</th><th class="cell-money">Angebote</th><th>Geändert</th>${canWrite ? "<th>Aktionen</th>" : ""}</tr></thead>
-        <tbody>${visible.map((item) => `
-          <tr tabindex="0" data-href="${projectHref(item)}"${item.status === "archived" ? ' class="archived-row"' : ""}>
-            <td class="cell-number">${esc(item.projectNumber || "Ohne Nr.")}</td>
-            <td class="cell-title" title="${esc(item.name)}">${esc(item.name)}</td>
-            <td>${esc(item.customerName || "Kein Kunde")}</td>
-            <td>${projectBadge(item)}</td>
-            <td>${esc(place(item.sitePostalCode, item.siteCity) || "–")}</td>
-            <td class="cell-money">${item.offerCount}</td>
-            <td class="cell-date">${format.date(item.updatedAt)}</td>
-            ${canWrite ? `<td class="cell-actions">${projectActions(item)}</td>` : ""}
-          </tr>`).join("")}</tbody>
-      </table></div>`;
-  }
+  const customerTable = (items, header) => `
+    <thead><tr>
+      ${header("number", "Kundennummer", "cell-number")}${header("name", "Name / Firma")}${header("city", "Ort")}${header("type", "Kundentyp", "cell-type")}
+      <th class="cell-count">Ansprechp.</th><th class="cell-count">Projekte</th><th class="cell-count">Angebote</th>
+      ${header("updated", "Geändert", "cell-date")}${canWrite ? '<th class="cell-actions">Aktionen</th>' : ""}
+    </tr></thead>
+    <tbody>${items.map((item) => `
+      <tr tabindex="0" data-href="${customerHref(item)}"${item.active ? "" : ' class="archived-row"'}>
+        <td class="cell-number">${esc(item.customerNumber || "Ohne Nr.")}</td>
+        <td class="cell-title" title="${esc(item.displayName)}">${esc(item.displayName)}</td>
+        <td class="cell-text">${esc(place(item.postalCode, item.city) || "–")}</td>
+        <td class="cell-type">${customerType(item)}</td>
+        <td class="cell-count">${item.contactCount}</td>
+        <td class="cell-count">${item.projectCount}</td>
+        <td class="cell-count">${item.offerCount}</td>
+        <td class="cell-date">${format.date(item.updatedAt)}</td>
+        ${canWrite ? `<td class="cell-actions">${customerActions(item)}</td>` : ""}
+      </tr>`).join("")}</tbody>`;
 
-  const view = CalightListView.create({ root, module: page, render: page === "customers" ? renderCustomers : renderProjects });
-  CalightListView.enableRowNavigation(list);
+  const projectCard = (item) => `
+    <article class="overview-card${item.status === "archived" ? " archived-row" : ""}" tabindex="0" data-href="${projectHref(item)}">
+      <div class="management-card-head"><span class="service-number">${esc(item.projectNumber || "Ohne Nr.")}</span>${projectBadge(item)}</div>
+      <div class="overview-card-title" title="${esc(item.name)}">${esc(item.name)}</div>
+      <div class="overview-card-meta">
+        <span>${esc(item.customerName || "Kein Kunde")}</span>
+        <span>${esc(place(item.sitePostalCode, item.siteCity) || "Kein Baustellenort")}</span>
+        <span>${item.offerCount} Angebote</span>
+        <span>Geändert ${format.date(item.updatedAt)}</span>
+      </div>
+      ${canWrite ? `<div class="overview-card-actions">${projectActions(item)}</div>` : ""}
+    </article>`;
 
-  // Filterleiste: Felder, Standardwerte und Filterfunktion je Seite.
-  const controls = page === "customers"
-    ? { search: "#customer-search", type: "#customer-type-filter", sort: "#customer-sort", archived: "#show-archived", count: "#customer-result-count", reset: "#customer-reset" }
-    : { search: "#project-search", status: "#project-status-filter", sort: "#project-sort", count: "#project-result-count", reset: "#project-reset" };
-  const field = (name) => (controls[name] ? root.querySelector(controls[name]) : null);
-  const defaultSort = page === "customers" ? "name" : "updated";
+  const projectTable = (items, header) => `
+    <thead><tr>
+      ${header("number", "Projektnummer", "cell-number")}${header("name", "Projektbezeichnung")}${header("customer", "Kunde")}
+      ${header("status", "Status", "cell-status")}${header("city", "Baustellenort")}<th class="cell-count">Angebote</th>
+      ${header("updated", "Geändert", "cell-date")}${canWrite ? '<th class="cell-actions">Aktionen</th>' : ""}
+    </tr></thead>
+    <tbody>${items.map((item) => `
+      <tr tabindex="0" data-href="${projectHref(item)}"${item.status === "archived" ? ' class="archived-row"' : ""}>
+        <td class="cell-number">${esc(item.projectNumber || "Ohne Nr.")}</td>
+        <td class="cell-title" title="${esc(item.name)}">${esc(item.name)}</td>
+        <td class="cell-text" title="${esc(item.customerName || "")}">${esc(item.customerName || "Kein Kunde")}</td>
+        <td class="cell-status">${projectBadge(item)}</td>
+        <td class="cell-text">${esc(place(item.sitePostalCode, item.siteCity) || "–")}</td>
+        <td class="cell-count">${item.offerCount}</td>
+        <td class="cell-date">${format.date(item.updatedAt)}</td>
+        ${canWrite ? `<td class="cell-actions">${projectActions(item)}</td>` : ""}
+      </tr>`).join("")}</tbody>`;
 
-  function filterCustomers(query) {
-    const type = field("type").value;
-    const archived = field("archived").checked;
-    return customers
-      .filter((item) => (archived || item.active) && (!type || item.customerType === type)
-        && matches(query, item.customerNumber, item.displayName, item.city, item.email, item.phone,
-          ...item.contacts.map((contact) => `${contact.firstName} ${contact.lastName}`)))
-      .sort((a, b) => {
-        if (field("sort").value === "number") return collator.compare(a.customerNumber || "", b.customerNumber || "");
-        if (field("sort").value === "updated") return String(b.updatedAt).localeCompare(String(a.updatedAt));
-        return collator.compare(a.displayName, b.displayName);
-      });
-  }
-
-  function filterProjects(query) {
-    const status = field("status").value;
-    return projects
-      .filter((item) => (!status || item.status === status)
-        && matches(query, item.projectNumber, item.name, item.customerName, item.contactName, item.sitePostalCode, item.siteCity))
-      .sort((a, b) => {
-        if (field("sort").value === "number") return collator.compare(a.projectNumber || "", b.projectNumber || "");
-        if (field("sort").value === "name") return collator.compare(a.name, b.name);
-        return String(b.updatedAt).localeCompare(String(a.updatedAt));
-      });
-  }
-
-  function render() {
-    const query = normalize(field("search").value.trim());
-    const all = page === "customers" ? customers : projects;
-    visible = page === "customers" ? filterCustomers(query) : filterProjects(query);
-    field("count").textContent = `${visible.length} von ${all.length}`;
-    field("reset").disabled = !query && field("sort").value === defaultSort
-      && !field("type")?.value && !field("status")?.value && !field("archived")?.checked;
-    view.render();
-  }
-
-  function resetFilters() {
-    field("search").value = "";
-    field("sort").value = defaultSort;
-    if (field("type")) field("type").value = "";
-    if (field("status")) field("status").value = "";
-    if (field("archived")) field("archived").checked = false;
-    render();
-    field("search").focus();
-  }
+  const list = CalightListView.createListPage(isCustomers ? {
+    root,
+    module: page,
+    endpoint: "/api/customers",
+    results,
+    search: root.querySelector("#customer-search"),
+    filters: { type: root.querySelector("#customer-type-filter"), archived: root.querySelector("#show-archived") },
+    sortSelect: root.querySelector("#customer-sort"),
+    count: root.querySelector("#customer-result-count"),
+    reset: root.querySelector("#customer-reset"),
+    message,
+    defaultSort: "updated",
+    sorts: {
+      updated: { label: "Zuletzt geändert", type: "date", dir: "desc" },
+      number: { label: "Kundennummer", dir: "asc" },
+      name: { label: "Name", dir: "asc" },
+      city: { label: "Ort", dir: "asc" },
+      type: { label: "Kundentyp", dir: "asc" },
+    },
+    emptyText: "Noch keine aktiven Kunden vorhanden.",
+    noMatchText: "Keine Kunden entsprechen der aktuellen Auswahl.",
+    loadingText: "Kunden werden geladen …",
+    renderTable: customerTable,
+    renderCard: customerCard,
+  } : {
+    root,
+    module: page,
+    endpoint: "/api/projects",
+    results,
+    search: root.querySelector("#project-search"),
+    filters: { status: root.querySelector("#project-status-filter") },
+    sortSelect: root.querySelector("#project-sort"),
+    count: root.querySelector("#project-result-count"),
+    reset: root.querySelector("#project-reset"),
+    message,
+    defaultSort: "updated",
+    sorts: {
+      updated: { label: "Zuletzt geändert", type: "date", dir: "desc" },
+      number: { label: "Projektnummer", dir: "asc" },
+      name: { label: "Projektbezeichnung", dir: "asc" },
+      customer: { label: "Kunde", dir: "asc" },
+      status: { label: "Status", dir: "asc" },
+      city: { label: "Baustellenort", dir: "asc" },
+    },
+    emptyText: "Noch keine Projekte vorhanden.",
+    noMatchText: "Keine Projekte entsprechen der aktuellen Auswahl.",
+    loadingText: "Projekte werden geladen …",
+    renderTable: projectTable,
+    renderCard: projectCard,
+  });
 
   const addressFields = (prefix = "") => {
     const name = (key) => (prefix ? `${prefix}${key[0].toUpperCase()}${key.slice(1)}` : key);
@@ -216,7 +195,15 @@
     });
   }
 
-  function newProject() {
+  // Die Kundenauswahl im Projektdialog braucht Ansprechpartner und wird erst beim Öffnen geladen.
+  async function newProject() {
+    let customers;
+    try {
+      customers = (await api("/api/customer-projects")).customers;
+    } catch (exception) {
+      notify(message, exception.message);
+      return;
+    }
     const form = document.createElement("form");
     form.className = "form-stack";
     form.noValidate = true;
@@ -272,7 +259,7 @@
   }
 
   async function toggleArchive(button) {
-    const item = customers.find((row) => row.id === button.dataset.archiveCustomer);
+    const item = list.items.find((row) => row.id === button.dataset.archiveCustomer);
     if (!item) return;
     if (item.active) {
       const confirmed = await CalightModal.confirm({ title: "Kunde archivieren", content: `${item.displayName} wirklich archivieren?`, confirmLabel: "Archivieren", danger: true });
@@ -281,7 +268,7 @@
     button.disabled = true;
     try {
       await api(`/api/customers/${encodeURIComponent(item.id)}/archive`, { method: "POST", body: { archived: item.active } });
-      await load();
+      await list.reload();
       notify(message, item.active ? "Kunde wurde archiviert." : "Kunde wurde reaktiviert.", "success");
     } catch (exception) {
       button.disabled = false;
@@ -289,24 +276,12 @@
     }
   }
 
-  async function load() {
-    list.innerHTML = empty("Daten werden geladen …");
-    const data = await api("/api/customer-projects");
-    customers = data.customers;
-    projects = data.projects;
-    render();
-  }
-
-  for (const name of ["search", "type", "status", "sort", "archived"]) {
-    field(name)?.addEventListener(name === "search" ? "input" : "change", render);
-  }
-  field("reset").addEventListener("click", resetFilters);
-  root.querySelector(page === "customers" ? "#new-customer" : "#new-project")?.addEventListener("click", page === "customers" ? newCustomer : newProject);
-  list.addEventListener("click", (event) => {
+  root.querySelector(isCustomers ? "#new-customer" : "#new-project")?.addEventListener("click", isCustomers ? newCustomer : newProject);
+  results.addEventListener("click", (event) => {
     const copy = event.target.closest("[data-copy-customer]");
     const archive = event.target.closest("[data-archive-customer]");
     if (copy) copyCustomer(copy);
     else if (archive) toggleArchive(archive);
   });
-  load().catch((exception) => notify(message, exception.message));
+  list.start();
 })();
