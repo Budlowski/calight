@@ -22,6 +22,7 @@ use App\Http\DocumentLockController;
 use App\Http\UserAccessController;
 use App\Http\EmployeeController;
 use App\Http\DailyReportController;
+use App\Http\MaterialRequestController;
 use App\Domain\Order\OrderValidationException;
 use App\Domain\DocumentLockException;
 use App\Infrastructure\Persistence\OfferConflictException;
@@ -56,6 +57,7 @@ final readonly class Application
         private UserAccessController $userAccessController,
         private EmployeeController $employeeController,
         private DailyReportController $dailyReportController,
+        private MaterialRequestController $materialRequestController,
     ) {
         $this->registerRoutes();
     }
@@ -106,6 +108,7 @@ final readonly class Application
         $this->userAccessController->register($this->router);
         $this->employeeController->register($this->router);
         $this->dailyReportController->register($this->router);
+        $this->materialRequestController->register($this->router);
 
         $this->router->add('GET', '/', fn (): Response => Session::user() === null
             ? Response::redirect('/login')

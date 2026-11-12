@@ -240,6 +240,8 @@ Keine zweite Nummernlogik in einem Controller oder Frontend anlegen.
 - Kostenfelder werden nur mit `costs.read` ausgeliefert/angezeigt.
 - Techniker sehen nur freigegebene Aufträge (derzeit nicht Status `open`), buchen nur eigene Zeiten und bearbeiten nur eigene Berichte.
 - Berichte verwenden ihre eigene Versionsnummer für konkurrierende Änderungen. Sie benötigen bewusst keine globale Auftragssperre.
+- **Anhänge** (`daily_report_attachments`) liegen über `AttachmentStore` unter `APP_DOCUMENTS_PATH/daily-reports/<bericht>/<anhang>.<ext>`. Der Dateityp wird mit `finfo` am Inhalt geprüft (Whitelist in `DailyReportService::ATTACHMENT_TYPES`), Speicherpfade entstehen nur aus UUIDs. Auslieferung ausschließlich über die geschützte Route mit denselben Leserechten wie der Bericht; nur Vorschaubilder inline, alles andere als Download. Hinzufügen/Entfernen wie Bearbeiten des Berichts.
+- **Materialanforderungen** (`material_requests`) sind eigenständige Datensätze mit Pflicht-Auftragsbezug und optionalem Bericht (`ON DELETE SET NULL`). Sie werden nur über die eigene API geändert, nie über das Speichern eines Berichts. Erfassen mit `reports.write`, Erledigen/Wiedereröffnen nur mit `materials.manage` (Büro/Admin); Monteure ändern nur eigene offene Anforderungen freigegebener Aufträge. Erledigte Anforderungen bleiben erhalten. Sie sind keine Bestellung und keine Ist-Kosten.
 
 ### 4.12 Fachliche Abgrenzung späterer Module
 
@@ -250,7 +252,7 @@ Folgende Punkte sind Zielbild, soweit nicht durch aktuelle Migrationen/Code impl
 - **Rapport:** späterer Nachweis abrechenbarer Regieleistungen; nicht automatisch identisch mit internen Zeiten.
 - **Nachkalkulation:** späterer Soll-Ist-Vergleich aus unveränderlichen Grundlagen, Ist-Kosten und separat erfasster Erlösseite.
 - **Abrechnungstracking:** später nur Referenzen auf extern erstellte Rechnungen und Status. Keine Faktura oder Zahlungsbuchhaltung.
-- Bestellungen, Fotos, Materialverbrauch, CardDAV und mobile Monteuransicht sind noch keine allgemein implementierten Prozesse, solange Code und Migrationen nichts anderes zeigen.
+- Bestellungen, artikelgenauer Materialverbrauch, PDF-Ausgabe von Bautagesberichten, CardDAV und eine eigene mobile Monteuransicht sind noch keine implementierten Prozesse, solange Code und Migrationen nichts anderes zeigen. Materialanforderungen und Berichtsanhänge sind seit Phase 3.2.2 implementiert.
 
 **Ein Bautagesbericht ist kein Rapport. Ein Aufmaß ist keine Rechnung. Calight ersetzt keine Rechnungsstellung.** Künftige Module dürfen diese Datenarten nicht aus Bequemlichkeit vermischen.
 

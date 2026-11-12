@@ -106,6 +106,57 @@ final readonly class DailyReportRepository
     }
 
     /** @return list<array<string,mixed>> */
+    public function attachments(string $reportId): array
+    {
+        $statement = $this->pdo->prepare('SELECT a.id, a.report_id, a.original_name, a.mime_type, a.size_bytes, a.created_at,
+            a.uploaded_by_user_id, u.display_name AS uploaded_by_name
+            FROM daily_report_attachments a JOIN users u ON u.id = a.uploaded_by_user_id
+            WHERE a.report_id = :report ORDER BY a.created_at, a.id');
+        $statement->execute(['report' => $reportId]);
+        return $statement->fetchAll();
+    }
+
+    /** @return array<string,mixed>|null */
+    public function attachment(string $reportId, string $attachmentId): ?array
+    {
+        $statement = $this->pdo->prepare('SELECT * FROM daily_report_attachments WHERE id = :id AND report_id = :report');
+        $statement->execute(['id' => $attachmentId, 'report' => $reportId]);
+        $row = $statement->fetch();
+        return is_array($row) ? $row : null;
+    }
+
+    public function attachmentCount(string $reportId): int
+    {
+        $statement = $this->pdo->prepare('SELECT COUNT(*) FROM daily_report_attachments WHERE report_id = :report');
+        $statement->execute(['report' => $reportId]);
+        return (int) $statement->fetchColumn();
+    }
+
+    /** @return list<string> relative Speicherpfade aller Anhänge eines Berichts */
+    public function attachmentPaths(string $reportId): array
+    {
+        $statement = $this->pdo->prepare('SELECT storage_path FROM daily_report_attachments WHERE report_id = :report');
+        $statement->execute(['report' => $reportId]);
+        return $statement->fetchAll(PDO::FETCH_COLUMN);
+    }
+
+    /** @param array<string,mixed> $data */
+    public function insertAttachment(array $data): void
+    {
+        $this->pdo->prepare('INSERT INTO daily_report_attachments
+            (id, report_id, original_name, mime_type, size_bytes, sha256, storage_path, uploaded_by_user_id, created_at)
+            VALUES (:id, :report_id, :original_name, :mime_type, :size_bytes, :sha256, :storage_path, :uploaded_by_user_id, :created_at)')
+            ->execute($data);
+    }
+
+    public function deleteAttachment(string $reportId, string $attachmentId): bool
+    {
+        $statement = $this->pdo->prepare('DELETE FROM daily_report_attachments WHERE id = :id AND report_id = :report');
+        $statement->execute(['id' => $attachmentId, 'report' => $reportId]);
+        return $statement->rowCount() === 1;
+    }
+
+    /** @return list<array<string,mixed>> */
     public function acceptedAddenda(string $orderId):array
     {
         $s=$this->pdo->prepare('SELECT id,basis_json FROM order_addenda WHERE order_id=:id ORDER BY accepted_at');$s->execute(['id'=>$orderId]);return$s->fetchAll();

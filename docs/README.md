@@ -148,7 +148,8 @@ Die Anwendung ist für den eigenständigen Betrieb auf einem Server oder NAS kon
 ### Voraussetzungen
 
 - Docker mit Docker Compose oder PHP 8.4 mit Apache
-- PHP-Erweiterungen `iconv`, `json`, `mbstring`, `PDO` und `pdo_sqlite`
+- PHP-Erweiterungen `fileinfo`, `iconv`, `json`, `mbstring`, `PDO` und `pdo_sqlite`
+- Für Fotos und Anhänge zu Bautagesberichten `upload_max_filesize` mindestens 16M und `post_max_size` mindestens 20M (im Docker-Image voreingestellt)
 - Composer 2 für eine Installation ohne Docker
 - Schreibbarer, dauerhaft gesicherter Datenpfad für SQLite, Angebots-JSON, Dokumente und Vorlagen
 

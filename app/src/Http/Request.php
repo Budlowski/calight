@@ -6,7 +6,11 @@ namespace App\Http;
 
 final readonly class Request
 {
-    /** @param array<string,string> $headers */
+    /**
+     * @param array<string,string> $headers
+     * @param array<string,array{name:string,type:string,tmp_name:string,error:int,size:int}> $files
+     *        Einzeldatei-Uploads je Feldname (Mehrfachfelder werden nicht unterstützt)
+     */
     public function __construct(
         public string $method,
         public string $path,
@@ -14,6 +18,7 @@ final readonly class Request
         public array $post,
         public array $headers,
         public string $body,
+        public array $files = [],
     ) {
     }
 
@@ -34,6 +39,28 @@ final readonly class Request
             post: $_POST,
             headers: $headers,
             body: (string) file_get_contents('php://input'),
+            files: self::singleFiles($_FILES),
         );
+    }
+
+    /**
+     * @param array<string,mixed> $files
+     * @return array<string,array{name:string,type:string,tmp_name:string,error:int,size:int}>
+     */
+    private static function singleFiles(array $files): array
+    {
+        $result = [];
+        foreach ($files as $field => $file) {
+            if (is_array($file) && is_string($file['name'] ?? null) && is_string($file['tmp_name'] ?? null)) {
+                $result[(string) $field] = [
+                    'name' => $file['name'],
+                    'type' => (string) ($file['type'] ?? ''),
+                    'tmp_name' => $file['tmp_name'],
+                    'error' => (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE),
+                    'size' => (int) ($file['size'] ?? 0),
+                ];
+            }
+        }
+        return $result;
     }
 }

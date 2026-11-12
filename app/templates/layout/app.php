@@ -50,9 +50,10 @@
 
             <span class="sidebar-section-label">Ausführung &amp; Abrechnung</span>
             <?= $navLink('/daily-reports', 'calendar-days', 'Bautagesberichte', ['reports.read']) ?>
+            <?= $navLink('/material-requests', 'package', 'Materialanforderungen', ['reports.read']) ?>
             <a href="#" aria-disabled="true" tabindex="-1" data-icon="ruler">Aufmaße</a>
             <a href="#" aria-disabled="true" tabindex="-1" data-icon="clipboard-check">Rapporte</a>
-            <a href="#" aria-disabled="true" tabindex="-1" data-icon="package">Bestellungen</a>
+            <a href="#" aria-disabled="true" tabindex="-1" data-icon="shopping-cart">Bestellungen</a>
             <a href="#" aria-disabled="true" tabindex="-1" data-icon="chart-no-axes-column-increasing">Nachkalkulation</a>
 
             <?php $managementLinks = $navLink('/master-data', 'database', 'Stammdaten', ['master_data.read', 'costs.read']) . $navLink('/settings', 'settings', 'Einstellungen', ['settings.manage']); ?>

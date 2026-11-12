@@ -6,6 +6,7 @@ namespace App\Application;
 
 use App\Domain\Calculation\Decimal;
 use App\Domain\DailyReportValidationException;
+use App\Infrastructure\Persistence\AttachmentStore;
 use App\Infrastructure\Persistence\DailyReportRepository;
 use App\Infrastructure\Persistence\EmployeeRepository;
 use App\Infrastructure\Persistence\OrderRepository;
@@ -20,7 +21,23 @@ use Throwable;
 
 final readonly class DailyReportService
 {
-    public function __construct(private PDO $pdo,private DailyReportRepository $reports,private EmployeeRepository $employees,private OrderRepository $orders) {}
+    /** Erlaubte Anhangstypen (am Dateiinhalt erkannt) mit Dateiendung; Bilder werden als Vorschau angezeigt. */
+    public const ATTACHMENT_TYPES = [
+        'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif',
+        'image/heic' => 'heic', 'image/heif' => 'heif', 'application/pdf' => 'pdf', 'text/plain' => 'txt',
+    ];
+    public const PREVIEW_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    public const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
+    public const MAX_ATTACHMENTS_PER_REPORT = 30;
+
+    public function __construct(
+        private PDO $pdo,
+        private DailyReportRepository $reports,
+        private EmployeeRepository $employees,
+        private OrderRepository $orders,
+        private ?AttachmentStore $attachmentStore = null,
+    ) {
+    }
 
     /** @param array<string,mixed> $actor @return array<string,mixed> */
     public function referenceData(array $actor):array
@@ -83,7 +100,7 @@ final readonly class DailyReportService
     {
         $report=$this->reports->find($id);if($report===null)throw new DailyReportValidationException(['Bautagesbericht wurde nicht gefunden.']);$this->assertOrderAccess($report,$actor);
         $entries=$this->reports->entries($id);foreach($entries as &$entry)$entry['targetKey']=$entry['target_kind']==='order'?'order':$entry['target_basis_type'].':'.$entry['target_basis_id'].':'.$entry['target_node_id'];unset($entry);if(!$this->canReadCosts($actor))foreach($entries as &$entry)unset($entry['hourly_cost_rate_snapshot'],$entry['labor_cost']);unset($entry);
-        unset($report['basis_json']);$report['entries']=$entries;$report['targets']=$this->targets((string)$report['order_id']);$report['canEdit']=$this->canEdit($report,$actor);return$report;
+        unset($report['basis_json']);$report['entries']=$entries;$report['attachments']=array_map($this->mapAttachment(...),$this->reports->attachments($id));$report['targets']=$this->targets((string)$report['order_id']);$report['canEdit']=$this->canEdit($report,$actor);return$report;
     }
 
     /** @param array<string,mixed> $input @param array<string,mixed> $actor @return array<string,mixed> */
@@ -107,7 +124,150 @@ final readonly class DailyReportService
     /** @param array<string,mixed> $actor */
     public function delete(string $id,int $version,array $actor):void
     {
-        $current=$this->reports->find($id);if($current===null)throw new DailyReportValidationException(['Bautagesbericht wurde nicht gefunden.']);$this->assertOrderAccess($current,$actor);if(!$this->canEdit($current,$actor))throw new AccessDeniedException('reports.write.own');if(!$this->reports->delete($id,$version))throw new DailyReportValidationException(['Der Bautagesbericht wurde zwischenzeitlich geändert. Bitte neu laden.']);
+        $current=$this->reports->find($id);
+        if($current===null)throw new DailyReportValidationException(['Bautagesbericht wurde nicht gefunden.']);
+        $this->assertOrderAccess($current,$actor);
+        if(!$this->canEdit($current,$actor))throw new AccessDeniedException('reports.write.own');
+        // Anhangszeilen werden per Fremdschlüssel mitgelöscht, Materialanforderungen bleiben
+        // erhalten (Verweis wird geleert). Dateien erst nach erfolgreichem Löschen entfernen.
+        $paths=$this->reports->attachmentPaths($id);
+        if(!$this->reports->delete($id,$version))throw new DailyReportValidationException(['Der Bautagesbericht wurde zwischenzeitlich geändert. Bitte neu laden.']);
+        foreach($paths as $path)$this->removeFile((string)$path);
+    }
+
+    /**
+     * Speichert einen Anhang (Foto, PDF, Text) zum Bericht.
+     *
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
+    public function addAttachment(string $reportId, string $sourcePath, string $originalName, array $actor): array
+    {
+        $store = $this->store();
+        $report = $this->editableReport($reportId, $actor);
+        $size = is_file($sourcePath) ? (int) filesize($sourcePath) : 0;
+        if ($size <= 0) {
+            throw new DailyReportValidationException(['Die Datei ist leer oder konnte nicht gelesen werden.']);
+        }
+        if ($size > self::MAX_ATTACHMENT_BYTES) {
+            throw new DailyReportValidationException(['Anhänge dürfen höchstens 15 MB groß sein.']);
+        }
+        if ($this->reports->attachmentCount($reportId) >= self::MAX_ATTACHMENTS_PER_REPORT) {
+            throw new DailyReportValidationException(['Ein Bericht kann höchstens 30 Anhänge enthalten.']);
+        }
+        // Der Typ wird am Inhalt erkannt, nicht an Dateiname oder Browserangabe.
+        $mime = (string) (new \finfo(FILEINFO_MIME_TYPE))->file($sourcePath);
+        $extension = self::ATTACHMENT_TYPES[$mime] ?? null;
+        if ($extension === null) {
+            throw new DailyReportValidationException(['Dieser Dateityp wird nicht unterstützt. Erlaubt sind Fotos (JPG, PNG, WebP, GIF, HEIC), PDF und Textdateien.']);
+        }
+        $name = $this->safeFileName($originalName, $extension);
+        $id = Uuid::v4();
+        $hash = (string) hash_file('sha256', $sourcePath);
+        $path = $store->store($sourcePath, 'daily-reports/' . $report['id'], $id, $extension);
+        try {
+            $this->reports->insertAttachment([
+                'id' => $id, 'report_id' => $report['id'], 'original_name' => $name, 'mime_type' => $mime,
+                'size_bytes' => $size, 'sha256' => $hash, 'storage_path' => $path,
+                'uploaded_by_user_id' => (string) $actor['id'], 'created_at' => Clock::now(),
+            ]);
+        } catch (Throwable $exception) {
+            $this->removeFile($path);
+            throw $exception;
+        }
+        $row = array_values(array_filter($this->reports->attachments($reportId), static fn (array $item): bool => $item['id'] === $id))[0];
+        return $this->mapAttachment($row);
+    }
+
+    /**
+     * Liefert Dateipfad und Metadaten für den Download; prüft dieselben Leserechte wie der Bericht.
+     *
+     * @param array<string,mixed> $actor
+     * @return array{path:string,mimeType:string,name:string,inline:bool}
+     */
+    public function attachmentFile(string $reportId, string $attachmentId, array $actor): array
+    {
+        $report = $this->reports->find($reportId);
+        if ($report === null) {
+            throw new DailyReportValidationException(['Bautagesbericht wurde nicht gefunden.']);
+        }
+        $this->assertOrderAccess($report, $actor);
+        $attachment = $this->reports->attachment($reportId, $attachmentId);
+        $path = $attachment !== null ? $this->store()->absolute((string) $attachment['storage_path']) : '';
+        if ($attachment === null || !is_file($path)) {
+            throw new DailyReportValidationException(['Anhang wurde nicht gefunden.']);
+        }
+        return [
+            'path' => $path,
+            'mimeType' => (string) $attachment['mime_type'],
+            'name' => (string) $attachment['original_name'],
+            'inline' => in_array($attachment['mime_type'], self::PREVIEW_TYPES, true),
+        ];
+    }
+
+    /** @param array<string,mixed> $actor */
+    public function deleteAttachment(string $reportId, string $attachmentId, array $actor): void
+    {
+        $this->editableReport($reportId, $actor);
+        $attachment = $this->reports->attachment($reportId, $attachmentId);
+        if ($attachment === null || !$this->reports->deleteAttachment($reportId, $attachmentId)) {
+            throw new DailyReportValidationException(['Anhang wurde nicht gefunden.']);
+        }
+        $this->removeFile((string) $attachment['storage_path']);
+    }
+
+    /** @param array<string,mixed> $actor @return array<string,mixed> */
+    private function editableReport(string $reportId, array $actor): array
+    {
+        $report = $this->reports->find($reportId);
+        if ($report === null) {
+            throw new DailyReportValidationException(['Bautagesbericht wurde nicht gefunden.']);
+        }
+        $this->assertOrderAccess($report, $actor);
+        if (!$this->canEdit($report, $actor)) {
+            throw new AccessDeniedException('reports.write.own');
+        }
+        return $report;
+    }
+
+    private function store(): AttachmentStore
+    {
+        return $this->attachmentStore ?? throw new \RuntimeException('Für Anhänge ist keine Dateiablage konfiguriert.');
+    }
+
+    private function removeFile(string $path): void
+    {
+        try {
+            $this->store()->delete($path);
+        } catch (Throwable $exception) {
+            // Eine verwaiste Datei ist unkritisch; der Datensatz ist bereits entfernt.
+            error_log('Anhang konnte nicht entfernt werden: ' . $exception->getMessage());
+        }
+    }
+
+    /** Anzeigename ohne Pfadanteile und Steuerzeichen, mit zur Erkennung passender Endung. */
+    private function safeFileName(string $name, string $extension): string
+    {
+        $name = basename(str_replace('\\', '/', $name));
+        $name = trim((string) preg_replace('/[\x00-\x1F\x7F"]+/u', '', $name));
+        $base = pathinfo($name, PATHINFO_FILENAME);
+        $base = mb_substr($base !== '' ? $base : 'Anhang', 0, 120);
+        return $base . '.' . $extension;
+    }
+
+    /** @param array<string,mixed> $row @return array<string,mixed> */
+    private function mapAttachment(array $row): array
+    {
+        return [
+            'id' => $row['id'],
+            'name' => $row['original_name'],
+            'mimeType' => $row['mime_type'],
+            'size' => (int) $row['size_bytes'],
+            'preview' => in_array($row['mime_type'], self::PREVIEW_TYPES, true),
+            'uploadedByName' => $row['uploaded_by_name'] ?? '',
+            'createdAt' => $row['created_at'],
+            'url' => '/api/daily-reports/' . rawurlencode((string) $row['report_id']) . '/attachments/' . rawurlencode((string) $row['id']),
+        ];
     }
 
     /** @return array{hours:string,costs:string} */

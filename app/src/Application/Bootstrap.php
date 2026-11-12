@@ -15,6 +15,7 @@ use App\Http\DocumentLockController;
 use App\Http\UserAccessController;
 use App\Http\EmployeeController;
 use App\Http\DailyReportController;
+use App\Http\MaterialRequestController;
 use App\Domain\Offer\OfferCalculator;
 use App\Http\Router;
 use App\Infrastructure\Database\ConnectionFactory;
@@ -30,6 +31,8 @@ use App\Infrastructure\Persistence\OrderRepository;
 use App\Infrastructure\Persistence\DocumentLockRepository;
 use App\Infrastructure\Persistence\EmployeeRepository;
 use App\Infrastructure\Persistence\DailyReportRepository;
+use App\Infrastructure\Persistence\AttachmentStore;
+use App\Infrastructure\Persistence\MaterialRequestRepository;
 use App\View\View;
 use PDO;
 
@@ -70,7 +73,9 @@ final readonly class Bootstrap
         $documentLockService=new DocumentLockService($this->pdo,new DocumentLockRepository($this->pdo));
         $userRepository=new UserRepository($this->pdo);
         $employeeRepository=new EmployeeRepository($this->pdo);
-        $dailyReportService=new DailyReportService($this->pdo,new DailyReportRepository($this->pdo),$employeeRepository,new OrderRepository($this->pdo));
+        $dailyReportRepository=new DailyReportRepository($this->pdo);
+        $dailyReportService=new DailyReportService($this->pdo,$dailyReportRepository,$employeeRepository,new OrderRepository($this->pdo),new AttachmentStore($this->config->documentsPath));
+        $materialRequestService=new MaterialRequestService(new MaterialRequestRepository($this->pdo),new OrderRepository($this->pdo),$dailyReportRepository);
 
         return new Application(
             new Router(),
@@ -85,12 +90,13 @@ final readonly class Bootstrap
             new SettingsController($view,$settingsService),
             $offerPdfService,
             new InternalCalculationPdfService($this->pdo,$documentSettingsRepository,new OfferValidator(),$offerCalculator),
-            new OrderController($view,$orderService,$dailyReportService),
+            new OrderController($view,$orderService,$dailyReportService,$materialRequestService),
             new DocumentLockController($documentLockService),
             $documentLockService,
             new UserAccessController(new UserAccessService($userRepository)),
             new EmployeeController($view,new EmployeeService($employeeRepository,$userRepository)),
-            new DailyReportController($view,$dailyReportService),
+            new DailyReportController($view,$dailyReportService,$materialRequestService),
+            new MaterialRequestController($view,$materialRequestService),
         );
     }
 }

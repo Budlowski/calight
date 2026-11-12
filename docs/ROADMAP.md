@@ -26,7 +26,9 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 
 | 3.1 | Auftragsverwaltung, projektfreie Angebote, direkte Regieaufträge | Implementiert (`0018`), Rollen und Bearbeitungssperren (`0020`) |
 
-| 3.2 | Bautagesberichte und interne Ist-Erfassung | In Umsetzung: Mitarbeiter, Berichte und Zeiterfassung implementiert (`0021`); Material, Fotos und PDF geplant |
+| 3.2 | Bautagesberichte und interne Ist-Erfassung | Implementiert: Mitarbeiter, Berichte und Zeiterfassung (`0021`) |
+
+| 3.2.2 | Materialanforderungen, Fotos und Anhänge zu Bautagesberichten | Implementiert (`0023`); PDF-Ausgabe in Phase 3.2.3 verschoben |
 
 | 3.2.1.x | Einheitliche Übersichts- und Detailseiten; serverseitige Pagination, Sortierung und URL-basierter Listenstatus | Implementiert (`0022`) |
 | 3.2.3 | Gemeinsame Dokumentvorlagen und PDF-Grundlagen (schrittweise) | Geplant; bestehende Angebots-PDF-Infrastruktur vorhanden |
@@ -212,13 +214,17 @@ Umgesetzt: Für neue Angebote ist nur noch ein Kunde erforderlich, das Projekt i
 
 Bautagesberichte dokumentieren die tatsächliche Ausführung und sind **keine** Aufmaße oder Rapporte.
 
-- Je Auftrag beliebig viele Berichte mit Datum, Tätigkeiten und Bemerkungen.
+- Je Auftrag beliebig viele Berichte mit Datum, Tätigkeiten und Bemerkungen. *(implementiert)*
 
-- Ein oder mehrere Mitarbeiter mit Arbeitszeiten, Pausen und Lohnkostengruppen.
+- Ein oder mehrere Mitarbeiter mit Arbeitszeiten und Zuordnung zu Auftrag, Titel oder Position der verbindlichen Grundlage; Kostensatz als Snapshot. *(implementiert)*
 
-- Materialverbrauch mit Mengen, tatsächlichen Einkaufskosten, freie oder stammdatenbasierte Erfassung.
+- Fotos und Anhänge je Bericht (Bilder, PDF, Text bis 15 MB), serverseitig zugriffsgeschützt. *(implementiert, Phase 3.2.2)*
 
-- Fahrzeiten, weitere Aufwendungen sowie optional Fotos/Anhänge.
+- **Materialanforderungen** statt täglicher Materialverbrauchserfassung: Monteure melden benötigtes Material als Freitext mit optionaler Bemerkung und Wunschtermin aus dem Bericht oder direkt am Auftrag; das Büro bearbeitet sie zentral (offen/erledigt). Materialanforderungen sind eigenständige Datensätze mit Auftragsbezug, keine Bestellungen und keine Ist-Kosten. Eine spätere Bestellfunktion (Phase 3.4.1) kann sie übernehmen. *(implementiert, Phase 3.2.2)*
+
+- Artikelgenaue Ist-Materialkosten, Fahrzeiten und weitere Aufwendungen sind bewusst noch nicht umgesetzt; sie werden bei Bedarf im Zusammenhang mit der Nachkalkulation (Phase 3.5) geklärt.
+
+- Die **PDF-Ausgabe von Bautagesberichten** gehört zur gemeinsamen Dokumentphase 3.2.3 und wird dort mit der einheitlichen Vorlage umgesetzt.
 
 - Tatsächliche Stunden und Kosten für die Nachkalkulation bereitstellen.
 

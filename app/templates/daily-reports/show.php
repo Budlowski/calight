@@ -27,5 +27,28 @@
         <p class="field-error" data-error hidden></p>
         <div class="form-actions"><button class="button" type="submit" data-save data-icon="save">Bericht speichern</button><a class="button button-light" href="/daily-reports">Abbrechen</a><button class="button button-danger-light" type="button" data-delete data-icon="trash">Bericht löschen</button></div>
     </form>
+
+    <section class="card report-extra-section" aria-labelledby="report-attachments-heading">
+        <div class="step-section-heading">
+            <span class="step-section-number">5</span>
+            <div><h2 id="report-attachments-heading">Fotos und Anhänge</h2><small data-attachment-summary>Fotos, PDF- oder Textdateien bis 15 MB</small></div>
+            <div class="step-section-actions" data-attachment-actions hidden>
+                <label class="button button-light button-small file-button" data-icon="plus">Foto aufnehmen<input type="file" accept="image/*" capture="environment" data-attachment-input></label>
+                <label class="button button-light button-small file-button" data-icon="file-up">Datei hinzufügen<input type="file" accept="image/*,application/pdf,text/plain,.heic,.heif" multiple data-attachment-input></label>
+            </div>
+        </div>
+        <p class="field-error" data-attachment-error hidden></p>
+        <div data-attachments aria-live="polite"></div>
+    </section>
+
+    <section class="card report-extra-section" aria-labelledby="report-material-heading">
+        <div class="step-section-heading">
+            <span class="step-section-number">6</span>
+            <div><h2 id="report-material-heading">Materialbedarf</h2><small>Benötigtes Material an das Büro melden; wird sofort und unabhängig vom Bericht gespeichert.</small></div>
+            <div class="step-section-actions"><button class="button button-light button-small" type="button" data-add-material data-icon="plus">Material anfordern</button></div>
+        </div>
+        <div data-material-requests></div>
+    </section>
 </div>
+<script src="/assets/material-requests.js?v=<?= $escape((string)filemtime(dirname(__DIR__,2).'/public/assets/material-requests.js')) ?>" defer></script>
 <script src="/assets/daily-report-detail.js?v=<?= $escape((string)filemtime(dirname(__DIR__,2).'/public/assets/daily-report-detail.js')) ?>" defer></script>

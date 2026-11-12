@@ -14,6 +14,10 @@
   const summary = root.querySelector("[data-time-summary]");
   const reportUrl = () => `/api/daily-reports/${encodeURIComponent(report.id)}`;
 
+  const attachmentsBox = root.querySelector("[data-attachments]");
+  const attachmentError = root.querySelector("[data-attachment-error]");
+  const materialBox = root.querySelector("[data-material-requests]");
+
   let report;
   let employees = [];
   let targets = [];
@@ -48,13 +52,13 @@
       ? `${format.number(entry.hourly_cost_rate_snapshot, 4)} €/h · ${format.money(entry.labor_cost)}`
       : "";
     row.innerHTML = `
-      <label><span class="field-label">Mitarbeiter <span aria-hidden="true">*</span></span><select data-field="employeeId" required>${employeeOptions(entry.employee_id || "", entry.employee_name || "")}</select></label>
+      <label><span class="field-label">Mitarbeiter <span aria-hidden="true">*</span></span><select data-field="employeeId" required>${employeeOptions(entry.employee_id || (employees.length === 1 ? employees[0].id : ""), entry.employee_name || "")}</select></label>
       <label><span class="field-label">Arbeitsdatum <span aria-hidden="true">*</span></span><input data-field="workDate" type="date" value="${esc(entry.work_date || form.elements.reportDate.value)}" required></label>
       <label><span class="field-label">Dauer (h) <span aria-hidden="true">*</span></span><input data-field="durationHours" inputmode="decimal" value="${esc(String(entry.duration_hours || "").replace(".", ","))}" required></label>
       <label class="report-target"><span class="field-label">Zuordnung</span><select data-field="targetKey">${targetOptions(entry.targetKey || "order")}</select></label>
       <label class="report-description"><span class="field-label">Tätigkeit (optional)</span><input data-field="description" maxlength="1000" value="${esc(entry.description || "")}"></label>
       <div class="report-entry-meta">${cost}</div>
-      <button class="icon-button icon-button-danger" type="button" data-remove data-icon="trash" aria-label="Zeiteintrag entfernen" title="Zeiteintrag entfernen"></button>`;
+      <button class="icon-button icon-button-danger" type="button" data-remove data-remove-entry data-icon="trash" aria-label="Zeiteintrag entfernen" title="Zeiteintrag entfernen"></button>`;
     entriesBox.append(row);
     updateSummary();
     return row;
@@ -87,6 +91,116 @@
     document.title = `Bautagesbericht ${reportDate} · ${report.order_number}`;
   }
 
+  // ---------------------------------------------------------------------------
+  // Fotos und Anhänge: werden sofort einzeln hochgeladen, unabhängig vom Speichern.
+  // ---------------------------------------------------------------------------
+  const fileSize = (bytes) => (bytes >= 1048576 ? `${format.number(bytes / 1048576, 1)} MB` : `${format.number(Math.max(1, bytes / 1024), 0)} KB`);
+
+  function renderAttachments() {
+    const items = report.attachments || [];
+    root.querySelector("[data-attachment-summary]").textContent = items.length
+      ? `${items.length} ${items.length === 1 ? "Anhang" : "Anhänge"}`
+      : "Fotos, PDF- oder Textdateien bis 15 MB";
+    root.querySelector("[data-attachment-actions]").hidden = !report.canEdit;
+    if (!items.length) {
+      attachmentsBox.innerHTML = '<p class="empty-state">Noch keine Fotos oder Anhänge.</p>';
+      return;
+    }
+    attachmentsBox.innerHTML = `<div class="attachment-grid">${items.map((item) => `
+      <figure class="attachment-item">
+        ${item.preview
+          ? `<a class="attachment-preview" href="${esc(item.url)}" target="_blank" rel="noopener"><img src="${esc(item.url)}" alt="${esc(item.name)}" loading="lazy"></a>`
+          : `<a class="attachment-preview attachment-file" href="${esc(item.url)}" download><span class="ui-icon icon-file-down" aria-hidden="true"></span><span>${esc(item.name.split(".").pop().toUpperCase())}</span></a>`}
+        <figcaption>
+          <a href="${esc(item.url)}" ${item.preview ? 'target="_blank" rel="noopener"' : "download"} title="${esc(item.name)}">${esc(item.name)}</a>
+          <small class="muted">${fileSize(item.size)} · ${esc(item.uploadedByName)}</small>
+        </figcaption>
+        ${report.canEdit ? `<button class="icon-button icon-button-danger attachment-remove" type="button" data-remove-attachment="${esc(item.id)}" data-icon="trash" title="Anhang entfernen" aria-label="Anhang ${esc(item.name)} entfernen"></button>` : ""}
+      </figure>`).join("")}</div>`;
+  }
+
+  async function upload(files) {
+    attachmentError.hidden = true;
+    const summary = root.querySelector("[data-attachment-summary]");
+    const failed = [];
+    let index = 0;
+    for (const file of files) {
+      index++;
+      summary.textContent = `Lade ${index} von ${files.length} hoch …`;
+      if (file.size > 15 * 1024 * 1024) {
+        failed.push(`${file.name}: Die Datei ist größer als 15 MB.`);
+        continue;
+      }
+      const body = new FormData();
+      body.append("file", file);
+      try {
+        const response = await fetch(`/api/daily-reports/${encodeURIComponent(report.id)}/attachments`, {
+          method: "POST", credentials: "same-origin", headers: { "X-CSRF-Token": root.dataset.csrf, Accept: "application/json" }, body,
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error((result.details || [result.error || `HTTP ${response.status}`]).join(" "));
+        report.attachments = [...(report.attachments || []), result.data];
+      } catch (exception) {
+        failed.push(`${file.name}: ${exception.message}`);
+      }
+    }
+    renderAttachments();
+    if (failed.length) {
+      attachmentError.textContent = failed.join(" ");
+      attachmentError.hidden = false;
+    }
+  }
+
+  root.querySelectorAll("[data-attachment-input]").forEach((input) => input.addEventListener("change", async () => {
+    const files = [...input.files];
+    input.value = "";
+    if (files.length) await upload(files);
+  }));
+
+  attachmentsBox.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-remove-attachment]");
+    if (!button) return;
+    const confirmed = await CalightModal.confirm({ title: "Anhang entfernen", content: "Der Anhang wird endgültig entfernt.", confirmLabel: "Entfernen", danger: true });
+    if (!confirmed) return;
+    button.disabled = true;
+    try {
+      await api(`/api/daily-reports/${encodeURIComponent(report.id)}/attachments/${encodeURIComponent(button.dataset.removeAttachment)}`, { method: "DELETE" });
+      report.attachments = report.attachments.filter((item) => item.id !== button.dataset.removeAttachment);
+      renderAttachments();
+    } catch (exception) {
+      button.disabled = false;
+      notify(message, exception.message);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Materialbedarf: eigene Datensätze, unabhängig vom Speichern des Berichts.
+  // ---------------------------------------------------------------------------
+  async function reloadMaterial() {
+    const current = await api(`/api/daily-reports/${encodeURIComponent(report.id)}`);
+    report.materialRequests = current.materialRequests;
+    renderMaterial();
+  }
+
+  CalightMaterialRequests.bindActions(materialBox, {
+    find: (id) => (report.materialRequests || []).find((item) => item.id === id),
+    reload: reloadMaterial,
+    message,
+  });
+
+  function renderMaterial() {
+    materialBox.innerHTML = CalightMaterialRequests.renderCompact(report.materialRequests || []);
+  }
+
+  root.querySelector("[data-add-material]").addEventListener("click", () => CalightMaterialRequests.openDialog({
+    dailyReportId: report.id,
+    orderLabel: `${report.order_number} · ${report.order_title}`,
+    onSaved: async () => {
+      await reloadMaterial();
+      notify(message, "Materialanforderung wurde an das Büro gemeldet.", "success");
+    },
+  }));
+
   async function load() {
     const [reference, current] = await Promise.all([
       api("/api/daily-reports/reference-data"),
@@ -102,6 +216,8 @@
     entriesBox.innerHTML = "";
     report.entries.forEach(addEntry);
     setEditable(report.canEdit);
+    renderAttachments();
+    renderMaterial();
     dirty = false;
   }
 

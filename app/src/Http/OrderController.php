@@ -3,15 +3,16 @@ declare(strict_types=1);
 namespace App\Http;
 use App\Application\OrderService;
 use App\Application\DailyReportService;
+use App\Application\MaterialRequestService;
 use App\Domain\Order\OrderValidationException;
 use App\View\View;
 use JsonException;
 final readonly class OrderController
 {
- public function __construct(private View $view,private OrderService $service,private ?DailyReportService $dailyReports=null){}
+ public function __construct(private View $view,private OrderService $service,private ?DailyReportService $dailyReports=null,private ?MaterialRequestService $materialRequests=null){}
  public function register(Router $r):void{
   $r->add('GET','/orders',fn():Response=>$this->page(fn()=> $this->view->render('orders/index',$this->service->referenceData())));
-  $r->add('GET','/orders/{id}',fn(Request $q,array $p):Response=>$this->page(function()use($p){$order=$this->service->detail($p['id']);if(($this->technician())&&$order['status']==='open')throw new AccessDeniedException('orders.released.read');$actor=Session::user()??[];$reportPage=$this->dailyReports===null?['items'=>[],'total'=>0]:$this->dailyReports->page(['order'=>(string)$p['id'],'per_page'=>'10'],$actor);$reports=$reportPage['items'];$actual=$this->dailyReports===null?['hours'=>'0.000','costs'=>'0.00']:$this->dailyReports->orderTotals($p['id']);if(!Session::can('costs.read'))unset($actual['costs']);return$this->view->render('orders/show',['order'=>$order,'dailyReports'=>$reports,'dailyReportTotal'=>(int)$reportPage['total'],'actualLabor'=>$actual]);}));
+  $r->add('GET','/orders/{id}',fn(Request $q,array $p):Response=>$this->page(function()use($p){$order=$this->service->detail($p['id']);if(($this->technician())&&$order['status']==='open')throw new AccessDeniedException('orders.released.read');$actor=Session::user()??[];$reportPage=$this->dailyReports===null?['items'=>[],'total'=>0]:$this->dailyReports->page(['order'=>(string)$p['id'],'per_page'=>'10'],$actor);$reports=$reportPage['items'];$actual=$this->dailyReports===null?['hours'=>'0.000','costs'=>'0.00']:$this->dailyReports->orderTotals($p['id']);if(!Session::can('costs.read'))unset($actual['costs']);return$this->view->render('orders/show',['order'=>$order,'dailyReports'=>$reports,'dailyReportTotal'=>(int)$reportPage['total'],'materialRequests'=>$this->materialRequests?->openForOrder((string)$p['id'],$actor)??[],'actualLabor'=>$actual]);}));
   $r->add('GET','/api/orders',fn(Request $q):Response=>$this->api(fn()=>Response::json(['data'=>$this->service->page($q->query,$this->technician())])));
   $r->add('POST','/api/orders',fn(Request $q):Response=>$this->mutation($q,fn($d)=>$this->service->createRegie($d),201));
   $r->add('POST','/api/offers/{id}/order',fn(Request $q,array $p):Response=>$this->mutation($q,fn()=> $this->service->createFromOffer($p['id']),201));
