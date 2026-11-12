@@ -1,19 +1,203 @@
+// Bearbeitungsseiten für Kunden (/customers/{id}) und Projekte (/projects/{id}/edit).
 (() => {
   "use strict";
-  const root=document.querySelector("#customer-project-detail");if(!root)return;
-  const kind=root.dataset.kind,id=root.dataset.id,form=root.querySelector("form"),error=root.querySelector("[data-error]"),message=root.querySelector("[data-message]");let customers=[],item=null,contacts=[],addresses=[],dirty=false,saving=false;
-  const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
-  const notify=(text,type="success")=>{message.textContent=text;message.className=`notice notice-${type}`;message.hidden=false;};
-  async function api(path,options={}){const headers={Accept:"application/json",...(options.headers||{})};if(options.body!==undefined){headers["Content-Type"]="application/json";headers["X-CSRF-Token"]=root.dataset.csrf;options.body=JSON.stringify(options.body);}const response=await fetch(path,{credentials:"same-origin",...options,headers}),result=await response.json();if(!response.ok)throw Error((result.details||[]).join(" ")||result.error||"Anfrage fehlgeschlagen.");return result.data??result;}
-  function renderContacts(){const box=root.querySelector("[data-contacts]");root.querySelector("[data-contact-count]").textContent=`(${contacts.length})`;box.innerHTML=contacts.map((row,index)=>`<div class="inline-record" data-row="${index}"><div class="inline-record-heading"><strong>Ansprechpartner</strong><button class="button button-light button-small button-danger-light" type="button" data-remove-contact data-icon="trash">Entfernen</button></div><div class="contact-grid"><label>Anrede<input data-field="salutation" value="${esc(row.salutation)}"></label><label>Vorname<input data-field="firstName" value="${esc(row.firstName)}"></label><label>Nachname<input data-field="lastName" value="${esc(row.lastName)}"></label><label>Funktion<input data-field="function" value="${esc(row.function)}"></label><label>E-Mail<input data-field="email" type="email" value="${esc(row.email)}"></label><label>Telefon<input data-field="phone" value="${esc(row.phone)}"></label><label>Mobil<input data-field="mobile" value="${esc(row.mobile)}"></label></div></div>`).join("")||'<p class="muted">Noch keine Ansprechpartner.</p>';}
-  function renderAddresses(){const box=root.querySelector("[data-addresses]");root.querySelector("[data-address-count]").textContent=`(${addresses.length})`;box.innerHTML=addresses.map((row,index)=>`<div class="inline-record" data-row="${index}"><div class="inline-record-heading"><strong>Weitere Adresse</strong><button class="button button-light button-small button-danger-light" type="button" data-remove-address data-icon="trash">Entfernen</button></div><div class="address-grid"><label>Typ<select data-field="addressType"><option value="invoice" ${row.addressType==="invoice"?"selected":""}>Rechnung</option><option value="site" ${row.addressType==="site"?"selected":""}>Baustelle</option><option value="other" ${row.addressType==="other"?"selected":""}>Sonstige</option></select></label><label>Bezeichnung<input data-field="label" value="${esc(row.label)}"></label><label>Straße<input data-field="street" value="${esc(row.street)}"></label><label>Hausnummer<input data-field="houseNumber" value="${esc(row.houseNumber)}"></label><label>PLZ<input data-field="postalCode" value="${esc(row.postalCode)}"></label><label>Ort<input data-field="city" value="${esc(row.city)}"></label><label>Land<input data-field="country" value="${esc(row.country||"Deutschland")}"></label></div></div>`).join("")||'<p class="muted">Noch keine weiteren Adressen.</p>';}
-  function toggleCustomer(){const company=form.elements.customerType.value==="company";root.querySelector("[data-company]").hidden=!company;root.querySelectorAll("[data-private]").forEach(element=>element.hidden=company);form.elements.companyName.required=company;form.elements.firstName.required=!company;form.elements.lastName.required=!company;}
-  function contactOptions(selected=""){const customer=customers.find(row=>row.id===form.elements.customerId.value);form.elements.contactId.innerHTML='<option value="">Kein Ansprechpartner</option>'+(customer?.contacts||[]).map(contact=>`<option value="${esc(contact.id)}" ${contact.id===selected?"selected":""}>${esc(`${contact.firstName} ${contact.lastName}`.trim())}${contact.function?` · ${esc(contact.function)}`:""}</option>`).join("");form.elements.contactId.disabled=!customer;root.querySelector("[data-legacy]").hidden=!!customer;}
-  function fillCustomer(){for(const name of["customerNumber","customerType","companyName","firstName","lastName","street","houseNumber","postalCode","city","country","email","phone","website","vatId","notes"])form.elements[name].value=item[name]??"";contacts=structuredClone(item.contacts||[]);addresses=structuredClone(item.addresses||[]);toggleCustomer();renderContacts();renderAddresses();}
-  function fillProject(){for(const name of["projectNumber","name","status","description","customerId","customerName","siteStreet","siteHouseNumber","sitePostalCode","siteCity","siteCountry"])form.elements[name].value=item[name]??"";form.elements.customerId.innerHTML='<option value="">Kein Kunde zugeordnet</option>'+customers.filter(row=>row.active||row.id===item.customerId).map(row=>`<option value="${esc(row.id)}" ${row.id===item.customerId?"selected":""}>${esc(row.customerNumber||"Ohne Nr.")} · ${esc(row.displayName)}</option>`).join("");contactOptions(item.contactId||"");}
-  function customerPayload(){const data=Object.fromEntries(new FormData(form));data.autoCustomerNumber=false;data.contacts=contacts;data.addresses=addresses;return data;}
-  async function load(){const data=await api("/api/customer-projects");customers=data.customers;item=(kind==="customer"?data.customers:data.projects).find(row=>row.id===id);if(!item)throw Error(kind==="customer"?"Kunde wurde nicht gefunden.":"Projekt wurde nicht gefunden.");kind==="customer"?fillCustomer():fillProject();dirty=false;}
-  form.addEventListener("input",()=>dirty=true);form.addEventListener("submit",async event=>{event.preventDefault();if(saving||!form.reportValidity())return;saving=true;const submit=form.querySelector('[type="submit"]');submit.disabled=true;error.hidden=true;try{const payload=kind==="customer"?customerPayload():Object.fromEntries(new FormData(form));if(kind==="project")payload.legacySiteAddress=item.legacySiteAddress||"";await api(kind==="customer"?`/api/customers/${encodeURIComponent(id)}`:`/api/projects/${encodeURIComponent(id)}`,{method:"PUT",body:payload});dirty=false;notify(kind==="customer"?"Kunde wurde gespeichert.":"Projekt wurde gespeichert.");await load();}catch(exception){error.textContent=exception.message;error.hidden=false;}finally{saving=false;submit.disabled=false;}});
-  if(kind==="customer"){form.elements.customerType.onchange=toggleCustomer;root.querySelector("[data-add-contact]").onclick=()=>{contacts.push({id:null,salutation:"",firstName:"",lastName:"",function:"",email:"",phone:"",mobile:""});renderContacts();dirty=true;};root.querySelector("[data-add-address]").onclick=()=>{addresses.push({id:null,addressType:"other",label:"",street:"",houseNumber:"",postalCode:"",city:"",country:"Deutschland"});renderAddresses();dirty=true;};root.querySelector("[data-contacts]").addEventListener("input",event=>{const row=event.target.closest("[data-row]");if(row&&event.target.dataset.field){contacts[Number(row.dataset.row)][event.target.dataset.field]=event.target.value;dirty=true;}});root.querySelector("[data-addresses]").addEventListener("input",event=>{const row=event.target.closest("[data-row]");if(row&&event.target.dataset.field){addresses[Number(row.dataset.row)][event.target.dataset.field]=event.target.value;dirty=true;}});root.querySelector("[data-contacts]").onclick=event=>{const row=event.target.closest("[data-row]");if(row&&event.target.closest("[data-remove-contact]")){contacts.splice(Number(row.dataset.row),1);renderContacts();dirty=true;}};root.querySelector("[data-addresses]").onclick=event=>{const row=event.target.closest("[data-row]");if(row&&event.target.closest("[data-remove-address]")){addresses.splice(Number(row.dataset.row),1);renderAddresses();dirty=true;}};root.querySelector("[data-copy]").onclick=async()=>{const saved=await api(`/api/customers/${encodeURIComponent(id)}/copy`,{method:"POST",body:{}});location.assign(`/customers/${encodeURIComponent(saved.id)}`);};root.querySelector("[data-archive]").onclick=async()=>{if(item.active&&!(await CalightModal.confirm({title:"Kunde archivieren",content:`${item.displayName} wirklich archivieren?`,confirmLabel:"Archivieren",danger:true})))return;await api(`/api/customers/${encodeURIComponent(id)}/archive`,{method:"POST",body:{archived:item.active}});location.assign("/customers");};}else form.elements.customerId.onchange=()=>{contactOptions();dirty=true;};
-  window.addEventListener("beforeunload",event=>{if(dirty){event.preventDefault();event.returnValue="";}});load().catch(exception=>notify(exception.message,"error"));
+
+  const root = document.querySelector("#customer-project-detail");
+  if (!root) return;
+
+  const { esc, api, notify } = Calight;
+  const kind = root.dataset.kind;
+  const id = root.dataset.id;
+  const form = root.querySelector("form");
+  const error = root.querySelector("[data-error]");
+  const message = root.querySelector("[data-message]");
+  const isCustomer = kind === "customer";
+  const endpoint = isCustomer ? `/api/customers/${encodeURIComponent(id)}` : `/api/projects/${encodeURIComponent(id)}`;
+
+  let customers = [];
+  let item = null;
+  let contacts = [];
+  let addresses = [];
+  let dirty = false;
+  let saving = false;
+
+  const CUSTOMER_FIELDS = ["customerNumber", "customerType", "companyName", "firstName", "lastName", "street", "houseNumber", "postalCode", "city", "country", "email", "phone", "website", "vatId", "notes"];
+  const PROJECT_FIELDS = ["projectNumber", "name", "status", "description", "customerId", "customerName", "siteStreet", "siteHouseNumber", "sitePostalCode", "siteCity", "siteCountry"];
+
+  const input = (row, field, label, type = "text") => `<label>${label}<input data-field="${field}" type="${type}" value="${esc(row[field])}"></label>`;
+  const recordHeading = (label, action) => `<div class="inline-record-heading"><strong>${label}</strong><button class="button button-light button-small button-danger-light" type="button" ${action} data-icon="trash">Entfernen</button></div>`;
+
+  function renderContacts() {
+    root.querySelector("[data-contact-count]").textContent = `(${contacts.length})`;
+    root.querySelector("[data-contacts]").innerHTML = contacts.map((row, index) => `
+      <div class="inline-record" data-row="${index}">
+        ${recordHeading("Ansprechpartner", "data-remove-contact")}
+        <div class="contact-grid">
+          ${input(row, "salutation", "Anrede")}${input(row, "firstName", "Vorname")}${input(row, "lastName", "Nachname")}
+          ${input(row, "function", "Funktion")}${input(row, "email", "E-Mail", "email")}${input(row, "phone", "Telefon")}${input(row, "mobile", "Mobil")}
+        </div>
+      </div>`).join("") || '<p class="muted">Noch keine Ansprechpartner.</p>';
+  }
+
+  function renderAddresses() {
+    const types = { invoice: "Rechnung", site: "Baustelle", other: "Sonstige" };
+    root.querySelector("[data-address-count]").textContent = `(${addresses.length})`;
+    root.querySelector("[data-addresses]").innerHTML = addresses.map((row, index) => `
+      <div class="inline-record" data-row="${index}">
+        ${recordHeading("Weitere Adresse", "data-remove-address")}
+        <div class="address-grid">
+          <label>Typ<select data-field="addressType">${Object.entries(types).map(([value, label]) => `<option value="${value}"${row.addressType === value ? " selected" : ""}>${label}</option>`).join("")}</select></label>
+          ${input(row, "label", "Bezeichnung")}${input(row, "street", "Straße")}${input(row, "houseNumber", "Hausnummer")}
+          ${input(row, "postalCode", "PLZ")}${input(row, "city", "Ort")}${input({ ...row, country: row.country || "Deutschland" }, "country", "Land")}
+        </div>
+      </div>`).join("") || '<p class="muted">Noch keine weiteren Adressen.</p>';
+  }
+
+  function toggleCustomerType() {
+    const company = form.elements.customerType.value === "company";
+    root.querySelector("[data-company]").hidden = !company;
+    root.querySelectorAll("[data-private]").forEach((element) => { element.hidden = company; });
+    form.elements.companyName.required = company;
+    form.elements.firstName.required = !company;
+    form.elements.lastName.required = !company;
+  }
+
+  function renderContactOptions(selected = "") {
+    const customer = customers.find((row) => row.id === form.elements.customerId.value);
+    form.elements.contactId.innerHTML = '<option value="">Kein Ansprechpartner</option>' + (customer?.contacts || [])
+      .map((contact) => `<option value="${esc(contact.id)}"${contact.id === selected ? " selected" : ""}>${esc(`${contact.firstName} ${contact.lastName}`.trim())}${contact.function ? ` · ${esc(contact.function)}` : ""}</option>`)
+      .join("");
+    form.elements.contactId.disabled = !customer;
+    // Der freie Kundenname ist nur für Altprojekte ohne verknüpften Kunden relevant.
+    root.querySelector("[data-legacy]").hidden = Boolean(customer);
+  }
+
+  function fillCustomer() {
+    for (const name of CUSTOMER_FIELDS) form.elements[name].value = item[name] ?? "";
+    contacts = structuredClone(item.contacts || []);
+    addresses = structuredClone(item.addresses || []);
+    toggleCustomerType();
+    renderContacts();
+    renderAddresses();
+  }
+
+  function fillProject() {
+    form.elements.customerId.innerHTML = '<option value="">Kein Kunde zugeordnet</option>' + customers
+      .filter((row) => row.active || row.id === item.customerId)
+      .map((row) => `<option value="${esc(row.id)}">${esc(row.customerNumber || "Ohne Nr.")} · ${esc(row.displayName)}</option>`)
+      .join("");
+    for (const name of PROJECT_FIELDS) form.elements[name].value = item[name] ?? "";
+    renderContactOptions(item.contactId || "");
+  }
+
+  function payload() {
+    const data = Object.fromEntries(new FormData(form));
+    if (isCustomer) return { ...data, autoCustomerNumber: false, contacts, addresses };
+    return { ...data, legacySiteAddress: item.legacySiteAddress || "" };
+  }
+
+  async function load() {
+    const data = await api("/api/customer-projects");
+    customers = data.customers;
+    item = (isCustomer ? data.customers : data.projects).find((row) => row.id === id);
+    if (!item) throw new Error(isCustomer ? "Kunde wurde nicht gefunden." : "Projekt wurde nicht gefunden.");
+    if (isCustomer) fillCustomer();
+    else fillProject();
+    dirty = false;
+  }
+
+  form.addEventListener("input", () => { dirty = true; });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (saving || !form.reportValidity()) return;
+    const submit = form.querySelector('[type="submit"]');
+    saving = true;
+    submit.disabled = true;
+    error.hidden = true;
+    try {
+      await api(endpoint, { method: "PUT", body: payload() });
+      dirty = false;
+      await load();
+      notify(message, isCustomer ? "Kunde wurde gespeichert." : "Projekt wurde gespeichert.", "success");
+    } catch (exception) {
+      error.textContent = exception.message;
+      error.hidden = false;
+    } finally {
+      saving = false;
+      submit.disabled = false;
+    }
+  });
+
+  // Inline-Listen (Ansprechpartner, Adressen) für die Kundenseite.
+  function bindRecordList(selector, rows, render, removeAttribute, blank) {
+    const box = root.querySelector(selector);
+    box.addEventListener("input", (event) => {
+      const row = event.target.closest("[data-row]");
+      if (!row || !event.target.dataset.field) return;
+      rows()[Number(row.dataset.row)][event.target.dataset.field] = event.target.value;
+    });
+    box.addEventListener("click", (event) => {
+      const row = event.target.closest("[data-row]");
+      if (!row || !event.target.closest(`[${removeAttribute}]`)) return;
+      rows().splice(Number(row.dataset.row), 1);
+      render();
+      dirty = true;
+    });
+    return () => {
+      rows().push(blank());
+      render();
+      dirty = true;
+      box.querySelector(".inline-record:last-child input")?.focus();
+    };
+  }
+
+  async function runAction(button, operation) {
+    button.disabled = true;
+    try {
+      await operation();
+    } catch (exception) {
+      button.disabled = false;
+      notify(message, exception.message);
+    }
+  }
+
+  if (isCustomer) {
+    form.elements.customerType.addEventListener("change", toggleCustomerType);
+    const addContact = bindRecordList("[data-contacts]", () => contacts, renderContacts, "data-remove-contact",
+      () => ({ id: null, salutation: "", firstName: "", lastName: "", function: "", email: "", phone: "", mobile: "" }));
+    const addAddress = bindRecordList("[data-addresses]", () => addresses, renderAddresses, "data-remove-address",
+      () => ({ id: null, addressType: "other", label: "", street: "", houseNumber: "", postalCode: "", city: "", country: "Deutschland" }));
+    root.querySelector("[data-add-contact]").addEventListener("click", addContact);
+    root.querySelector("[data-add-address]").addEventListener("click", addAddress);
+
+    const copy = root.querySelector("[data-copy]");
+    copy?.addEventListener("click", () => runAction(copy, async () => {
+      const saved = await api(`${endpoint}/copy`, { method: "POST", body: {} });
+      location.assign(`/customers/${encodeURIComponent(saved.id)}`);
+    }));
+    const archive = root.querySelector("[data-archive]");
+    archive?.addEventListener("click", async () => {
+      if (item.active) {
+        const confirmed = await CalightModal.confirm({ title: "Kunde archivieren", content: `${item.displayName} wirklich archivieren?`, confirmLabel: "Archivieren", danger: true });
+        if (!confirmed) return;
+      }
+      runAction(archive, async () => {
+        await api(`${endpoint}/archive`, { method: "POST", body: { archived: item.active } });
+        dirty = false;
+        location.assign("/customers");
+      });
+    });
+  } else {
+    form.elements.customerId.addEventListener("change", () => {
+      renderContactOptions();
+      dirty = true;
+    });
+  }
+
+  window.addEventListener("beforeunload", (event) => {
+    if (!dirty) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
+  load().catch((exception) => notify(message, exception.message));
 })();

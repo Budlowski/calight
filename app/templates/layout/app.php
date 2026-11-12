@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= $escape($title ?? 'Kalkulationssoftware') ?></title>
     <link rel="stylesheet" href="/assets/app.css?v=<?= $escape((string) filemtime(dirname(__DIR__, 2) . '/public/assets/app.css')) ?>">
+    <script src="/assets/calight.js?v=<?= $escape((string) filemtime(dirname(__DIR__, 2) . '/public/assets/calight.js')) ?>" defer></script>
     <script src="/assets/modal.js?v=<?= $escape((string) filemtime(dirname(__DIR__, 2) . '/public/assets/modal.js')) ?>" defer></script>
     <script src="/assets/list-view.js?v=<?= $escape((string) filemtime(dirname(__DIR__, 2) . '/public/assets/list-view.js')) ?>" defer></script>
 </head>
@@ -22,23 +23,36 @@
     </header>
     <div class="shell">
         <nav class="sidebar" aria-label="Hauptnavigation">
-            <a href="/dashboard" data-icon="layout-dashboard">Übersicht</a>
-            <a href="/customers" data-icon="users">Kunden</a>
-            <a href="/projects" data-icon="folder-kanban">Projekte</a>
-            <a href="/offers" data-icon="file-text">Angebote</a>
-            <a href="/orders" data-icon="clipboard-list">Aufträge</a>
+<?php
+            // Menüpunkte nur mit Leserecht anzeigen; die Zugriffskontrolle selbst bleibt serverseitig.
+            $currentPath = (string) (parse_url((string) ($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH) ?: '/');
+            $navLink = static function (string $href, string $icon, string $label, array $permissions) use ($escape, $currentPath): string {
+                foreach ($permissions as $permission) {
+                    if (!\App\Http\Session::can($permission)) {
+                        return '';
+                    }
+                }
+                $active = $currentPath === $href || str_starts_with($currentPath, $href . '/');
+                return '<a href="' . $escape($href) . '" data-icon="' . $escape($icon) . '"' . ($active ? ' aria-current="page"' : '') . '>' . $escape($label) . '</a>';
+            };
+?>
+            <?= $navLink('/dashboard', 'layout-dashboard', 'Übersicht', ['dashboard.read']) ?>
+            <?= $navLink('/customers', 'users', 'Kunden', ['customers.read']) ?>
+            <?= $navLink('/projects', 'folder-kanban', 'Projekte', ['projects.read']) ?>
+            <?= $navLink('/offers', 'file-text', 'Angebote', ['offers.read']) ?>
+            <?= $navLink('/orders', 'clipboard-list', 'Aufträge', ['orders.read']) ?>
 
             <span class="sidebar-section-label">Ausführung &amp; Abrechnung</span>
-            <a href="/daily-reports" data-icon="calendar-days">Bautagesberichte</a>
+            <?= $navLink('/daily-reports', 'calendar-days', 'Bautagesberichte', ['reports.read']) ?>
             <a href="#" aria-disabled="true" tabindex="-1" data-icon="ruler">Aufmaße</a>
             <a href="#" aria-disabled="true" tabindex="-1" data-icon="clipboard-check">Rapporte</a>
             <a href="#" aria-disabled="true" tabindex="-1" data-icon="package">Bestellungen</a>
             <a href="#" aria-disabled="true" tabindex="-1" data-icon="chart-no-axes-column-increasing">Nachkalkulation</a>
 
-            <div class="sidebar-management">
+            <?php $managementLinks = $navLink('/master-data', 'database', 'Stammdaten', ['master_data.read', 'costs.read']) . $navLink('/settings', 'settings', 'Einstellungen', ['settings.manage']); ?>
+            <div class="sidebar-management"<?= $managementLinks === '' ? ' hidden' : '' ?>>
                 <span class="sidebar-section-label">Verwaltung</span>
-                <a href="/master-data" data-icon="database">Stammdaten</a>
-                <a href="/settings" data-icon="settings">Einstellungen</a>
+                <?= $managementLinks ?>
             </div>
         </nav>
         <main class="content <?= $escape($contentClass ?? '') ?>">

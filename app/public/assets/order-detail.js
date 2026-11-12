@@ -10,7 +10,7 @@
     return result.data??result;
   };
   const setEditOpen=(open)=>{
-    editForm.hidden=!open;editButton.disabled=open;
+    editForm.hidden=!open;if(editButton)editButton.disabled=open;
     if(open){editForm.elements.title.focus();editForm.elements.title.select();}
     else{editError.hidden=true;editError.textContent='';}
   };
@@ -18,7 +18,7 @@
     editForm.reset();
     editDirty=false;setEditOpen(false);
   };
-  editButton.addEventListener('click',()=>setEditOpen(true));
+  editButton?.addEventListener('click',()=>setEditOpen(true));
   editForm.addEventListener('input',()=>{editDirty=true;editError.hidden=true;});
   root.querySelector('[data-cancel-order-edit]').addEventListener('click',async()=>{
     if(editDirty&&!await CalightModal.confirm({title:'Ungespeicherte Änderungen',content:'Die Änderungen an Bezeichnung und Beschreibung verwerfen?',confirmLabel:'Verwerfen',danger:true}))return;

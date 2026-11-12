@@ -143,26 +143,6 @@ final readonly class Application
             fn (): Response => $this->view->render('dashboard/index')
         ));
 
-        $this->router->add('GET', '/projects', fn (): Response => $this->protected(
-            fn (): Response => $this->view->render('projects/index', ['projects' => $this->projects->all()])
-        ));
-
-        $this->router->add('POST', '/projects', fn (Request $request): Response => $this->protected(function () use ($request): Response {
-            $this->requireCsrf($request);
-            $name = trim((string) ($request->post['name'] ?? ''));
-            if ($name === '') {
-                Session::flash('error', 'Die Projektbezeichnung darf nicht leer sein.');
-                return Response::redirect('/projects');
-            }
-            $id = $this->projects->create(
-                $name,
-                trim((string) ($request->post['customerName'] ?? '')),
-                trim((string) ($request->post['siteAddress'] ?? '')),
-            );
-            Session::flash('success', 'Projekt wurde angelegt.');
-            return Response::redirect('/projects/' . rawurlencode($id));
-        }));
-
         $this->router->add('GET', '/projects/{id}', fn (Request $request, array $parameters): Response => $this->protected(function () use ($parameters): Response {
             $project = $this->projects->find($parameters['id']);
             if ($project === null) {
@@ -175,17 +155,6 @@ final readonly class Application
                     static fn (array $offer): bool => $offer['projectId'] === $project['id'],
                 )),
             ]);
-        }));
-
-        $this->router->add('POST', '/projects/{id}/offers', fn (Request $request, array $parameters): Response => $this->protected(function () use ($request, $parameters): Response {
-            $this->requireCsrf($request);
-            $title = trim((string) ($request->post['title'] ?? ''));
-            if ($title === '') {
-                Session::flash('error', 'Die Angebotsbezeichnung darf nicht leer sein.');
-                return Response::redirect('/projects/' . rawurlencode($parameters['id']));
-            }
-            $offerId = $this->offerService->createDraft($parameters['id'], $title);
-            return Response::redirect('/offers/' . rawurlencode($offerId));
         }));
 
         $this->router->add('GET', '/offers', fn (): Response => $this->protected(
