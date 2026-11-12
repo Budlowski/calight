@@ -17,8 +17,9 @@ final class RolePermissions
             'offers.read', 'offers.write', 'orders.read', 'orders.write', 'master_data.read',
             'master_data.write', 'costs.read', 'settings.manage', 'employees.manage',
             'reports.read', 'reports.write', 'materials.manage',
+            'measurements.read', 'measurements.write', 'measurements.complete',
         ],
-        'technician' => ['dashboard.read', 'orders.read', 'reports.read', 'reports.write'],
+        'technician' => ['dashboard.read', 'orders.read', 'reports.read', 'reports.write', 'measurements.read', 'measurements.write'],
     ];
 
     public static function allows(string $role, string $permission): bool

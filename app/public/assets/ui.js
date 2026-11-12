@@ -147,10 +147,11 @@
     document.addEventListener('keydown', event => {
         if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return;
 
-        const offerSave = document.querySelector('#save-offer');
-        if (visible(offerSave)) {
+        // Seiten mit eigenem Speichervorgang markieren ihren Button mit data-shortcut-save.
+        const pageSave = document.querySelector('#save-offer, [data-shortcut-save]');
+        if (visible(pageSave)) {
             event.preventDefault();
-            if (!offerSave.disabled) offerSave.click();
+            if (!pageSave.disabled) pageSave.click();
             return;
         }
 

@@ -16,6 +16,7 @@ use App\Http\UserAccessController;
 use App\Http\EmployeeController;
 use App\Http\DailyReportController;
 use App\Http\MaterialRequestController;
+use App\Http\MeasurementController;
 use App\Domain\Offer\OfferCalculator;
 use App\Http\Router;
 use App\Infrastructure\Database\ConnectionFactory;
@@ -33,6 +34,7 @@ use App\Infrastructure\Persistence\EmployeeRepository;
 use App\Infrastructure\Persistence\DailyReportRepository;
 use App\Infrastructure\Persistence\AttachmentStore;
 use App\Infrastructure\Persistence\MaterialRequestRepository;
+use App\Infrastructure\Persistence\MeasurementRepository;
 use App\View\View;
 use PDO;
 
@@ -75,6 +77,7 @@ final readonly class Bootstrap
         $employeeRepository=new EmployeeRepository($this->pdo);
         $dailyReportRepository=new DailyReportRepository($this->pdo);
         $dailyReportService=new DailyReportService($this->pdo,$dailyReportRepository,$employeeRepository,new OrderRepository($this->pdo),new AttachmentStore($this->config->documentsPath));
+        $measurementService=new MeasurementService($this->pdo,new MeasurementRepository($this->pdo),new OrderRepository($this->pdo),$numberRanges);
         $materialRequestService=new MaterialRequestService(new MaterialRequestRepository($this->pdo),new OrderRepository($this->pdo),$dailyReportRepository);
 
         return new Application(
@@ -90,13 +93,14 @@ final readonly class Bootstrap
             new SettingsController($view,$settingsService),
             $offerPdfService,
             new InternalCalculationPdfService($this->pdo,$documentSettingsRepository,new OfferValidator(),$offerCalculator),
-            new OrderController($view,$orderService,$dailyReportService,$materialRequestService),
+            new OrderController($view,$orderService,$dailyReportService,$materialRequestService,$measurementService),
             new DocumentLockController($documentLockService),
             $documentLockService,
             new UserAccessController(new UserAccessService($userRepository)),
             new EmployeeController($view,new EmployeeService($employeeRepository,$userRepository)),
             new DailyReportController($view,$dailyReportService,$materialRequestService),
             new MaterialRequestController($view,$materialRequestService),
+            new MeasurementController($view,$measurementService),
         );
     }
 }

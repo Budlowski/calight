@@ -33,7 +33,7 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 | 3.2.1.x | Einheitliche Übersichts- und Detailseiten; serverseitige Pagination, Sortierung und URL-basierter Listenstatus | Implementiert (`0022`) |
 | 3.2.3 | Gemeinsame Dokumentvorlagen und PDF-Grundlagen (schrittweise) | Geplant; bestehende Angebots-PDF-Infrastruktur vorhanden |
 
-| 3.3 | Aufmaße für vereinbarte Angebotsleistungen | Geplant |
+| 3.3 | Aufmaße für vereinbarte Angebotsleistungen | Implementiert (`0024`); PDF-Ausgabe in Phase 3.2.3 |
 
 | 3.4 | Rapporte für Regieleistungen | Geplant |
 
@@ -251,13 +251,18 @@ Ziel ist, **aus einer gemeinsamen Datenbasis einheitlich gestaltete PDF-Dokument
 
 Aufmaße dokumentieren die **abrechenbaren ausgeführten Mengen vereinbarter Leistungen**.
 
-- Positionen aus verbindlicher Angebotsrevision und angenommenen Nachträgen referenzieren.
+**Umgesetzt (Phase 3.3, Migration `0024`):**
 
-- Teilaufmaße, Mengenfortschritt, bisher aufgemessene und noch offene Mengen.
+- Positionen aus der verbindlichen Auftragsgrundlage und angenommenen Nachträgen werden stabil über interne IDs referenziert (`order|addendum : Quell-ID : Knoten-ID`); offene oder abgelehnte Nachträge erscheinen nicht.
+- Mehrere Aufmaße je Auftrag. Mengen eines Aufmaßes sind **Zusatzmengen**; der Fortschritt (vereinbart, bisher, dieses Aufmaß, gesamt, offen) ergibt sich aus der Summe abgeschlossener Aufmaße. Nur Positionen mit Menge werden gespeichert.
+- Bewertung ausschließlich zu den verbindlichen Einzelpreisen (`effectiveUnitPrice`) ohne Neukalkulation; Zeilenbetrag = Menge × Einzelpreis, kaufmännisch auf Cent. Bedarfs- und Alternativpositionen (auch geerbt über Bedarfs-/Alternativtitel) sind gekennzeichnet und werden mit ihrem Preis bewertet. Der Angebotsnachlass bzw. -aufschlag des jeweiligen Quelldokuments wird – wie in der Kalkulation – nur auf Normalpositionen und im Verhältnis zur vereinbarten Normalsumme angewendet. Ein vollständig aufgemessener Auftrag entspricht damit (bis auf Cent-Rundungen je Aufmaß) der Auftragssumme.
+- Entwürfe sind bearbeitbar (Versionsprüfung) und löschbar; der Abschluss vergibt die Aufmaßnummer (Nummernkreis „Aufmaße“, `AM`), schreibt Summen je Quelldokument fest und macht das Aufmaß unveränderlich. Positionstexte, Einheiten, vereinbarte Mengen und Preise werden je Zeile als Snapshot gespeichert.
+- Mengenüberschreitungen werden angezeigt und erfordern beim Abschluss eine ausdrückliche Bestätigung (je Zeile protokolliert); zusätzliche Leistungen bleiben Sache eines Nachtrags.
+- Prüfung gegen bereits abgeschlossene Mengen und Abschluss laufen in einer Schreibtransaktion, sodass gleichzeitig abgeschlossene Aufmaße desselben Auftrags berücksichtigt werden.
+- Korrekturen abgeschlossener Aufmaße erfolgen über ein **Korrekturaufmaß** (Verweis auf das korrigierte Aufmaß, auch negative Mengen; die Gesamtmenge darf nicht unter null fallen). Ein Storno- oder Rechnungswesen ist bewusst nicht enthalten.
+- Rechte: `measurements.read`/`measurements.write` (Büro, Monteur – Monteure nur freigegebene Aufträge und eigene Entwürfe), `measurements.complete` für Abschluss und Korrektur (Büro/Admin).
 
-- Mehrere Aufmaße je Auftrag.
-
-- Kundentaugliche PDFs und unveränderliche Fassungen nach Ausstellung/Freigabe.
+**Offen:** Kundentaugliche PDF-Ausgabe der abgeschlossenen Fassungen (Phase 3.2.3).
 
 - Als Anlage bzw. Grundlage für Abschlags- und Schlussrechnungen verwendbar.
 

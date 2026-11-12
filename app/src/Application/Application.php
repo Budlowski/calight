@@ -23,6 +23,7 @@ use App\Http\UserAccessController;
 use App\Http\EmployeeController;
 use App\Http\DailyReportController;
 use App\Http\MaterialRequestController;
+use App\Http\MeasurementController;
 use App\Domain\Order\OrderValidationException;
 use App\Domain\DocumentLockException;
 use App\Infrastructure\Persistence\OfferConflictException;
@@ -58,6 +59,7 @@ final readonly class Application
         private EmployeeController $employeeController,
         private DailyReportController $dailyReportController,
         private MaterialRequestController $materialRequestController,
+        private MeasurementController $measurementController,
     ) {
         $this->registerRoutes();
     }
@@ -109,6 +111,7 @@ final readonly class Application
         $this->employeeController->register($this->router);
         $this->dailyReportController->register($this->router);
         $this->materialRequestController->register($this->router);
+        $this->measurementController->register($this->router);
 
         $this->router->add('GET', '/', fn (): Response => Session::user() === null
             ? Response::redirect('/login')

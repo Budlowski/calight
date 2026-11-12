@@ -19,6 +19,9 @@ final class AuthorizationPolicy
         if (str_starts_with($path, '/api/users')) return ['users.manage'];
         if ($path === '/settings/employees' || str_starts_with($path, '/api/employees')) return ['employees.manage', 'costs.read'];
         if (str_starts_with($path, '/daily-reports') || str_starts_with($path, '/api/daily-reports')) return [$write ? 'reports.write' : 'reports.read'];
+        // Aufmaße: Entwürfe erfassen (measurements.write), verbindlich abschließen nur mit measurements.complete.
+        if (preg_match('#^/api/measurements/[^/]+/complete$#', $path) === 1) return ['measurements.read', 'measurements.complete'];
+        if (str_starts_with($path, '/measurements') || str_starts_with($path, '/api/measurements')) return [$write ? 'measurements.write' : 'measurements.read'];
         // Materialanforderungen: Erfassen wie Berichte, Erledigen/Wiedereröffnen nur durch Büro/Admin.
         if (preg_match('#^/api/material-requests/[^/]+/status$#', $path) === 1) return ['reports.read', 'materials.manage'];
         if (str_starts_with($path, '/material-requests') || str_starts_with($path, '/api/material-requests')) return [$write ? 'reports.write' : 'reports.read'];

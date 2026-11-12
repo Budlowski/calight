@@ -34,6 +34,7 @@ final readonly class NumberRangeRepository
             'service_template' => 'service_templates article_number',
             'offer' => 'offers offer_number',
             'change_order' => 'offers offer_number',
+            'measurement' => 'measurements measurement_number',
             default => null,
         };
         $entityCollision = $entitySource === null ? null : $this->entityCollisionStatement($entitySource);

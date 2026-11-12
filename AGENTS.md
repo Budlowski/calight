@@ -243,12 +243,20 @@ Keine zweite Nummernlogik in einem Controller oder Frontend anlegen.
 - **Anhänge** (`daily_report_attachments`) liegen über `AttachmentStore` unter `APP_DOCUMENTS_PATH/daily-reports/<bericht>/<anhang>.<ext>`. Der Dateityp wird mit `finfo` am Inhalt geprüft (Whitelist in `DailyReportService::ATTACHMENT_TYPES`), Speicherpfade entstehen nur aus UUIDs. Auslieferung ausschließlich über die geschützte Route mit denselben Leserechten wie der Bericht; nur Vorschaubilder inline, alles andere als Download. Hinzufügen/Entfernen wie Bearbeiten des Berichts.
 - **Materialanforderungen** (`material_requests`) sind eigenständige Datensätze mit Pflicht-Auftragsbezug und optionalem Bericht (`ON DELETE SET NULL`). Sie werden nur über die eigene API geändert, nie über das Speichern eines Berichts. Erfassen mit `reports.write`, Erledigen/Wiedereröffnen nur mit `materials.manage` (Büro/Admin); Monteure ändern nur eigene offene Anforderungen freigegebener Aufträge. Erledigte Anforderungen bleiben erhalten. Sie sind keine Bestellung und keine Ist-Kosten.
 
-### 4.12 Fachliche Abgrenzung späterer Module
+### 4.12 Aufmaße
+
+- Aufmaße (`measurements`, `measurement_items`, `measurement_source_totals`) erfassen **Zusatzmengen** verbindlicher Positionen; der Fortschritt ist die Summe abgeschlossener Aufmaße. Positionsziele: `order|addendum : Quell-ID : Knoten-ID` (gleiches Schema wie die Zeitzuordnung der Bautagesberichte).
+- Verbindliche Positionen liefert ausschließlich `Domain\Order\OrderBasisPositions` aus `orders.basis_json` und `order_addenda`; nur verkaufsseitige Werte (Menge, Einheit, `effectiveUnitPrice`), niemals Kosten. Keine Neukalkulation und kein Rückgriff auf Stammdaten.
+- Bewertung: Menge × Einzelpreis, HalfUp auf Cent; Nachlass/Aufschlag je Quelldokument nur anteilig auf Normalpositionen (`subtotalNet`/`adjustmentSigned`).
+- Abschluss (`measurements.complete`) vergibt die Nummer, schreibt Summen fest und ist unveränderlich. Überschreitungen der vereinbarten Menge brauchen `confirmOverrun`. Korrekturen nur über neue Korrekturaufmaße (`correction_of_id`, negative Mengen zulässig, Gesamtmenge ≥ 0).
+- Die Überschreitungs- und Nullprüfung gegen abgeschlossene Mengen erfolgt im selben `BEGIN IMMEDIATE` wie der Abschluss; Entwürfe sind über `version` geschützt.
+
+### 4.13 Fachliche Abgrenzung späterer Module
 
 Folgende Punkte sind Zielbild, soweit nicht durch aktuelle Migrationen/Code implementiert:
 
 - **Bautagesbericht:** interne Tagesdokumentation und Ist-Erfassung; kein abrechenbarer Leistungsnachweis.
-- **Aufmaß:** späterer Nachweis ausgeführter Mengen vereinbarter Angebotsleistungen; keine Rechnung und kein Materialverbrauch.
+- **Aufmaß:** seit Phase 3.3 implementiert (siehe 4.12); Nachweis ausgeführter Mengen vereinbarter Leistungen, keine Rechnung und kein Materialverbrauch. Die PDF-Ausgabe folgt in Phase 3.2.3.
 - **Rapport:** späterer Nachweis abrechenbarer Regieleistungen; nicht automatisch identisch mit internen Zeiten.
 - **Nachkalkulation:** späterer Soll-Ist-Vergleich aus unveränderlichen Grundlagen, Ist-Kosten und separat erfasster Erlösseite.
 - **Abrechnungstracking:** später nur Referenzen auf extern erstellte Rechnungen und Status. Keine Faktura oder Zahlungsbuchhaltung.
