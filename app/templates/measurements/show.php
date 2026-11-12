@@ -16,7 +16,10 @@
                 <h1 data-title>Aufmaß wird geladen …</h1>
                 <div class="document-status-line" data-status-line></div>
             </div>
-            <div class="order-detail-actions" data-actions></div>
+            <div class="measurement-actions">
+                <div class="order-detail-actions" data-actions></div>
+                <span class="measurement-dirty-hint" data-dirty-hint hidden>Ungespeicherte Änderungen</span>
+            </div>
         </div>
         <dl class="project-facts">
             <div><dt>Auftrag</dt><dd data-order></dd></div>
@@ -56,9 +59,5 @@
         <div data-totals></div>
     </section>
 
-    <div class="form-actions measurement-save-bar" data-save-bar hidden>
-        <button class="button" type="button" data-save data-shortcut-save data-icon="save" title="Aufmaß speichern (Strg+S)">Aufmaß speichern</button>
-        <span class="muted" data-dirty-hint hidden>Ungespeicherte Änderungen</span>
-    </div>
 </div>
 <script src="/assets/measurement-detail.js?v=<?= $escape((string) filemtime(dirname(__DIR__, 2) . '/public/assets/measurement-detail.js')) ?>" defer></script>

@@ -12,8 +12,6 @@
   const sourcesBox = root.querySelector("[data-sources]");
   const search = root.querySelector("[data-position-search]");
   const filter = root.querySelector("[data-position-filter]");
-  const saveBar = root.querySelector("[data-save-bar]");
-  const saveButton = root.querySelector("[data-save]");
   const TYPE_LABELS = { bedarf: "Bedarf", alternative: "Alternative" };
   const STATUS_LABELS = { draft: "Entwurf", completed: "Abgeschlossen" };
 
@@ -175,8 +173,11 @@
     ].filter(Boolean).join(" · ");
     root.querySelector("[data-status-line]").innerHTML = `<span class="status-badge status-measurement-${esc(measurement.status)}">${STATUS_LABELS[measurement.status]}</span><span>${details}</span>`;
 
+    // Alle Aktionen sitzen gemeinsam oben: Speichern sichert den Entwurf (weiter bearbeitbar),
+    // Abschließen macht das Aufmaß nach Bestätigung verbindlich und unveränderlich.
     const actions = [];
-    if (measurement.canComplete) actions.push('<button class="button" type="button" data-complete data-icon="clipboard-check">Abschließen</button>');
+    if (editable()) actions.push('<button class="button button-light" type="button" data-save data-shortcut-save data-icon="save" title="Entwurf speichern, weiter bearbeitbar (Strg+S)">Entwurf speichern</button>');
+    if (measurement.canComplete) actions.push('<button class="button" type="button" data-complete data-icon="clipboard-check" title="Aufmaß verbindlich abschließen">Abschließen …</button>');
     if (measurement.canEdit) actions.push('<button class="button button-danger-light" type="button" data-delete data-icon="trash">Entwurf löschen</button>');
     if (measurement.canCorrect) actions.push('<button class="button button-light" type="button" data-correct data-icon="square-pen">Korrekturaufmaß anlegen</button>');
     root.querySelector("[data-actions]").innerHTML = actions.join("");
@@ -185,7 +186,6 @@
       headForm.elements[name].value = measurement[name] ?? "";
       headForm.elements[name].disabled = !editable();
     }
-    saveBar.hidden = !editable();
     root.querySelector("[data-hint]").textContent = editable()
       ? (measurement.correctionOfId
         ? "Korrekturaufmaß: Erfassen Sie nur die Differenz; negative Mengen verringern die bisher aufgemessene Menge."
@@ -302,43 +302,66 @@
     return result.data;
   }
 
-  function overrunContent(overruns) {
-    const box = document.createElement("div");
-    box.className = "form-stack";
-    box.innerHTML = `<p>Bei folgenden Positionen übersteigt die insgesamt aufgemessene Menge die vereinbarte Menge. Bitte prüfen Sie, ob es sich um eine Mengenabweichung der vereinbarten Leistung handelt. Zusätzliche Leistungen gehören in einen Nachtrag.</p>
-      <ul class="measurement-overrun-list">${overruns.map((item) => `<li><strong>${esc(item.number)} ${esc(item.shortText)}</strong><br>
-        vereinbart ${quantityText(toUnits(item.agreed, 3))} ${esc(item.unit)} · gesamt ${quantityText(toUnits(item.total, 3))} ${esc(item.unit)} · <span class="measurement-overrun">+${quantityText(toUnits(item.excess, 3))} ${esc(item.unit)}</span></li>`).join("")}</ul>`;
-    return box;
+  /**
+   * Abschlussdialog: Zusammenfassung und – falls vorhanden – alle Positionen, deren
+   * Gesamtmenge die vereinbarte Menge übersteigt. Überschreitungen müssen ausdrücklich
+   * per Häkchen bestätigt werden.
+   */
+  function confirmCompletion(overruns) {
+    const positions = allPositions().filter((position) => positionState(position).current !== 0n).length;
+    const sum = measurement.totals.reduce((cents, total) => cents + toUnits(total.netTotal, 2), 0n);
+    const form = document.createElement("form");
+    form.className = "form-stack";
+    form.innerHTML = `
+      <p>Nach dem Abschluss erhält das Aufmaß eine Nummer und ist <strong>unveränderlich</strong>. Spätere Korrekturen sind nur über ein Korrekturaufmaß möglich.</p>
+      <dl class="measurement-complete-summary">
+        <div><dt>Positionen mit Menge</dt><dd>${positions}</dd></div>
+        <div><dt>Nettosumme</dt><dd>${moneyText(sum)}</dd></div>
+      </dl>
+      ${overruns.length ? `
+        <div class="notice notice-warning">
+          <strong>${overruns.length === 1 ? "1 Position übersteigt" : `${overruns.length} Positionen übersteigen`} die vereinbarte Menge.</strong>
+          Bitte prüfen, ob es sich um Mengenabweichungen der vereinbarten Leistung handelt. Zusätzliche Leistungen gehören in einen Nachtrag.
+        </div>
+        <ul class="measurement-overrun-list">${overruns.map((item) => `<li><strong>${esc(item.number)} ${esc(item.shortText)}</strong><br>
+          vereinbart ${quantityText(toUnits(item.agreed, 3))} ${esc(item.unit)} · gesamt ${quantityText(toUnits(item.total, 3))} ${esc(item.unit)} ·
+          <span class="measurement-overrun">+${quantityText(toUnits(item.excess, 3))} ${esc(item.unit)}</span></li>`).join("")}</ul>
+        <label class="check-inline"><input type="checkbox" name="confirmOverrun" required> Ich habe die Mengenüberschreitungen geprüft und bestätige sie.</label>` : ""}`;
+    return CalightModal.open({
+      title: "Aufmaß abschließen",
+      content: form,
+      actions: [
+        { label: "Abbrechen", value: false },
+        { label: overruns.length ? "Bestätigen und abschließen" : "Verbindlich abschließen", value: true, primary: true, validate: true },
+      ],
+      initialFocus: overruns.length ? '[name="confirmOverrun"]' : "[data-modal-primary]",
+    });
   }
 
   root.querySelector("[data-actions]").addEventListener("click", (event) => {
     const button = event.target.closest("button");
     if (!button) return;
-    if (button.matches("[data-complete]")) {
+    if (button.matches("[data-save]")) {
+      run(button, () => save());
+    } else if (button.matches("[data-complete]")) {
       run(button, async () => {
+        // Ungespeicherte Mengen zuerst sichern, damit Dialog und Abschluss denselben Stand zeigen.
         if (dirty && !(await save({ silent: true }))) return;
-        const confirmed = await CalightModal.confirm({
-          title: "Aufmaß abschließen",
-          content: "Nach dem Abschluss erhält das Aufmaß eine Nummer und kann nicht mehr geändert werden. Korrekturen sind nur über ein Korrekturaufmaß möglich.",
-          confirmLabel: "Abschließen",
-        });
-        if (!confirmed) return;
-        let result = await complete();
-        if (!result.completed) {
-          const accept = await CalightModal.open({
-            title: "Mengenüberschreitung bestätigen",
-            content: overrunContent(result.overruns),
-            actions: [{ label: "Abbrechen", value: false }, { label: "Überschreitung bestätigen und abschließen", value: true, primary: true }],
-          });
-          if (!accept) {
-            await load();
+        let overruns = measurement.overruns;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          if (!(await confirmCompletion(overruns))) return;
+          const result = await complete(overruns.length > 0);
+          if (result.completed) {
+            measurement = result.measurement;
+            render();
+            notify(message, `Aufmaß ${measurement.measurementNumber} wurde abgeschlossen.`, "success");
             return;
           }
-          result = await complete(true);
+          // Zwischenzeitlich abgeschlossene Aufmaße haben neue Überschreitungen ergeben.
+          await load();
+          overruns = result.overruns;
+          notify(message, "Ein anderes Aufmaß wurde zwischenzeitlich abgeschlossen. Bitte die aktualisierten Überschreitungen prüfen.", "warning");
         }
-        measurement = result.measurement;
-        render();
-        notify(message, `Aufmaß ${measurement.measurementNumber} wurde abgeschlossen.`, "success");
       });
     } else if (button.matches("[data-delete]")) {
       run(button, async () => {
@@ -355,8 +378,6 @@
       });
     }
   });
-
-  saveButton.addEventListener("click", () => run(saveButton, () => save()));
 
   window.addEventListener("beforeunload", (event) => {
     if (!dirty) return;
