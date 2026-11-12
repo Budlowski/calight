@@ -150,10 +150,7 @@ final readonly class Application
             }
             return $this->view->render('projects/show', [
                 'project' => $project,
-                'offers' => array_values(array_filter(
-                    $this->offerService->overview(),
-                    static fn (array $offer): bool => $offer['projectId'] === $project['id'],
-                )),
+                'offers' => $this->offerService->overview((string) $project['id']),
             ]);
         }));
 
@@ -161,8 +158,8 @@ final readonly class Application
             fn (): Response => $this->view->render('offers/index',['projects'=>$this->projects->all(),'customers'=>$this->projects->customers()])
         ));
 
-        $this->router->add('GET', '/api/offers', fn (): Response => $this->protected(
-            fn (): Response => Response::json(['offers' => $this->offerService->overview()])
+        $this->router->add('GET', '/api/offers', fn (Request $request): Response => $this->protected(
+            fn (): Response => Response::json(['data' => $this->offerService->page($request->query)])
         ));
 
         $this->router->add('POST', '/api/offers', fn (Request $request): Response => $this->protected(function () use ($request): Response {

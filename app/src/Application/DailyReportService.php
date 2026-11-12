@@ -11,6 +11,7 @@ use App\Infrastructure\Persistence\EmployeeRepository;
 use App\Infrastructure\Persistence\OrderRepository;
 use App\Http\AccessDeniedException;
 use App\Support\Clock;
+use App\Support\ListQuery;
 use App\Support\Uuid;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
@@ -33,7 +34,48 @@ final readonly class DailyReportService
     public function overview(array $actor):array
     {
         $rows=$this->reports->all();if(($actor['role']??'')==='technician')$rows=array_values(array_filter($rows,static fn(array $r):bool=>$r['order_status']!=='open'));
-        foreach($rows as &$row){$hours=BigDecimal::zero();$costs=BigDecimal::zero();foreach(array_filter(explode('|',(string)($row['duration_values']??''))) as $duration)$hours=$hours->plus($duration);foreach(array_filter(explode('|',(string)($row['cost_values']??''))) as $cost)$costs=$costs->plus($cost);$row['total_hours']=(string)$hours->toScale(Decimal::TIME_SCALE,RoundingMode::HalfUp);if($this->canReadCosts($actor))$row['total_labor_cost']=Decimal::money($costs);unset($row['basis_json'],$row['duration_values'],$row['cost_values']);$row['canEdit']=$this->canEdit($row,$actor);}unset($row);return$rows;
+        return array_map(fn (array $row): array => $this->withTotals($row, $actor), $rows);
+    }
+
+    /**
+     * Seite der Berichtsübersicht. Kosten nur mit costs.read, Techniker nur freigegebene Aufträge.
+     *
+     * @param array<string,mixed> $parameters URL-Parameter (q, order, date, employee, sort, dir, page, per_page)
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
+    public function page(array $parameters, array $actor): array
+    {
+        $query = ListQuery::fromArray($parameters, DailyReportRepository::LIST_SORTS, 'date', DailyReportRepository::LIST_FILTERS);
+        $page = $this->reports->page($query, ($actor['role'] ?? '') === 'technician');
+        $page['items'] = array_map(fn (array $row): array => $this->withTotals($row, $actor), $page['items']);
+        return $page;
+    }
+
+    /**
+     * Summiert Stunden und Ist-Lohnkosten exakt aus den Zeiteinträgen eines Berichts.
+     *
+     * @param array<string,mixed> $row
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
+    private function withTotals(array $row, array $actor): array
+    {
+        $hours = BigDecimal::zero();
+        $costs = BigDecimal::zero();
+        foreach (array_filter(explode('|', (string) ($row['duration_values'] ?? ''))) as $duration) {
+            $hours = $hours->plus($duration);
+        }
+        foreach (array_filter(explode('|', (string) ($row['cost_values'] ?? ''))) as $cost) {
+            $costs = $costs->plus($cost);
+        }
+        $row['total_hours'] = (string) $hours->toScale(Decimal::TIME_SCALE, RoundingMode::HalfUp);
+        if ($this->canReadCosts($actor)) {
+            $row['total_labor_cost'] = Decimal::money($costs);
+        }
+        unset($row['basis_json'], $row['duration_values'], $row['cost_values']);
+        $row['canEdit'] = $this->canEdit($row, $actor);
+        return $row;
     }
 
     /** @param array<string,mixed> $actor @return array<string,mixed> */

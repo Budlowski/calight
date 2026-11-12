@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Persistence;
 
+use App\Support\ListQuery;
 use PDO;
 
 final readonly class CustomerProjectRepository
@@ -20,6 +21,75 @@ final readonly class CustomerProjectRepository
             (SELECT COUNT(*) FROM offers o WHERE o.customer_id=c.id) AS offer_count
             FROM customers c
             ORDER BY c.active DESC, c.customer_number COLLATE NOCASE, c.company_name COLLATE NOCASE, c.last_name COLLATE NOCASE')->fetchAll();
+    }
+
+    /** Sortierbare Spalten der Kundenübersicht mit natürlicher Richtung. */
+    public const CUSTOMER_SORTS = ['updated' => 'desc', 'number' => 'asc', 'name' => 'asc', 'city' => 'asc', 'type' => 'asc'];
+    public const CUSTOMER_FILTERS = ['type', 'archived'];
+    private const CUSTOMER_NAME = "CASE WHEN c.customer_type='company' THEN c.company_name ELSE trim(c.first_name || ' ' || c.last_name) END";
+
+    /** @return array{items:list<array<string,mixed>>,total:int,page:int,perPage:int,pageCount:int,sort:string,dir:string} */
+    public function customerPage(ListQuery $query): array
+    {
+        $name = self::CUSTOMER_NAME;
+        $page = (new Paginator($this->pdo))
+            ->search($query, ['c.customer_number', $name, 'c.city', 'c.postal_code', 'c.email', 'c.phone',
+                "(SELECT group_concat(co.first_name || ' ' || co.last_name, ' ') FROM customer_contacts co WHERE co.customer_id=c.id)"]);
+        if ($query->filter('archived') !== '1') {
+            $page->where('c.active = 1');
+        }
+        if (in_array($query->filter('type'), ['company', 'private'], true)) {
+            $page->where('c.customer_type = :customer_type', ['customer_type' => (string) $query->filter('type')]);
+        }
+
+        return $page->fetch(
+            "c.id, c.customer_number, c.customer_type, c.postal_code, c.city, c.active, c.updated_at, {$name} AS display_name,
+             (SELECT COUNT(*) FROM customer_contacts co WHERE co.customer_id=c.id) AS contact_count,
+             (SELECT COUNT(*) FROM projects p WHERE p.customer_id=c.id) AS project_count,
+             (SELECT COUNT(DISTINCT COALESCE(o.revision_root_id, o.id)) FROM offers o WHERE o.customer_id=c.id) AS offer_count",
+            'customers c',
+            [
+                'updated' => 'c.updated_at',
+                'number' => 'c.customer_number COLLATE NOCASE',
+                'name' => "{$name} COLLATE NOCASE",
+                'city' => "NULLIF(c.city, '') COLLATE NOCASE",
+                'type' => 'c.customer_type',
+            ],
+            'c.id',
+            $query,
+        );
+    }
+
+    /** Sortierbare Spalten der Projektübersicht mit natürlicher Richtung. */
+    public const PROJECT_SORTS = ['updated' => 'desc', 'number' => 'asc', 'name' => 'asc', 'customer' => 'asc', 'status' => 'asc', 'city' => 'asc'];
+    public const PROJECT_FILTERS = ['status'];
+
+    /** @return array{items:list<array<string,mixed>>,total:int,page:int,perPage:int,pageCount:int,sort:string,dir:string} */
+    public function projectPage(ListQuery $query): array
+    {
+        // Altprojekte ohne verknüpften Kunden zeigen ihren freien Kundennamen.
+        $customer = 'COALESCE(' . self::CUSTOMER_NAME . ", NULLIF(p.customer_name, ''))";
+        $page = (new Paginator($this->pdo))
+            ->search($query, ['p.project_number', 'p.name', $customer, "trim(co.first_name || ' ' || co.last_name)", 'p.site_postal_code', 'p.site_city']);
+        if (in_array($query->filter('status'), ['draft', 'active', 'completed', 'archived'], true)) {
+            $page->where('p.status = :project_status', ['project_status' => (string) $query->filter('status')]);
+        }
+
+        return $page->fetch(
+            "p.id, p.project_number, p.name, p.status, p.site_postal_code, p.site_city, p.updated_at, {$customer} AS customer_display_name,
+             (SELECT COUNT(DISTINCT COALESCE(o.revision_root_id, o.id)) FROM offers o WHERE o.project_id=p.id) AS offer_count",
+            'projects p LEFT JOIN customers c ON c.id=p.customer_id LEFT JOIN customer_contacts co ON co.id=p.contact_id',
+            [
+                'updated' => 'p.updated_at',
+                'number' => 'p.project_number COLLATE NOCASE',
+                'name' => 'p.name COLLATE NOCASE',
+                'customer' => "{$customer} COLLATE NOCASE",
+                'status' => "CASE p.status WHEN 'draft' THEN 0 WHEN 'active' THEN 1 WHEN 'completed' THEN 2 ELSE 3 END",
+                'city' => "NULLIF(p.site_city, '') COLLATE NOCASE",
+            ],
+            'p.id',
+            $query,
+        );
     }
 
     /** @return array<string,mixed>|null */

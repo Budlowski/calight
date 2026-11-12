@@ -8,6 +8,7 @@ use App\Domain\Customer\CustomerProjectValidationException;
 use App\Infrastructure\Persistence\CustomerProjectRepository;
 use App\Infrastructure\Persistence\NumberRangeRepository;
 use App\Support\Clock;
+use App\Support\ListQuery;
 use App\Support\Uuid;
 use DateTimeImmutable;
 use PDOException;
@@ -27,6 +28,56 @@ final readonly class CustomerProjectService
     public function overview(): array
     {
         return ['customers' => array_map($this->mapCustomer(...), $this->repository->customers()), 'projects' => array_map($this->mapProject(...), $this->repository->projects())];
+    }
+
+    /**
+     * Seite der Kundenübersicht für die Listenansicht.
+     *
+     * @param array<string,mixed> $parameters URL-Parameter (q, type, archived, sort, dir, page, per_page)
+     * @return array<string,mixed>
+     */
+    public function customerPage(array $parameters): array
+    {
+        $query = ListQuery::fromArray($parameters, CustomerProjectRepository::CUSTOMER_SORTS, 'updated', CustomerProjectRepository::CUSTOMER_FILTERS);
+        $page = $this->repository->customerPage($query);
+        $page['items'] = array_map(static fn (array $row): array => [
+            'id' => $row['id'],
+            'customerNumber' => $row['customer_number'],
+            'customerType' => $row['customer_type'],
+            'displayName' => (string) $row['display_name'],
+            'postalCode' => $row['postal_code'],
+            'city' => $row['city'],
+            'active' => (int) $row['active'] === 1,
+            'contactCount' => (int) $row['contact_count'],
+            'projectCount' => (int) $row['project_count'],
+            'offerCount' => (int) $row['offer_count'],
+            'updatedAt' => $row['updated_at'],
+        ], $page['items']);
+        return $page;
+    }
+
+    /**
+     * Seite der Projektübersicht für die Listenansicht.
+     *
+     * @param array<string,mixed> $parameters URL-Parameter (q, status, sort, dir, page, per_page)
+     * @return array<string,mixed>
+     */
+    public function projectPage(array $parameters): array
+    {
+        $query = ListQuery::fromArray($parameters, CustomerProjectRepository::PROJECT_SORTS, 'updated', CustomerProjectRepository::PROJECT_FILTERS);
+        $page = $this->repository->projectPage($query);
+        $page['items'] = array_map(static fn (array $row): array => [
+            'id' => $row['id'],
+            'projectNumber' => $row['project_number'],
+            'name' => $row['name'],
+            'status' => $row['status'],
+            'customerName' => $row['customer_display_name'],
+            'sitePostalCode' => $row['site_postal_code'],
+            'siteCity' => $row['site_city'],
+            'offerCount' => (int) $row['offer_count'],
+            'updatedAt' => $row['updated_at'],
+        ], $page['items']);
+        return $page;
     }
 
     /** @param array<string,mixed> $input */

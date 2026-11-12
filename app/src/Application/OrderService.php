@@ -6,8 +6,10 @@ use App\Infrastructure\Persistence\NumberRangeRepository;
 use App\Infrastructure\Persistence\OfferRepository;
 use App\Infrastructure\Persistence\OrderRepository;
 use App\Support\Clock;
+use App\Support\ListQuery;
 use App\Support\Uuid;
 use Brick\Math\BigDecimal;
+use Brick\Math\RoundingMode;
 use DateTimeImmutable;
 use PDO;
 use PDOException;
@@ -38,6 +40,47 @@ final readonly class OrderService
   $loaded=$this->offerService->loadDraft($offerId);$basis=json_encode($loaded['offer'],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);$net=(string)($loaded['offer']['calculation']['netTotal']??'');if($net==='')throw new OrderValidationException(['Die Nachtragssumme ist nicht verfügbar.']);
   $this->pdo->exec('BEGIN IMMEDIATE');try{$current=$this->offers->find($offerId);if($current===null||$current['status']!==$expectedStatus)throw new OrderValidationException(['Der Nachtragsstatus wurde zwischenzeitlich geändert.']);if(!$this->offers->changeStatus($offerId,$expectedStatus,'commissioned'))throw new OrderValidationException(['Der Nachtrag konnte nicht angenommen werden.']);$this->orders->addAcceptedAddendum(['id'=>Uuid::v4(),'order_id'=>$metadata['order_id'],'offer_revision_id'=>$offerId,'revision_root_id'=>$metadata['revision_root_id']??$offerId,'basis_json'=>$basis,'basis_sha256'=>hash('sha256',$basis),'net_total'=>$net,'accepted_at'=>Clock::now()]);$this->pdo->commit();return$this->detail((string)$metadata['order_id']);}catch(Throwable $e){if($this->pdo->inTransaction())$this->pdo->rollBack();if($e instanceof PDOException&&str_starts_with((string)$e->getCode(),'23'))throw new OrderValidationException(['Dieser Nachtrag oder eine andere Revision derselben Nachtragskette wurde bereits übernommen.']);throw$e;}
  }
+ /**
+  * Seite der Auftragsübersicht; Techniker sehen nur freigegebene Aufträge.
+  *
+  * @param array<string,mixed> $parameters URL-Parameter (q, status, type, sort, dir, page, per_page)
+  * @return array<string,mixed>
+  */
+ public function page(array $parameters, bool $releasedOnly): array
+ {
+  $query = ListQuery::fromArray($parameters, OrderRepository::LIST_SORTS, 'updated', OrderRepository::LIST_FILTERS);
+  $page = $this->orders->page($query, $releasedOnly);
+  $page['items'] = array_map(function (array $row): array {
+   $item = $this->map($row);
+   $item['contractNetTotal'] = $this->contractNetTotal($row['original_net_total'], (string) ($row['addenda_net_totals'] ?? ''));
+   return $item;
+  }, $page['items']);
+  return $page;
+ }
+
+ /** Ursprüngliche Summe plus angenommene Nachträge; null bei Regieaufträgen ohne vereinbarte Summe. */
+ private function contractNetTotal(?string $original, string $addenda): ?string
+ {
+  $values = array_filter(explode('|', $addenda), static fn (string $value): bool => $value !== '');
+  if ($original === null && $values === []) {
+   return null;
+  }
+  $total = BigDecimal::of($original ?? '0');
+  foreach ($values as $value) {
+   $total = $total->plus($value);
+  }
+  return (string) $total->toScale(2, RoundingMode::HalfUp);
+ }
+
+ private function basisNetTotal(?string $basis): ?string
+ {
+  if ($basis === null) {
+   return null;
+  }
+  $netTotal = json_decode($basis, true)['calculation']['netTotal'] ?? null;
+  return $netTotal !== null ? (string) $netTotal : null;
+ }
+
  /** @param array<string,mixed> $input */
  private function create(string $type,array $input,?string $source,?string $basis):array
  {
@@ -50,7 +93,7 @@ final readonly class OrderService
   $id=Uuid::v4();$now=Clock::now();$this->pdo->exec('BEGIN IMMEDIATE');
   try{
    $number=$this->numbers->allocate('order','order',$id,Uuid::v4(),new DateTimeImmutable());
-   $this->orders->insert(['id'=>$id,'order_number'=>$number,'customer_id'=>$customer,'project_id'=>$project,'source_offer_id'=>$source,'order_type'=>$type,'title'=>$title,'description'=>trim((string)($input['description']??'')),'order_date'=>$date,'status'=>'open','basis_json'=>$basis,'basis_sha256'=>$basis!==null?hash('sha256',$basis):null,'created_at'=>$now,'updated_at'=>$now]);
+   $this->orders->insert(['id'=>$id,'order_number'=>$number,'customer_id'=>$customer,'project_id'=>$project,'source_offer_id'=>$source,'order_type'=>$type,'title'=>$title,'description'=>trim((string)($input['description']??'')),'order_date'=>$date,'status'=>'open','basis_json'=>$basis,'basis_sha256'=>$basis!==null?hash('sha256',$basis):null,'original_net_total'=>$this->basisNetTotal($basis),'created_at'=>$now,'updated_at'=>$now]);
    $this->orders->addHistory($id,null,'open',Uuid::v4(),$now);$this->pdo->commit();return$this->detail($id);
   }catch(Throwable $e){if($this->pdo->inTransaction())$this->pdo->rollBack();if(str_contains(strtolower($e->getMessage()),'unique'))throw new OrderValidationException(['Aus dieser Angebotsrevision wurde bereits ein Auftrag erstellt.']);throw$e;}
  }

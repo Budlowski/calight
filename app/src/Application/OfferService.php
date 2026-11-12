@@ -15,6 +15,7 @@ use App\Domain\Offer\OfferValidationException;
 use App\Domain\Offer\OfferNormalizer;
 use App\Domain\Offer\OfferSubmissionValidator;
 use App\Support\Clock;
+use App\Support\ListQuery;
 use App\Support\Uuid;
 use PDO;
 use PDOException;
@@ -119,21 +120,81 @@ final readonly class OfferService
         return['deleted'=>true,'projectId'=>$projectId];
     }
 
-    /** @return list<array<string,mixed>> */
-    public function overview(): array
+    /**
+     * Alle aktuellen Angebotsstände (neueste Revision je Kette), optional für ein Projekt.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function overview(?string $projectId = null): array
     {
-        $result=[];
-        foreach($this->offers->all() as $metadata){
-            $calculated=$this->loadDraft((string)$metadata['id'])['offer'];
-            $result[]=['id'=>$metadata['id'],'projectId'=>$metadata['project_id'],'projectName'=>$metadata['project_name'],
-                'projectNumber'=>$metadata['project_number'],'customerId'=>$metadata['customer_id'],'customerName'=>$metadata['customer_name']??'',
-                'offerNumber'=>$metadata['effective_offer_number']??$metadata['offer_number'],'status'=>$metadata['status'],
-                'title'=>$calculated['title'],'updatedAt'=>$metadata['updated_at'],'submittedAt'=>$metadata['submitted_at']??null,
-                'documentDate'=>$metadata['document_date']??null,'revision'=>(int)($metadata['revision_number']??0),
-                'documentType'=>$metadata['document_type']??'offer','orderId'=>$metadata['order_id']??null,'orderNumber'=>$metadata['order_number']??null,
-                'netTotal'=>$calculated['calculation']['netTotal']??'0.00'];
+        $items = [];
+        $pageNumber = 1;
+        $this->refreshListings();
+        do {
+            $page = $this->offers->page(new ListQuery('', [], 'updated', 'desc', $pageNumber, 100), $projectId);
+            array_push($items, ...array_map($this->mapListItem(...), $page['items']));
+            $pageNumber++;
+        } while ($pageNumber <= $page['pageCount']);
+        return $items;
+    }
+
+    /**
+     * Seite der Angebotsübersicht; Suche, Filter und Sortierung laufen in SQLite.
+     *
+     * @param array<string,mixed> $parameters URL-Parameter (q, status, type, sort, dir, page, per_page)
+     * @return array<string,mixed>
+     */
+    public function page(array $parameters): array
+    {
+        $this->refreshListings();
+        $query = ListQuery::fromArray($parameters, OfferRepository::LIST_SORTS, 'updated', OfferRepository::LIST_FILTERS);
+        $page = $this->offers->page($query);
+        $page['items'] = array_map($this->mapListItem(...), $page['items']);
+        return $page;
+    }
+
+    /**
+     * Gleicht den Listen-Cache (Titel, Nettosumme) mit geänderten Angebotsdokumenten ab.
+     *
+     * Nur veraltete Einträge werden aus dem Dokument berechnet; im Normalfall ist
+     * dies eine einzige leichte Abfrage ohne Dateizugriff.
+     */
+    private function refreshListings(): void
+    {
+        foreach ($this->offers->staleListingIds() as $offerId) {
+            try {
+                $loaded = $this->loadDraft((string) $offerId);
+                $netTotal = $loaded['offer']['calculation']['netTotal'] ?? null;
+                $this->offers->updateListing((string) $offerId, $loaded['etag'], (string) ($loaded['offer']['title'] ?? ''), $netTotal !== null ? (string) $netTotal : null);
+            } catch (Throwable $exception) {
+                // Ein einzelnes unlesbares Dokument darf die Übersicht nicht blockieren.
+                error_log('Listen-Cache für Angebot ' . $offerId . ' konnte nicht aktualisiert werden: ' . $exception->getMessage());
+            }
         }
-        return $result;
+    }
+
+    /** @param array<string,mixed> $row @return array<string,mixed> */
+    private function mapListItem(array $row): array
+    {
+        return [
+            'id' => $row['id'],
+            'projectId' => $row['project_id'],
+            'projectName' => $row['project_name'],
+            'projectNumber' => $row['project_number'],
+            'customerId' => $row['customer_id'],
+            'customerName' => $row['customer_name'] ?? '',
+            'offerNumber' => $row['effective_offer_number'],
+            'status' => $row['status'],
+            'title' => $row['list_title'] ?? 'Angebotsdokument nicht lesbar',
+            'updatedAt' => $row['updated_at'],
+            'submittedAt' => $row['submitted_at'] ?? null,
+            'documentDate' => $row['document_date'] ?? null,
+            'revision' => (int) ($row['revision_number'] ?? 0),
+            'documentType' => $row['document_type'] ?? 'offer',
+            'orderId' => $row['order_id'] ?? null,
+            'orderNumber' => $row['order_number'] ?? null,
+            'netTotal' => $row['list_net_total'] ?? '0.00',
+        ];
     }
 
     /** @return array{metadata:array<string,mixed>,offer:array<string,mixed>,etag:string} */
