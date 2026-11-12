@@ -104,7 +104,7 @@ Laufzeitdaten liegen außerhalb des Anwendungscodes in den über `Config` konfig
 - `APP_DOCUMENTS_PATH` – Dokumentdaten;
 - `APP_TEMPLATES_PATH` – Vorlagendaten.
 
-In Docker sind diese Pfade Unterverzeichnisse von `/var/www/data` im Volume `calight-data`. Datenbanken, Angebote, Dokumente, Logs, `.env` und andere Laufzeitdateien dürfen nicht eingecheckt werden.
+In Docker sind diese Pfade Unterverzeichnisse von `/var/www/data` im Volume `calight-data`. Datenbanken, Angebote, Dokumente, Logs, `.env` und andere Laufzeitdateien dürfen nicht eingecheckt werden. Datenverzeichnisse dürfen nie im Projektordner oder unter `app/public` liegen; `StoragePaths` verhindert den Start bei Datenpfaden im Webverzeichnis, `php bin/console storage:check` zeigt die Konfiguration. Neue Dateiablagen nutzen Unterordner von `APP_DOCUMENTS_PATH` (z. B. `daily-reports/`), speichern Pfade relativ und nur aus internen IDs. Details: `docs/storage.md`.
 
 ### Laufzeitfluss
 

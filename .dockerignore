@@ -5,3 +5,8 @@ database
 app/vendor
 app/var/*
 !app/var/.gitkeep
+offers
+documents
+templates
+docs/daily-reports
+.env

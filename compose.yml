@@ -14,6 +14,11 @@ services:
       APP_SECURE_COOKIES: "${APP_SECURE_COOKIES:-0}"
       APP_TIMEZONE: "${APP_TIMEZONE:-Europe/Berlin}"
     volumes:
+      # Alle Anwendungsdaten (Datenbank, Angebote, Dokumente, Vorlagen) liegen unter /var/www/data.
+      # Standard ist ein benanntes Volume. Alternativ ein Host-Verzeichnis AUSSERHALB des
+      # Projektordners einbinden, z. B.:
+      #   - /srv/calight-data:/var/www/data
+      # Siehe docs/storage.md.
       - calight-data:/var/www/data
 
 volumes:

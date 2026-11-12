@@ -54,6 +54,11 @@ final readonly class Bootstrap
 
     public function application(string $root): Application
     {
+        // Datenverzeichnisse im öffentlichen Webverzeichnis würden Dateien direkt ausliefern.
+        $storageProblems = (new StoragePaths($this->config, $root))->blockingProblems();
+        if ($storageProblems !== []) {
+            throw new \RuntimeException('Unsichere Speicherkonfiguration: ' . implode(' ', $storageProblems));
+        }
         $projects = new ProjectRepository($this->pdo);
         $offers = new OfferRepository($this->pdo);
         $store = new OfferJsonStore($this->config->offersPath, new OfferValidator());

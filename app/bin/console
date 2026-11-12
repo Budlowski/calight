@@ -4,6 +4,7 @@
 declare(strict_types=1);
 
 use App\Application\Bootstrap;
+use App\Application\StoragePaths;
 use App\Infrastructure\Database\Migrator;
 use App\Infrastructure\Persistence\UserRepository;
 use App\Support\Clock;
@@ -54,8 +55,26 @@ try {
         exit(0);
     }
 
+    if ($command === 'storage:check') {
+        // Nur lesende Prüfung: zeigt konfigurierte Datenverzeichnisse und Auffälligkeiten.
+        $storage = new StoragePaths($bootstrap->config, $root);
+        $problems = $storage->blockingProblems();
+        foreach ($storage->report() as $entry) {
+            $state = $entry['exists'] ? ($entry['writable'] ? 'vorhanden, beschreibbar' : 'vorhanden, NICHT beschreibbar') : 'fehlt';
+            echo "{$entry['label']}\n  {$entry['path']} ({$state})\n";
+            foreach ($entry['warnings'] as $warning) {
+                echo "  Warnung: {$warning}\n";
+            }
+        }
+        foreach ($problems as $problem) {
+            echo "FEHLER: {$problem}\n";
+        }
+        exit($problems === [] ? 0 : 1);
+    }
+
     echo "Verfuegbare Befehle:\n";
     echo "  migrate\n";
+    echo "  storage:check\n";
     echo "  user:create <benutzername> \"<Anzeigename>\" [admin|office|technician]\n";
     exit($command === 'help' ? 0 : 1);
 } catch (Throwable $exception) {

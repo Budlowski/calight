@@ -11,3 +11,10 @@
 /.phpunit.cache/
 /offers/
 /data/
+
+# Laufzeitdaten gehören nie ins Repository (siehe docs/storage.md).
+# Falls Datenverzeichnisse versehentlich im Projektordner eingebunden sind:
+/database/
+/documents/
+/templates/
+/docs/daily-reports/

@@ -44,10 +44,19 @@ final readonly class AttachmentStore
 
     public function absolute(string $relative): string
     {
-        if ($relative === '' || str_contains($relative, '..') || str_starts_with($relative, '/') || str_contains($relative, '\\')) {
+        if ($relative === '' || str_contains($relative, '..') || str_starts_with($relative, '/')
+            || str_contains($relative, '\\') || str_contains($relative, "\0")
+            || preg_match('#^[a-z0-9-]+(/[a-f0-9-]{36}){1,2}\.[a-z0-9]{1,5}$#D', $relative) !== 1) {
             throw new RuntimeException('Ungültiger Anhangspfad.');
         }
-        return rtrim($this->basePath, '/') . '/' . $relative;
+        $path = rtrim($this->basePath, '/') . '/' . $relative;
+        // Auch über Symlinks darf kein Zugriff außerhalb der Ablage entstehen.
+        $base = realpath($this->basePath);
+        $real = realpath($path);
+        if ($base !== false && $real !== false && !str_starts_with($real, rtrim($base, '/') . '/')) {
+            throw new RuntimeException('Ungültiger Anhangspfad.');
+        }
+        return $path;
     }
 
     /** Entfernt eine Datei; fehlende Dateien gelten als bereits entfernt. */
