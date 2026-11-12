@@ -46,7 +46,7 @@
 
   const customerTable = (items, header) => `
     <thead><tr>
-      ${header("number", "Kundennummer", "cell-number")}${header("name", "Name / Firma")}${header("city", "Ort")}${header("type", "Kundentyp", "cell-type")}
+      ${header("number", "Kundennummer", "cell-number")}${header("name", "Name / Firma", "cell-title")}${header("city", "Ort", "cell-text")}${header("type", "Kundentyp", "cell-type")}
       <th class="cell-count">Ansprechp.</th><th class="cell-count">Projekte</th><th class="cell-count">Angebote</th>
       ${header("updated", "Geändert", "cell-date")}${canWrite ? '<th class="cell-actions">Aktionen</th>' : ""}
     </tr></thead>
@@ -78,8 +78,8 @@
 
   const projectTable = (items, header) => `
     <thead><tr>
-      ${header("number", "Projektnummer", "cell-number")}${header("name", "Projektbezeichnung")}${header("customer", "Kunde")}
-      ${header("status", "Status", "cell-status")}${header("city", "Baustellenort")}<th class="cell-count">Angebote</th>
+      ${header("number", "Projektnummer", "cell-number")}${header("name", "Projektbezeichnung", "cell-title")}${header("customer", "Kunde", "cell-text")}
+      ${header("status", "Status", "cell-status")}${header("city", "Baustellenort", "cell-text")}<th class="cell-count">Angebote</th>
       ${header("updated", "Geändert", "cell-date")}${canWrite ? '<th class="cell-actions">Aktionen</th>' : ""}
     </tr></thead>
     <tbody>${items.map((item) => `

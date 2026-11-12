@@ -12,9 +12,14 @@
 <body<?= $currentUser !== null ? ' data-user-id="'.$escape((string)$currentUser['id']).'"' : '' ?>>
 <?php if ($currentUser !== null): ?>
     <header class="topbar">
-        <a class="brand" href="/dashboard">Calight</a>
+        <div class="topbar-start">
+            <button class="nav-toggle" type="button" data-nav-toggle aria-controls="main-navigation" aria-expanded="false" aria-label="Navigation öffnen" title="Navigation">
+                <span class="ui-icon icon-menu" aria-hidden="true"></span>
+            </button>
+            <a class="brand" href="/dashboard">Calight</a>
+        </div>
         <div class="user-area">
-            <span><?= $escape($currentUser['displayName']) ?></span>
+            <span class="user-name"><?= $escape($currentUser['displayName']) ?></span>
             <form action="/logout" method="post">
                 <input type="hidden" name="_csrf" value="<?= $escape($csrfToken) ?>">
                 <button class="button button-secondary" type="submit">Abmelden</button>
@@ -22,7 +27,8 @@
         </div>
     </header>
     <div class="shell">
-        <nav class="sidebar" aria-label="Hauptnavigation">
+        <div class="nav-backdrop" data-nav-backdrop hidden></div>
+        <nav class="sidebar" id="main-navigation" aria-label="Hauptnavigation">
 <?php
             // Menüpunkte nur mit Leserecht anzeigen; die Zugriffskontrolle selbst bleibt serverseitig.
             $currentPath = (string) (parse_url((string) ($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH) ?: '/');

@@ -48,6 +48,36 @@
         if (node instanceof Element) decorateIcons(node);
     }))).observe(document.body, {childList: true, subtree: true});
 
+    // Hauptnavigation auf schmalen Bildschirmen: seitliches Panel mit Menübutton.
+    // Auf dem Desktop ist der Button ausgeblendet und die Sidebar immer sichtbar.
+    const navToggle = document.querySelector('[data-nav-toggle]');
+    const navigation = document.querySelector('#main-navigation');
+    const navBackdrop = document.querySelector('[data-nav-backdrop]');
+    if (navToggle && navigation) {
+        const compactNavigation = matchMedia('(max-width: 1024px)');
+        const isOpen = () => document.body.classList.contains('nav-open');
+        const setOpen = (open, { restoreFocus = true } = {}) => {
+            document.body.classList.toggle('nav-open', open);
+            navToggle.setAttribute('aria-expanded', String(open));
+            navToggle.setAttribute('aria-label', open ? 'Navigation schließen' : 'Navigation öffnen');
+            if (navBackdrop) navBackdrop.hidden = !open;
+            if (open) (navigation.querySelector('a[aria-current="page"]') || navigation.querySelector('a[href]:not([aria-disabled="true"])'))?.focus();
+            else if (restoreFocus && navigation.contains(document.activeElement)) navToggle.focus();
+        };
+        navToggle.addEventListener('click', () => setOpen(!isOpen()));
+        navBackdrop?.addEventListener('click', () => setOpen(false));
+        navigation.addEventListener('click', event => {
+            if (event.target.closest('a[href]') && compactNavigation.matches) setOpen(false, { restoreFocus: false });
+        });
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && isOpen()) setOpen(false);
+        });
+        // Beim Wechsel auf Desktopbreite darf kein offener Panelzustand zurückbleiben.
+        compactNavigation.addEventListener('change', event => {
+            if (!event.matches && isOpen()) setOpen(false, { restoreFocus: false });
+        });
+    }
+
     // Globales Aktionsmenü: Auswahl, Außenklick und Escape schließen offene Menüs.
     document.addEventListener('click', event => document.querySelectorAll('details.context-menu[open]').forEach(menu => {
         if (!menu.contains(event.target) || event.target.closest('.context-menu-panel a, .context-menu-panel button')) menu.removeAttribute('open');

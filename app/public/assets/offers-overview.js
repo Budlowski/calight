@@ -12,7 +12,8 @@
 
   const href = (offer) => `/offers/${encodeURIComponent(offer.id)}`;
   const isChangeOrder = (offer) => offer.documentType === "change_order";
-  const number = (offer) => offer.offerNumber || (isChangeOrder(offer) ? "Nachtragsentwurf" : "Entwurf");
+  // Die Dokumentart steht in eigener Spalte bzw. als Badge; Entwürfe ohne Nummer heißen einheitlich „Entwurf“.
+  const number = (offer) => offer.offerNumber || "Entwurf";
   const revision = (offer) => (Number(offer.revision) > 0 ? ` · Revision ${Number(offer.revision)}` : "");
   const badge = (offer) => `<span class="status-badge status-${esc(offer.status)}">${esc(labels[offer.status] || offer.status)}</span>`;
 
@@ -42,13 +43,13 @@
 
   const renderTable = (offers, header) => `
     <thead><tr>
-      ${header("number", "Nummer", "cell-number")}${header("title", "Bezeichnung")}${header("customer", "Kunde")}${header("project", "Projekt")}
+      ${header("number", "Nummer", "cell-number")}${header("title", "Bezeichnung", "cell-title")}${header("customer", "Kunde", "cell-text")}${header("project", "Projekt", "cell-text")}
       <th class="cell-type">Dokumentart</th>${header("status", "Status", "cell-status")}${header("net", "Nettosumme", "cell-money")}
       ${header("updated", "Geändert", "cell-datetime")}${canWrite ? '<th class="cell-actions">Aktionen</th>' : ""}
     </tr></thead>
     <tbody>${offers.map((offer) => `
       <tr tabindex="0" data-href="${href(offer)}">
-        <td class="cell-number">${esc(number(offer))}${revision(offer)}</td>
+        <td class="cell-number" title="${esc(number(offer))}${revision(offer)}">${esc(number(offer))}${revision(offer)}</td>
         <td class="cell-title" title="${esc(offer.title)}">${esc(offer.title)}</td>
         <td class="cell-text" title="${esc(offer.customerName)}">${esc(offer.customerName)}</td>
         <td class="cell-text" title="${esc(offer.projectName || "")}">${esc(offer.projectName || "Ohne Projekt")}</td>

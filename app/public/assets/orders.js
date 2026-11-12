@@ -29,8 +29,8 @@
 
   const renderTable = (orders, header) => `
     <thead><tr>
-      ${header("number", "Auftragsnummer", "cell-number")}${header("title", "Bezeichnung")}${header("customer", "Kunde")}
-      <th>Projekt</th><th>Auftragsart</th>${header("status", "Status", "cell-status")}${header("date", "Auftragsdatum", "cell-date")}
+      ${header("number", "Auftragsnummer", "cell-number")}${header("title", "Bezeichnung", "cell-title")}${header("customer", "Kunde", "cell-text")}
+      <th class="cell-text">Projekt</th><th class="cell-text">Auftragsart</th>${header("status", "Status", "cell-status")}${header("date", "Auftragsdatum", "cell-date")}
       ${header("total", "Auftragssumme", "cell-money")}
     </tr></thead>
     <tbody>${orders.map((order) => `

@@ -29,8 +29,8 @@
 
   const renderTable = (reports, header) => `
     <thead><tr>
-      ${header("date", "Berichtsdatum", "cell-date")}${header("order", "Auftrag", "cell-number")}${header("customer", "Kunde")}
-      ${header("title", "Bezeichnung")}<th>Mitarbeiter</th>${header("hours", "Gesamtstunden", "cell-money")}${header("updated", "Geändert", "cell-datetime")}
+      ${header("date", "Berichtsdatum", "cell-date")}${header("order", "Auftrag", "cell-number")}${header("customer", "Kunde", "cell-text")}
+      ${header("title", "Bezeichnung", "cell-title")}<th class="cell-text">Mitarbeiter</th>${header("hours", "Gesamtstunden", "cell-money")}${header("updated", "Geändert", "cell-datetime")}
     </tr></thead>
     <tbody>${reports.map((report) => `
       <tr tabindex="0" data-href="${href(report)}">
