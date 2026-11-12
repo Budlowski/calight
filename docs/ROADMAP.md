@@ -35,7 +35,7 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 
 | 3.3 | Aufmaße für vereinbarte Angebotsleistungen | Implementiert (`0024`); PDF-Ausgabe in Phase 3.2.3 |
 
-| 3.4 | Rapporte für Regieleistungen | Geplant |
+| 3.4 | Rapporte für Regieleistungen | Implementiert (`0025`); PDF, Unterschrift und Übermittlung in Phase 3.2.3 |
 
 | 3.4.1 | Bestellungen mit PDF-Ausgabe (schlanke Materialbeschaffung) | Geplant |
 | 3.4.2 | Lieferscheine mit PDF-Ausgabe (Liefernachweise) | Geplant |
@@ -270,19 +270,18 @@ Aufmaße dokumentieren die **abrechenbaren ausgeführten Mengen vereinbarter Lei
 
 ## Phase 3.4 – Rapporte
 
-Rapporte dokumentieren **abrechenbare Regieleistungen** und entsprechen in ihrer Abrechnungsfunktion dem Aufmaß.
+Rapporte dokumentieren **abrechenbare Regieleistungen** und entsprechen in ihrer Abrechnungsfunktion dem Aufmaß. Sie sind sowohl bei direkten Regieaufträgen als auch ergänzend bei Angebotsaufträgen möglich und gehören nur zum Auftrag – es gibt keine Zuordnung zu Angebotspositionen.
 
-- Arbeitsstunden nach Verrechnungssatz/Lohnkostengruppe, Materialmengen und Verkaufspreisen.
+**Umgesetzt (Phase 3.4, Migration `0025`):**
 
-- Anfahrt, Fahrtkosten, Fremdleistungen und freie Positionen.
+- **Zwei getrennte Ebenen:** Der Monteur erfasst den *Leistungsnachweis* (Leistungsdatum/-zeitraum, Ansprechpartner vor Ort, ausgeführte Arbeiten, Bemerkungen, Stunden je Mitarbeiter mit optionaler Lohnkostengruppe, Material und sonstige Leistungen als Freitext mit Menge) – ohne Preise. Das Büro erstellt daraus die *kaufmännischen Abrechnungspositionen* (Arbeitsstunden, Material, Anfahrt/Fahrtkosten, Fremdleistung, Pauschale, sonstige Leistung) mit Menge, Einheit und Verkaufspreis; Artikel und Lohnkostengruppen können mit ihrem Verkaufspreis aus dem Stamm übernommen werden (Snapshot, keine spätere Aktualisierung).
+- **Status:** Entwurf → Eingereicht → Bearbeitet. Beim Einreichen erhält der Rapport seine Nummer (Nummernkreis „Rapporte“, `RP`), der Leistungsnachweis wird gesperrt und per SHA-256 festgeschrieben. „Bearbeitet“ schreibt den Nettobetrag fest und kann vom Büro wieder geöffnet werden; der Leistungsnachweis bleibt davon unberührt.
+- **Korrekturen:** neuer Korrekturrapport mit Verweis auf das Original und dessen Stand als Ausgangspunkt; das Original und eine vorhandene Kundenbestätigung bleiben unverändert.
+- **Kundenbestätigung (vorbereitet):** unabhängig vom Bearbeitungsstatus, einmalig mit Name, Zeitpunkt und Art (vor Ort/nachträglich); sie ist datenbankseitig an die Prüfsumme des eingereichten Leistungsnachweises gebunden und wird nie auf einen geänderten Stand übertragen. Rapporte ohne Bestätigung sind zulässig.
+- **Rechte:** `workreports.read`/`workreports.write` (Büro, Monteur – Monteure nur freigegebene Aufträge, eigene Entwürfe, eigene Bestätigungen/Korrekturen), `workreports.process` (Büro/Admin) für Abrechnungspositionen, Stammübernahme, Abschluss und Wiederöffnen. Preise und Beträge liefert auch die API nur mit diesem Recht aus.
+- Rapportstunden sind abrechenbare Angaben und werden nicht mit den Ist-Zeiten der Bautagesberichte verrechnet; Rapportbeträge verändern keine Ist-Kosten.
 
-- Mehrere Rapporte je Auftrag, optional Kundenunterschrift, PDF-Ausgabe.
-
-- Freigegebene/ausgestellte Rapporte unveränderlich aufbewahren.
-
-- Daten aus Bautagesberichten dürfen später optional übernommen werden, aber niemals ungeprüft als abrechenbar gelten.
-
-- Rapporte sind sowohl bei direkten Regieaufträgen als auch ergänzend bei Angebotsaufträgen möglich.
+**Offen:** PDF-Ausgabe, grafische Unterschrift, Übermittlung an Kunden und ein Bestätigungsportal (Dokumentphase 3.2.3); optionale Übernahme aus Bautagesberichten.
 
 ## Phase 3.4.1 – Bestellungen und Materialbeschaffung (geplant)
 

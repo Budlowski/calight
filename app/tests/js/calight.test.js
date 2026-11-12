@@ -39,4 +39,13 @@ assert(lastRequest.options.body === '{"a":1}', "api serializes JSON body");
 globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ data: { id: "1" } }) });
 assert((await api("/api/test")).id === "1", "api unwraps data");
 
+// Exakte Dezimalvorschau (Aufmaß, Rapport): gleiche Rundung wie der Server, keine Gleitkommazahlen.
+const { toUnits, fromUnits, lineCents, DECIMAL_PATTERN } = globalThis.Calight.exact;
+for (const [quantity, price, expected] of [["0,333", "2.50", "0.83"], ["3,5", "85.00", "297.50"], ["-2,5", "2.50", "-6.25"], ["1.005", "1.00", "1.01"], ["2", "19.995", "39.99"]]) {
+  const cents = fromUnits(lineCents(toUnits(quantity, 3), price), 2);
+  assert(cents === expected, `${quantity} × ${price} = ${cents}, erwartet ${expected}`);
+}
+assert(fromUnits(toUnits("0,1", 3) + toUnits("0,2", 3), 3) === "0.300", "0,1 + 0,2 bleibt exakt");
+assert(DECIMAL_PATTERN.test("3,5") && !DECIMAL_PATTERN.test("3,5 h"), "decimal pattern");
+
 console.log("calight helper tests passed");

@@ -251,13 +251,21 @@ Keine zweite Nummernlogik in einem Controller oder Frontend anlegen.
 - Abschluss (`measurements.complete`) vergibt die Nummer, schreibt Summen fest und ist unveränderlich. Überschreitungen der vereinbarten Menge brauchen `confirmOverrun`. Korrekturen nur über neue Korrekturaufmaße (`correction_of_id`, negative Mengen zulässig, Gesamtmenge ≥ 0).
 - Die Überschreitungs- und Nullprüfung gegen abgeschlossene Mengen erfolgt im selben `BEGIN IMMEDIATE` wie der Abschluss; Entwürfe sind über `version` geschützt.
 
-### 4.13 Fachliche Abgrenzung späterer Module
+### 4.13 Rapporte
+
+- Tabellen `work_reports`, `work_report_labor`, `work_report_materials` (Leistungsnachweis) und `work_report_billing_items` (kaufmännische Ebene). Der Leistungsnachweis enthält nie Preise; die kaufmännischen Positionen verändern ihn nie.
+- Status `draft → submitted → processed`; `submitted` vergibt die Nummer (`work_report`/`RP`) und schreibt `submitted_sha256` fest. Danach sind Kopf, Stunden und Material unveränderlich; Korrekturen nur als neuer Rapport mit `correction_of_id`.
+- Kundenbestätigung (`confirmation_*`) ist unabhängig vom Status, einmalig und per CHECK an `submitted_sha256` gebunden.
+- Preise, Beträge, Abrechnungspositionen und der Artikelkatalog (nur Verkaufspreise) sind ausschließlich mit `workreports.process` zugänglich – serverseitig in `WorkReportService`, nicht nur in der Oberfläche.
+- Rapporte erzeugen keine Ist-Kosten und keine Bindung an Angebotspositionen; Rapportstunden sind nicht die Ist-Zeiten der Bautagesberichte.
+
+### 4.14 Fachliche Abgrenzung späterer Module
 
 Folgende Punkte sind Zielbild, soweit nicht durch aktuelle Migrationen/Code implementiert:
 
 - **Bautagesbericht:** interne Tagesdokumentation und Ist-Erfassung; kein abrechenbarer Leistungsnachweis.
 - **Aufmaß:** seit Phase 3.3 implementiert (siehe 4.12); Nachweis ausgeführter Mengen vereinbarter Leistungen, keine Rechnung und kein Materialverbrauch. Die PDF-Ausgabe folgt in Phase 3.2.3.
-- **Rapport:** späterer Nachweis abrechenbarer Regieleistungen; nicht automatisch identisch mit internen Zeiten.
+- **Rapport:** seit Phase 3.4 implementiert (siehe 4.13); Nachweis abrechenbarer Regieleistungen, nicht identisch mit internen Zeiten. PDF, Unterschrift und Übermittlung folgen in Phase 3.2.3.
 - **Nachkalkulation:** späterer Soll-Ist-Vergleich aus unveränderlichen Grundlagen, Ist-Kosten und separat erfasster Erlösseite.
 - **Abrechnungstracking:** später nur Referenzen auf extern erstellte Rechnungen und Status. Keine Faktura oder Zahlungsbuchhaltung.
 - Bestellungen, artikelgenauer Materialverbrauch, PDF-Ausgabe von Bautagesberichten, CardDAV und eine eigene mobile Monteuransicht sind noch keine implementierten Prozesse, solange Code und Migrationen nichts anderes zeigen. Materialanforderungen und Berichtsanhänge sind seit Phase 3.2.2 implementiert.

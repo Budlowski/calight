@@ -52,7 +52,7 @@
             <?= $navLink('/daily-reports', 'calendar-days', 'Bautagesberichte', ['reports.read']) ?>
             <?= $navLink('/material-requests', 'package', 'Materialanforderungen', ['reports.read']) ?>
             <?= $navLink('/measurements', 'ruler', 'Aufmaße', ['measurements.read']) ?>
-            <a href="#" aria-disabled="true" tabindex="-1" data-icon="clipboard-check">Rapporte</a>
+            <?= $navLink('/work-reports', 'clipboard-check', 'Rapporte', ['workreports.read']) ?>
             <a href="#" aria-disabled="true" tabindex="-1" data-icon="shopping-cart">Bestellungen</a>
             <a href="#" aria-disabled="true" tabindex="-1" data-icon="chart-no-axes-column-increasing">Nachkalkulation</a>
 

@@ -53,6 +53,30 @@
     dateTime: (value) => (value ? dateTimeFormat.format(toDate(value)) : "–"),
   });
 
+  // Exakte Dezimalvorschau ohne Gleitkommazahlen (BigInt in festen Nachkommastellen).
+  // Maßgeblich bleibt die Serverberechnung; die Vorschau rundet identisch (HalfUp auf Cent).
+  const DECIMAL_PATTERN = /^-?\d+(?:[.,]\d+)?$/;
+  function toUnits(value, scale) {
+    const text = String(value ?? "0").trim().replace(",", ".") || "0";
+    const negative = text.startsWith("-");
+    const [whole, fraction = ""] = text.replace(/^[-+]/, "").split(".");
+    const units = BigInt(whole || "0") * 10n ** BigInt(scale) + BigInt((fraction + "0".repeat(scale)).slice(0, scale) || "0");
+    return negative ? -units : units;
+  }
+  function fromUnits(units, scale) {
+    const negative = units < 0n;
+    const digits = (negative ? -units : units).toString().padStart(scale + 1, "0");
+    return `${negative ? "-" : ""}${digits.slice(0, -scale)}.${digits.slice(-scale)}`;
+  }
+  /** Menge (3 Stellen) × Preis (bis 4 Stellen) → Cent als BigInt, kaufmännisch gerundet. */
+  function lineCents(quantityUnits, price) {
+    const product = quantityUnits * toUnits(price, 4);
+    const divisor = 10n ** 5n;
+    const half = divisor / 2n;
+    return product >= 0n ? (product + half) / divisor : -((-product + half) / divisor);
+  }
+  const exact = Object.freeze({ DECIMAL_PATTERN, toUnits, fromUnits, lineCents });
+
   const collator = new Intl.Collator("de-DE", { numeric: true, sensitivity: "base" });
   const normalize = (value) => String(value ?? "").toLocaleLowerCase("de-DE");
   const matches = (query, ...fields) => !query || normalize(fields.filter(Boolean).join(" ")).includes(query);
@@ -121,5 +145,5 @@
     return { showError: (text) => { error.textContent = text; error.hidden = false; } };
   }
 
-  globalThis.Calight = Object.freeze({ esc, api, format, collator, normalize, matches, notify, bindProjectToCustomer, createDialog });
+  globalThis.Calight = Object.freeze({ esc, api, format, exact, collator, normalize, matches, notify, bindProjectToCustomer, createDialog });
 })();

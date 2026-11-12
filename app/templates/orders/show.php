@@ -84,6 +84,27 @@ $money=static function(?string $value):string{
     </section>
     <?php endif; ?>
 
+    <?php if (($workReports ?? null) !== null): $workReportLabels = ['draft' => 'Entwurf', 'submitted' => 'Eingereicht', 'processed' => 'Bearbeitet']; ?>
+    <section class="card order-work-reports">
+        <div class="section-heading">
+            <div><h2>Rapporte</h2><span class="muted">Leistungsnachweise für Regiearbeiten · <?= $escape((string) count($workReports)) ?> Rapporte</span></div>
+            <?php if (\App\Http\Session::can('workreports.write')): ?><button class="button" type="button" data-create-work-report="<?= $escape($order['id']) ?>" data-icon="plus">Rapport anlegen</button><?php endif; ?>
+        </div>
+        <div class="notice" data-work-report-message role="status" hidden></div>
+        <?php if ($workReports === []): ?><p class="empty-state">Noch keine Rapporte vorhanden.</p><?php else: ?>
+        <div class="offer-detail-list"><?php foreach ($workReports as $workReport): ?>
+            <div class="offer-detail-row order-measurement-row">
+                <a class="offer-detail-main" href="/work-reports/<?= $escape(rawurlencode((string) $workReport['id'])) ?>"><strong><?= $escape($workReport['reportNumber'] ?: 'Entwurf ohne Nummer') ?></strong><small><?= $escape($workReport['creatorName']) ?> · <?= $escape(number_format((float) $workReport['totalHours'], 2, ',', '.')) ?> h<?= $workReport['confirmationStatus'] === 'confirmed' ? ' · vom Kunden bestätigt' : '' ?><?= $workReport['correctedNumber'] ? ' · Korrektur zu ' . $escape((string) $workReport['correctedNumber']) : '' ?></small></a>
+                <span class="status-badge status-work-<?= $escape($workReport['status']) ?>"><?= $escape($workReportLabels[$workReport['status']] ?? $workReport['status']) ?></span>
+                <strong class="order-change-order-total"><?= array_key_exists('netTotal', $workReport) && $workReport['netTotal'] !== null ? $escape($money($workReport['netTotal'])) : '' ?></strong>
+                <time datetime="<?= $escape($workReport['workDate']) ?>"><?= $escape((new DateTimeImmutable($workReport['workDate']))->format('d.m.Y')) ?></time>
+                <a class="table-action" data-icon="eye" href="/work-reports/<?= $escape(rawurlencode((string) $workReport['id'])) ?>">Öffnen</a>
+            </div>
+        <?php endforeach; ?></div>
+        <?php endif; ?>
+    </section>
+    <?php endif; ?>
+
     <section class="card order-daily-reports">
         <div class="section-heading"><div><h2>Bautagesberichte</h2><span class="muted"><?= $escape((string)($dailyReportTotal??count($dailyReports??[]))) ?> Berichte · <?= $escape(number_format((float)($actualLabor['hours']??0),3,',','.')) ?> Ist-Stunden<?php if(isset($actualLabor['costs'])): ?> · <?= $escape($money($actualLabor['costs'])) ?> Ist-Lohnkosten<?php endif; ?></span></div><?php if($canWriteReports): ?><a class="button" data-icon="plus" href="/daily-reports?create_for=<?= $escape(rawurlencode((string)$order['id'])) ?>">Bericht erstellen</a><?php endif; ?></div>
         <?php if(($dailyReports??[])===[]): ?><p class="empty-state">Noch keine Bautagesberichte vorhanden.</p><?php else: ?><div class="offer-detail-list"><?php foreach($dailyReports as $report): ?><div class="offer-detail-row order-report-row"><a class="offer-detail-main" href="/daily-reports/<?= $escape(rawurlencode((string)$report['id'])) ?>"><strong><?= $escape($report['title']?:'Bautagesbericht vom '.(new DateTimeImmutable($report['report_date']))->format('d.m.Y')) ?></strong><small><?= $escape($report['employee_names']?:'Keine Arbeitszeiten') ?></small></a><span><?= $escape(number_format((float)$report['total_hours'],3,',','.')) ?> h</span><time datetime="<?= $escape($report['report_date']) ?>"><?= $escape((new DateTimeImmutable($report['report_date']))->format('d.m.Y')) ?></time><a class="table-action" data-icon="eye" href="/daily-reports/<?= $escape(rawurlencode((string)$report['id'])) ?>">Ansehen</a></div><?php endforeach; ?></div><?php if(($dailyReportTotal??0)>count($dailyReports)): ?><p class="order-report-more"><a href="/daily-reports?order=<?= $escape(rawurlencode((string)$order['id'])) ?>">Alle <?= $escape((string)$dailyReportTotal) ?> Bautagesberichte anzeigen</a></p><?php endif; ?><?php endif; ?>
@@ -100,4 +121,5 @@ $money=static function(?string $value):string{
 </div>
 <script src="/assets/material-requests.js?v=<?= $escape((string)filemtime(dirname(__DIR__,2).'/public/assets/material-requests.js')) ?>" defer></script>
 <script src="/assets/measurements.js?v=<?= $escape((string)filemtime(dirname(__DIR__,2).'/public/assets/measurements.js')) ?>" defer></script>
+<script src="/assets/work-reports.js?v=<?= $escape((string)filemtime(dirname(__DIR__,2).'/public/assets/work-reports.js')) ?>" defer></script>
 <script src="/assets/order-detail.js?v=<?= $escape((string)filemtime(dirname(__DIR__,2).'/public/assets/order-detail.js')) ?>" defer></script>

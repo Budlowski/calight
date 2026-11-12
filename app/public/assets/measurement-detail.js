@@ -25,25 +25,7 @@
   // serverseitige Berechnung beim Speichern; die Vorschau nutzt dieselbe Rundung.
   // ---------------------------------------------------------------------------
   const QUANTITY_PATTERN = /^-?\d+(?:[.,]\d{1,3})?$/;
-  function toUnits(value, scale) {
-    const text = String(value ?? "0").trim().replace(",", ".") || "0";
-    const negative = text.startsWith("-");
-    const [whole, fraction = ""] = text.replace(/^[-+]/, "").split(".");
-    const units = BigInt(whole || "0") * 10n ** BigInt(scale) + BigInt((fraction + "0".repeat(scale)).slice(0, scale) || "0");
-    return negative ? -units : units;
-  }
-  const fromUnits = (units, scale) => {
-    const negative = units < 0n;
-    const digits = (negative ? -units : units).toString().padStart(scale + 1, "0");
-    return `${negative ? "-" : ""}${digits.slice(0, -scale)}.${digits.slice(-scale)}`;
-  };
-  // Menge (3 Stellen) × Preis (4 Stellen) → Cent, kaufmännisch gerundet.
-  function lineCents(quantityUnits, price) {
-    const product = quantityUnits * toUnits(price, 4);
-    const divisor = 10n ** 5n;
-    const half = divisor / 2n;
-    return product >= 0n ? (product + half) / divisor : -((-product + half) / divisor);
-  }
+  const { toUnits, fromUnits, lineCents } = Calight.exact;
   const quantityText = (units) => format.number(Number(fromUnits(units, 3)), 3);
   const moneyText = (cents) => format.money(fromUnits(cents, 2));
 
