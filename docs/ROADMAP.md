@@ -27,7 +27,7 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 | 3.4.1 | Bestellungen mit PDF-Ausgabe (schlanke Materialbeschaffung) | Implementiert (`0029`); Versand per E-Mail und Bestellungen am Auftragsdetail geplant |
 | 3.4.1.1 | Bestellverwaltung als Vorgang: AB, Lieferungen, Belege, Zahlungen, Lieferantenanschrift | Implementiert (`0030`); Phase 3.4.1 damit abgeschlossen |
 | 3.4.2 | Zentrale Dokumentenübersicht und geschäftsbezogene Anhänge | Implementiert (`0031`) |
-| 3.4.3 | Zeiterfassung: Arbeits- und Reisezeiten, Einsatz, Kilometer und Auslagen | Implementiert (`0032`) |
+| 3.4.3 | Zeiterfassung: Arbeits- und Reisezeiten, Einsatz, Kilometer und Auslagen | Implementiert (`0032`, Korrekturen `0033`) |
 | 3.4.4 | Monteurs-Interface (mobile Oberfläche für Zeiterfassung, Berichte, Rapporte) | Geplant |
 | 3.5 | Nachkalkulation und Soll-Ist-Vergleich | Geplant |
 | 3.6 | Abrechnungstracking, ohne Rechnungsstellung | Geplant |
@@ -413,18 +413,21 @@ Bestellungen sind **an Lieferanten gerichtete Beschaffungsdokumente**, keine Rec
 
 **Bewusst offen:** serverseitige SQL-Pagination der Projektion (derzeit Zusammenführung im Server, ausreichend für überschaubare Mengen); Upload-Ereignisse im fachlichen Verlauf der Objekte. Lieferscheine (Phase 3.4.3) werden als weitere Quelle der Projektion ergänzt.
 
-## Phase 3.4.3 – Zeiterfassung (implementiert, Migration `0032`)
+## Phase 3.4.3 – Zeiterfassung (implementiert, Migrationen `0032`, `0033`)
 
 **Grundsatz:** tatsächliche Arbeits- und Reisezeiten je Mitarbeiter und Tag – keine Lohn-, Reisekosten- oder Personalverwaltung, keine Stempeluhr, kein GPS, keine automatischen Pauschalen oder steuerlichen Einstufungen.
 
-- **Zeitblöcke:** Datum, Beginn, Ende (Ende ≤ Beginn = Folgetag), Pause, Tätigkeit (fest: Arbeit/Montage, Reisezeit/Fahrt, Vorbereitung/Werkstatt, Interne Tätigkeit, Sonstiges), optional Auftrag und Bemerkung. Nettozeit serverseitig; eigene Blöcke dürfen sich nicht überschneiden (auch über Mitternacht). Hinweise bei mehr als 10 Stunden und weniger als 11 Stunden Ruhezeit, keine Regel-Engine.
-- **Einsatz und Auslagen (Dialog je Tag):** Einsatzart (erste Tätigkeitsstätte / Auswärtstätigkeit), Übernachtung, Reisetag (Anreise/Abreise), Einsatzort, Bemerkung, Privat-Pkw-Kilometer mit Zweck und optionalem Auftrag; mehrere Auslagen mit Betrag, Zweck, optionalem Auftrag und Beleg (PDF/Bild, `APP_DOCUMENTS_PATH/expenses/`). Reine Dokumentation, keine Erstattung oder Buchung.
-- **Ansichten:** Woche (Start), Tag (Erfassung, „Speichern und weiter“ für schnelle Folgeblöcke), Monat (Summen inkl. Kilometer und Auslagen), für das Büro zusätzlich Mitarbeiterauswahl und Auswertung nach Zeitraum, Mitarbeiter und Auftrag.
-- **Ist-Stunden ohne Doppelzählung:** Für Mitarbeiter + Tag + Auftrag zählt die Zeiterfassung, sobald dort Zeitblöcke bestehen; sonst die Zeit aus dem Bautagesbericht (`TimeTrackingService::actualHoursForOrder`). Bautagesberichte bleiben unverändert und werden nicht migriert. Rapportstunden (abrechenbare Leistung) erscheinen in der Tagesansicht nur als Referenz und zählen nie als Ist-Zeit; angezeigt werden nur Rapportzeilen mit eindeutig zugeordnetem Mitarbeiter.
-- **Kostensatz:** Snapshot des Stundenkostensatzes beim Anlegen (wie bei Bautagesberichten), nur mit `costs.read` sichtbar. Bewertung erst in Phase 3.5.
-- **Rechte:** `timesheet.own` (Techniker, Büro) für eigene Zeiten – nur über den eigenen Mitarbeiterdatensatz, nur aktive Mitarbeiter, Techniker nur freigegebene Aufträge; `timesheet.manage` (Büro) für alle Mitarbeiter, Korrekturen und Auswertung. Korrekturen bleiben über „geändert von … am …“ nachvollziehbar.
+- **Zeitblöcke:** Datum, Beginn, Ende (Ende ≤ Beginn = Folgetag), Pause, Tätigkeit (Arbeit/Montage, Vorbereitung/Werkstatt, Interne Tätigkeit, Sonstiges), optional **Einsatzart** (erste Tätigkeitsstätte / Auswärtstätigkeit; Vorschlag aus dem vorigen Block), **davon Reisezeit**, Auftrag und Bemerkung. Keine Überschneidungen, auch über Mitternacht. Hinweise bei mehr als 10 Stunden und weniger als 11 Stunden Ruhezeit.
+- **Begriffe und Rechnung überall gleich:** Nettozeit = Ende − Beginn − Pause; Reisezeit ist Teil der Nettozeit (≤ Nettozeit, ein reiner Fahrtblock hat Reisezeit = Nettozeit); übrige Arbeitszeit = Nettozeit − Reisezeit. Reisezeit gehört zum Auftrag des Blocks.
+- **Über Mitternacht:** Die Bruttozeit wird nach Uhrzeit auf die Kalendertage verteilt; Pause und Reisezeit (ohne eigene Uhrzeit erfasst) im Verhältnis der Bruttozeit, auf Minuten gerundet. Tages-, Wochen- und Monatssummen verwenden diese Anteile, die Tagesansicht zeigt die Fortsetzung vom Vortag. Büroauswertung und Ist-Stunden je Auftrag führen den Block vollständig am Beginntag.
+- **Einsatz und Auslagen (Dialog je Tag):** Reisetag, Übernachtung, Einsatzort, Beginn/Ende der Abwesenheit, Privat-Pkw-Kilometer mit Zweck und optionalem Auftrag, mehrere Auslagen mit Betrag, Zweck, Auftrag und Beleg, Bemerkung. Reine Dokumentation.
+- **Ansichten:** Woche (Start) und Monat als Kalenderraster mit sieben Spalten Mo–So (auch auf Smartphones), ISO-Kalenderwoche, heutiger Tag hervorgehoben, Klick öffnet den Tag; Monat mit Summen für Nettozeit, Reisezeit, übrige Arbeitszeit, Kilometer und Auslagen. Für das Büro Mitarbeiterauswahl und Auswertung nach Zeitraum, Mitarbeiter und Auftrag.
+- **Ist-Stunden (`TimeTrackingService::actualHoursForOrder`):** je Mitarbeiter + Tag + Auftrag nur eine Quelle. Gibt es Zeitblöcke und Bautagesbericht-Zeiten, ist das ohne Auswahl ein **Konflikt**: Er erscheint in Tagesansicht und Auswertung und zählt nicht, bis das Büro „Zeiterfassung maßgeblich“ oder „Bautagesbericht maßgeblich“ wählt (`time_source_choices`). Nichts wird addiert oder still verworfen; Bautagesberichte bleiben unverändert. Rapportstunden sind nur Referenz.
+- **Kostensatz:** Snapshot beim Anlegen, nur mit `costs.read` sichtbar; Bewertung in Phase 3.5.
+- **Rechte:** `timesheet.own` (eigener Mitarbeiterdatensatz, aktive Mitarbeiter, Techniker nur freigegebene Aufträge), `timesheet.manage` (alle Mitarbeiter, Korrekturen, Quellenwahl, Auswertung).
+- **Bestandsdaten (`0033`):** bisherige Blöcke „Fahrt“ behalten ihre Tätigkeit und erhalten die gesamte Nettozeit als Reisezeit (keine Doppelzählung); eine bisherige Einsatzart je Tag wurde auf die Blöcke des Tages ohne eigene Angabe übertragen und bleibt als historischer Wert gespeichert.
 
-**Bewusst offen:** Übernahme einzelner Bautagesbericht-Zeiten als Zeitblöcke (derzeit Auflösungsregel statt Verknüpfung), Freigabe-Workflow, Export, Ruhezeit über mehrere Tage, Gültigkeitshistorie der Kostensätze (nur Snapshot je Eintrag).
+**Bewusst offen:** Freigabe-Workflow, Export, Ruhezeit über mehrere Tage, Gültigkeitshistorie der Kostensätze (nur Snapshot je Eintrag), Verteilung über Mitternacht in der Auftragsauswertung (Beginntag).
 
 ## Phase 3.4.4 – Monteurs-Interface (geplant)
 

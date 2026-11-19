@@ -39,7 +39,28 @@
   const toMinutes = (time) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
   const toTime = (minutes) => `${String(Math.floor((minutes % 1440) / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 
-  globalThis.CalightTimeTracking = Object.freeze({ addDays, weekStart, monthRange, addMonths, hours, weekday, toMinutes, toTime });
+  /** ISO-Kalenderwoche (Woche mit dem Donnerstag bestimmt das Jahr). */
+  const isoWeek = (value) => {
+    const date = parse(value);
+    const thursday = new Date(date);
+    thursday.setUTCDate(date.getUTCDate() + 3 - ((date.getUTCDay() + 6) % 7));
+    const firstThursday = new Date(Date.UTC(thursday.getUTCFullYear(), 0, 4));
+    firstThursday.setUTCDate(firstThursday.getUTCDate() + 3 - ((firstThursday.getUTCDay() + 6) % 7));
+    return { week: 1 + Math.round((thursday - firstThursday) / 604800000), year: thursday.getUTCFullYear() };
+  };
+  /** Monatsraster: Wochen (Mo–So) mit allen Tagen, auch außerhalb des Monats; 4–6 Zeilen. */
+  const monthGrid = (value) => {
+    const [first, last] = monthRange(value);
+    const weeks = [];
+    for (let start = weekStart(first); start <= last; start = addDays(start, 7)) {
+      weeks.push(Array.from({ length: 7 }, (_, index) => addDays(start, index)));
+    }
+    return weeks;
+  };
+  /** Reisezeit kurz für Kalenderzellen („R 1:30“). */
+  const travelShort = (minutes) => (minutes ? `R ${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}` : "");
+
+  globalThis.CalightTimeTracking = Object.freeze({ addDays, weekStart, monthRange, addMonths, hours, weekday, toMinutes, toTime, isoWeek, monthGrid, travelShort });
 
   const root = document.querySelector("#time-tracking-app");
   if (!root) return;
@@ -89,34 +110,48 @@
   // ---------------------------------------------------------------------------
   // Woche und Monat
   // ---------------------------------------------------------------------------
+  // Einheitliche Summenbegriffe: Nettozeit gesamt, davon Reisezeit, übrige Arbeitszeit.
+  const summaryTiles = (totals, extra = "") => `<div class="order-value-summary time-summary">
+      <div class="total"><span>Nettozeit gesamt</span><strong>${hours(totals.netMinutes)}</strong></div>
+      <div><span>Davon Reisezeit</span><strong>${hours(totals.travelMinutes)}</strong></div>
+      <div><span>Übrige Arbeitszeit</span><strong>${hours(totals.workMinutes)}</strong></div>${extra}
+    </div>`;
+
+  const calendarCell = (day, { outside = false, showWeek = false } = {}) => {
+    const today = day.date === localToday();
+    const week = showWeek ? `<span class="time-cal-week">KW ${isoWeek(day.date).week}</span>` : "";
+    return `<button type="button" class="time-cal-day${today ? " is-today" : ""}${outside ? " is-outside" : ""}${day.netMinutes ? " has-time" : ""}" data-open-day="${day.date}"
+        aria-label="${weekday(day.date)} ${format.date(day.date)}: ${day.netMinutes ? hours(day.netMinutes) : "keine Einträge"}">
+        <span class="time-cal-head"><span class="time-cal-weekday">${weekday(day.date)}</span><span class="time-cal-date">${Number(day.date.slice(8, 10))}.${showWeek || state.view === "week" ? `${Number(day.date.slice(5, 7))}.` : ""}</span>${week}</span>
+        <strong class="time-cal-hours">${day.netMinutes ? hours(day.netMinutes).replace(" h", "") : "–"}</strong>
+        <small class="time-cal-travel">${travelShort(day.travelMinutes)}</small>
+        ${day.privateKm || day.expenseTotal ? '<span class="time-cal-flag" title="Kilometer oder Auslagen erfasst" aria-hidden="true">•</span>' : ""}
+      </button>`;
+  };
+
   async function renderRange() {
-    const [from, to] = state.view === "week" ? [weekStart(state.date), addDays(weekStart(state.date), 6)] : monthRange(state.date);
-    root.querySelector("[data-period-label]").textContent = state.view === "week"
-      ? `${format.date(from)} – ${format.date(to)}`
-      : new Intl.DateTimeFormat("de-DE", { month: "long", year: "numeric", timeZone: "UTC" }).format(parse(from));
-    const data = await api(`/api/time-tracking/range?from=${from}&to=${to}${employeeQuery()}`);
-    const today = localToday();
-    const rows = data.days.filter((day) => state.view === "week" || day.entryCount || day.privateKm || day.expenseTotal || day.dailyReportHours);
-    const summary = `<div class="order-value-summary time-summary">
-        <div><span>Arbeitszeit</span><strong>${hours(data.totals.workMinutes)}</strong></div>
-        <div><span>Reisezeit</span><strong>${hours(data.totals.travelMinutes)}</strong></div>
-        ${state.view === "month" ? `<div><span>Privat-Pkw</span><strong>${km(data.totals.privateKm)}</strong></div><div><span>Auslagen</span><strong>${money(data.totals.expenseTotal)}</strong></div>` : ""}
-        <div class="total"><span>Gesamt ${state.view === "week" ? "Woche" : "Monat"}</span><strong>${hours(data.totals.netMinutes)}</strong></div>
-      </div>`;
-    content.innerHTML = `${summary}
-      <div class="overview-table-wrap"><table class="overview-table time-table"><thead><tr>
-        <th class="cell-date">Tag</th><th class="cell-money">Arbeit</th><th class="cell-money">Reise</th><th class="cell-money">Gesamt</th>
-        <th class="cell-money time-col-optional">Privat-Pkw</th><th class="cell-money time-col-optional">Auslagen</th><th class="cell-money time-col-optional" title="Bautagesberichte (Referenz)">Bautagesbericht</th>
-      </tr></thead><tbody>${rows.map((day) => `
-        <tr tabindex="0" data-open-day="${day.date}" class="${day.date === today ? "time-today" : ""}${day.entryCount ? "" : " time-empty"}">
-          <td class="cell-date">${weekday(day.date)} ${format.date(day.date)}</td>
-          <td class="cell-money">${day.entryCount ? hours(day.workMinutes) : "–"}</td>
-          <td class="cell-money">${day.travelMinutes ? hours(day.travelMinutes) : "–"}</td>
-          <td class="cell-money"><strong>${day.entryCount ? hours(day.netMinutes) : '<span class="muted">keine Einträge</span>'}</strong></td>
-          <td class="cell-money time-col-optional">${km(day.privateKm)}</td>
-          <td class="cell-money time-col-optional">${day.expenseTotal ? money(day.expenseTotal) : "–"}</td>
-          <td class="cell-money time-col-optional">${day.dailyReportHours ? `${format.number(day.dailyReportHours, 2)} h` : "–"}</td>
-        </tr>`).join("") || '<tr><td colspan="7" class="muted">Keine Einträge in diesem Monat.</td></tr>'}</tbody></table></div>`;
+    const week = state.view === "week";
+    const grid = week ? [] : monthGrid(state.date);
+    const [from, to] = week ? [weekStart(state.date), addDays(weekStart(state.date), 6)] : [grid[0][0], grid[grid.length - 1][6]];
+    const [monthFrom, monthTo] = monthRange(state.date);
+    const iso = isoWeek(weekStart(state.date));
+    root.querySelector("[data-period-label]").textContent = week
+      ? `KW ${iso.week} · ${format.date(from)} – ${format.date(to)}`
+      : new Intl.DateTimeFormat("de-DE", { month: "long", year: "numeric", timeZone: "UTC" }).format(parse(monthFrom));
+    // Monatssummen exakt vom Server über die Tage des Monats (Randtage gehören zum Nachbarmonat).
+    const [data, monthData] = await Promise.all([
+      api(`/api/time-tracking/range?from=${from}&to=${to}${employeeQuery()}`),
+      week ? null : api(`/api/time-tracking/range?from=${monthFrom}&to=${monthTo}${employeeQuery()}`),
+    ]);
+    const byDate = Object.fromEntries(data.days.map((day) => [day.date, day]));
+    const inMonth = (date) => date >= monthFrom && date <= monthTo;
+    const totals = week ? data.totals : monthData.totals;
+    const head = '<div class="time-cal-weekdays" aria-hidden="true">' + ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((name) => `<span>${name}</span>`).join("") + "</div>";
+    const body = week
+      ? `<div class="time-cal-row">${data.days.map((day) => calendarCell(day)).join("")}</div>`
+      : grid.map((days) => `<div class="time-cal-row">${days.map((date, index) => calendarCell(byDate[date] || { date, netMinutes: 0, travelMinutes: 0 }, { outside: !inMonth(date), showWeek: index === 0 })).join("")}</div>`).join("");
+    content.innerHTML = `${summaryTiles(totals, week ? "" : `<div><span>Privat-Pkw</span><strong>${km(totals.privateKm)}</strong></div><div><span>Auslagen</span><strong>${money(totals.expenseTotal)}</strong></div>`)}
+      <div class="time-calendar ${week ? "is-week" : "is-month"}" role="group" aria-label="${week ? "Wochenkalender" : "Monatskalender"}">${head}${body}</div>`;
   }
 
   // ---------------------------------------------------------------------------
@@ -129,18 +164,14 @@
     const editable = day.canEdit;
     const details = day.details;
     const detailText = details ? [
-      details.assignmentKind ? reference.assignments[details.assignmentKind] : "",
+      details.absenceStart || details.absenceEnd ? `Abwesenheit ${details.absenceStart || "?"}–${details.absenceEnd || "?"}` : "",
       details.travelDay !== "none" ? reference.travelDays[details.travelDay] : "",
       details.overnight ? "Übernachtung" : "",
       details.location,
       details.privateKm ? `Privat-Pkw ${km(details.privateKm)}` : "",
     ].filter(Boolean).map(esc).join(" · ") : "";
     content.innerHTML = `
-      <div class="order-value-summary time-summary">
-        <div><span>Arbeitszeit</span><strong>${hours(day.totals.workMinutes)}</strong></div>
-        <div><span>davon Reise</span><strong>${hours(day.totals.travelMinutes)}</strong></div>
-        <div class="total"><span>Tag gesamt</span><strong>${hours(day.totals.netMinutes)}</strong></div>
-      </div>
+      ${summaryTiles(day.totals)}
       ${day.warnings.map((warning) => `<p class="notice notice-warning">${esc(warning)}</p>`).join("")}
       ${!day.employee.active ? '<p class="notice notice-warning">Dieser Mitarbeiter ist archiviert.</p>' : ""}
       <section class="card form-stack">
@@ -152,12 +183,14 @@
           <li class="time-block">
             <span class="time-block-range">${esc(entry.start)}–${esc(entry.end)}${entry.endsNextDay ? ' <small>(+1 Tag)</small>' : ""}</span>
             <span class="time-block-main"><span class="${activityClass(entry.activity)}">${esc(entry.activityLabel)}</span>
+              ${entry.assignmentKind ? `<span class="time-assignment" title="${esc(entry.assignmentLabel)}">${entry.assignmentKind === "external" ? "Auswärts" : "Erste Tätigkeitsstätte"}</span>` : ""}
               ${entry.orderNumber ? `<span class="time-block-order">${esc(entry.orderNumber)} · ${esc(entry.orderTitle || "")}</span>` : '<span class="muted">ohne Auftrag</span>'}
               ${entry.notes ? `<small class="muted">${esc(entry.notes)}</small>` : ""}
               ${entry.changedByOther ? `<small class="muted">geändert von ${esc(entry.updatedByName)} am ${format.dateTime(entry.updatedAt)}</small>` : ""}</span>
-            <span class="time-block-net"><strong>${hours(entry.netMinutes)}</strong>${entry.breakMinutes ? `<small class="muted">${entry.breakMinutes} min Pause</small>` : ""}</span>
+            <span class="time-block-net"><strong>${hours(entry.netMinutes)}</strong>${entry.travelMinutes ? `<small class="time-travel">davon ${hours(entry.travelMinutes)} Reise</small>` : ""}${entry.breakMinutes ? `<small class="muted">${entry.breakMinutes} min Pause</small>` : ""}</span>
             ${editable ? `<span class="time-block-actions"><button class="icon-button" type="button" data-edit-entry="${esc(entry.id)}" data-icon="square-pen" title="Bearbeiten" aria-label="Bearbeiten"></button><button class="icon-button icon-button-danger" type="button" data-delete-entry="${esc(entry.id)}" data-icon="trash" title="Löschen" aria-label="Zeitblock löschen"></button></span>` : ""}
           </li>`).join("")}</ul>` : '<p class="empty-state">Noch keine Zeitblöcke an diesem Tag.</p>'}
+        ${day.carriedOver.map((block) => `<p class="muted time-carried">Fortsetzung vom Vortag ${esc(block.start)}–${esc(block.end)}: anteilig ${hours(block.netMinutes)}${block.travelMinutes ? `, davon ${hours(block.travelMinutes)} Reise` : ""} (in den Summen enthalten)</p>`).join("")}
       </section>
       <section class="card form-stack">
         <div class="step-section-heading">
@@ -169,14 +202,24 @@
       ${renderReferences(day)}`;
   }
 
+  const SOURCE_TEXT = {
+    report_only: "zählt als Ist-Zeit (keine Zeitblöcke zu diesem Auftrag)",
+    conflict: "Konflikt: Zeitblöcke und Bautagesbericht für denselben Auftrag – fließt erst nach Auswahl der maßgeblichen Quelle in die Ist-Stunden ein",
+    chosen_time_tracking: "maßgeblich: Zeiterfassung",
+    chosen_daily_report: "maßgeblich: Bautagesbericht",
+  };
+
   function renderReferences(day) {
     if (!day.dailyReportTimes.length && !day.workReportTimes.length) return "";
     return `<section class="card form-stack time-references">
       <div class="step-section-heading"><div><h2>Zeiten aus anderen Modulen</h2><small>Nur zur Kontrolle – werden hier nicht addiert</small></div></div>
       <ul class="time-reference-list">
-        ${day.dailyReportTimes.map((row) => `<li><a href="/daily-reports/${encodeURIComponent(row.reportId)}">Bautagesbericht · ${esc(row.orderNumber)}</a>
-          <span>${format.number(row.hours, 2)} h</span>
-          <small class="muted">${row.countsAsActual ? "zählt als Ist-Zeit, solange für diesen Auftrag keine Zeitblöcke erfasst sind" : "ersetzt durch die Zeitblöcke dieses Auftrags (keine Doppelzählung)"}</small></li>`).join("")}
+        ${day.dailyReportTimes.map((row) => `<li class="${row.status === "conflict" ? "is-conflict" : ""}"><a href="/daily-reports/${encodeURIComponent(row.reportId)}">Bautagesbericht · ${esc(row.orderNumber)}</a>
+          <span>${format.number(row.hours, 2)} h${row.trackedMinutes ? ` · Zeiterfassung ${hours(row.trackedMinutes)}` : ""}</span>
+          <small class="${row.status === "conflict" ? "time-conflict-text" : "muted"}">${SOURCE_TEXT[row.status]}${row.chosenByName ? ` (gewählt von ${esc(row.chosenByName)})` : ""}</small>
+          ${day.canChooseSource && row.status !== "report_only" ? `<span class="time-source-actions">
+            <button class="button button-light button-small" type="button" data-source="time_tracking" data-order="${esc(row.orderId)}"${row.status === "chosen_time_tracking" ? " disabled" : ""}>Zeiterfassung maßgeblich</button>
+            <button class="button button-light button-small" type="button" data-source="daily_report" data-order="${esc(row.orderId)}"${row.status === "chosen_daily_report" ? " disabled" : ""}>Bautagesbericht maßgeblich</button></span>` : ""}</li>`).join("")}
         ${day.workReportTimes.map((row) => `<li><a href="/work-reports/${encodeURIComponent(row.reportId)}">Rapport ${esc(row.reportNumber || "Entwurf")}${row.orderNumber ? ` · ${esc(row.orderNumber)}` : ""}</a>
           <span>${format.number(row.hours, 2)} h</span>
           <small class="muted">abrechenbare Leistung, keine Ist-Zeit${row.dateTo ? ` · Zeitraum bis ${format.date(row.dateTo)}` : ""}</small></li>`).join("")}
@@ -192,7 +235,15 @@
 
   function entryDialog(entry = null, preset = {}) {
     const lastEnd = current.entries.length ? current.entries[current.entries.length - 1].end : "07:00";
-    const values = { start: entry?.start ?? preset.start ?? lastEnd, end: entry?.end ?? "", breakMinutes: entry?.breakMinutes ?? 0, activity: entry?.activity ?? preset.activity ?? "work", orderId: entry?.orderId ?? preset.orderId ?? "", notes: entry?.notes ?? "" };
+    // Einsatzart des vorigen Blocks vorschlagen (jederzeit änderbar).
+    const lastAssignment = current.entries.length ? current.entries[current.entries.length - 1].assignmentKind || "" : "";
+    const values = {
+      start: entry?.start ?? preset.start ?? lastEnd, end: entry?.end ?? "", breakMinutes: entry?.breakMinutes ?? 0, travelMinutes: entry?.travelMinutes ?? 0,
+      activity: entry?.activity ?? preset.activity ?? "work", assignmentKind: entry ? entry.assignmentKind || "" : preset.assignmentKind ?? lastAssignment,
+      orderId: entry?.orderId ?? preset.orderId ?? "", notes: entry?.notes ?? "",
+    };
+    // Bestandsblöcke „Fahrt“ behalten ihre Tätigkeit; neu wird sie nicht angeboten.
+    const activities = values.activity === "travel" ? { ...reference.activities, travel: reference.activityLabels.travel } : reference.activities;
     const form = document.createElement("form");
     form.className = "form-stack";
     form.noValidate = true;
@@ -201,11 +252,13 @@
         <label><span class="field-label">Beginn <span aria-hidden="true">*</span></span><input name="start" type="time" required value="${esc(values.start)}"></label>
         <label><span class="field-label">Ende <span aria-hidden="true">*</span></span><input name="end" type="time" required value="${esc(values.end)}"></label>
         <label><span class="field-label">Pause (Min.)</span><input name="breakMinutes" type="number" min="0" step="5" inputmode="numeric" value="${esc(values.breakMinutes)}"></label>
+        <label><span class="field-label">Davon Reisezeit (Min.)</span><input name="travelMinutes" type="number" min="0" step="5" inputmode="numeric" value="${esc(values.travelMinutes)}"></label>
       </div>
       <p class="muted" data-net></p>
       <fieldset class="time-activity-choice"><legend class="field-label">Tätigkeit <span aria-hidden="true">*</span></legend>
-        ${Object.entries(reference.activities).map(([key, label]) => `<label class="${activityClass(key)}"><input type="radio" name="activity" value="${key}"${key === values.activity ? " checked" : ""}> ${esc(label)}</label>`).join("")}
+        ${Object.entries(activities).map(([key, label]) => `<label class="${activityClass(key)}"><input type="radio" name="activity" value="${key}"${key === values.activity ? " checked" : ""}> ${esc(label)}</label>`).join("")}
       </fieldset>
+      <label><span class="field-label">Einsatzart (optional)</span><select name="assignmentKind"><option value="">Keine Angabe</option>${Object.entries(reference.assignments).map(([key, label]) => `<option value="${key}"${key === values.assignmentKind ? " selected" : ""}>${esc(label)}</option>`).join("")}</select></label>
       <label><span class="field-label">Auftrag (optional)</span><select name="orderId">${orderOptions(values.orderId)}</select></label>
       <label><span class="field-label">Bemerkung (optional)</span><input name="notes" maxlength="500" value="${esc(values.notes)}" placeholder="z. B. Verteilung montiert"></label>
       <p class="field-error" data-dialog-error hidden></p>`;
@@ -219,14 +272,17 @@
       let span = toMinutes(end) - toMinutes(start);
       if (span <= 0) span += 1440;
       const value = span - Number(form.elements.breakMinutes.value || 0);
-      form.querySelector("[data-net]").textContent = `Nettozeit: ${value > 0 ? hours(value) : "–"}${toMinutes(end) <= toMinutes(start) ? " (endet am Folgetag)" : ""}`;
+      const travel = Number(form.elements.travelMinutes.value || 0);
+      form.querySelector("[data-net]").textContent = value > 0
+        ? `Nettozeit ${hours(value)} · davon Reisezeit ${hours(Math.max(0, travel))} · übrige Arbeitszeit ${travel <= value ? hours(value - Math.max(0, travel)) : "–"}${toMinutes(end) <= toMinutes(start) ? " (endet am Folgetag)" : ""}${travel > value ? " – Reisezeit größer als Nettozeit" : ""}`
+        : "Nettozeit: –";
     };
     form.addEventListener("input", net);
     net();
     Calight.searchableSelect(form.elements.orderId, { placeholder: "Auftragsnummer oder Bezeichnung …" });
     const body = () => ({
       date: state.date, employeeId: state.employee, start: form.elements.start.value, end: form.elements.end.value,
-      breakMinutes: form.elements.breakMinutes.value, activity: form.elements.activity.value, orderId: form.elements.orderId.value, notes: form.elements.notes.value.trim(),
+      breakMinutes: form.elements.breakMinutes.value, travelMinutes: form.elements.travelMinutes.value, assignmentKind: form.elements.assignmentKind.value, activity: form.elements.activity.value, orderId: form.elements.orderId.value, notes: form.elements.notes.value.trim(),
       ...(entry ? { version: entry.version } : {}),
     });
     const save = async () => {
@@ -244,7 +300,7 @@
       extraActions: entry ? [] : [{
         label: "Speichern und weiter",
         onClick: async (run) => {
-          const next = { start: form.elements.end.value, activity: form.elements.activity.value, orderId: form.elements.orderId.value };
+          const next = { start: form.elements.end.value, activity: form.elements.activity.value, orderId: form.elements.orderId.value, assignmentKind: form.elements.assignmentKind.value };
           if (!form.reportValidity()) return false;
           if (await run(save)) {
             await renderDay();
@@ -261,19 +317,17 @@
   }
 
   function detailsDialog() {
-    const details = current.details || { assignmentKind: null, overnight: false, travelDay: "none", location: "", notes: "", privateKm: null, privateKmPurpose: "", privateKmOrderId: null };
+    const details = current.details || { overnight: false, travelDay: "none", location: "", notes: "", absenceStart: null, absenceEnd: null, privateKm: null, privateKmPurpose: "", privateKmOrderId: null };
     const form = document.createElement("form");
     form.className = "form-stack";
     form.noValidate = true;
     form.innerHTML = `
-      <fieldset class="time-choice"><legend class="field-label">Einsatzart</legend>
-        <label class="check-inline"><input type="radio" name="assignmentKind" value=""${!details.assignmentKind ? " checked" : ""}> Keine Angabe</label>
-        ${Object.entries(reference.assignments).map(([key, label]) => `<label class="check-inline"><input type="radio" name="assignmentKind" value="${key}"${details.assignmentKind === key ? " checked" : ""}> ${esc(label)}</label>`).join("")}
-      </fieldset>
       <div class="dialog-form-grid">
         <label><span class="field-label">Reisetag</span><select name="travelDay">${Object.entries(reference.travelDays).map(([key, label]) => `<option value="${key}"${details.travelDay === key ? " selected" : ""}>${esc(label)}</option>`).join("")}</select></label>
         <label class="check-inline time-overnight"><input type="checkbox" name="overnight"${details.overnight ? " checked" : ""}> Übernachtung</label>
         <label class="span-all"><span class="field-label">Einsatzort / Reiseziel</span><input name="location" maxlength="200" value="${esc(details.location)}"></label>
+        <label><span class="field-label">Beginn der Abwesenheit</span><input name="absenceStart" type="time" value="${esc(details.absenceStart || "")}"></label>
+        <label><span class="field-label">Ende der Abwesenheit</span><input name="absenceEnd" type="time" value="${esc(details.absenceEnd || "")}"></label>
         <label><span class="field-label">Privat-Pkw (km)</span><input name="privateKm" inputmode="decimal" value="${esc(details.privateKm ? String(details.privateKm).replace(".", ",") : "")}" placeholder="0"></label>
         <label><span class="field-label">Fahrt für Auftrag (optional)</span><select name="privateKmOrderId">${orderOptions(details.privateKmOrderId || "")}</select></label>
         <label class="span-all"><span class="field-label">Fahrtzweck (optional)</span><input name="privateKmPurpose" maxlength="200" value="${esc(details.privateKmPurpose)}"></label>
@@ -312,7 +366,7 @@
       discardMessage: "Eingaben verwerfen?",
       submit: async () => {
         current = await api("/api/time-tracking/details", { method: "PUT", body: {
-          date: state.date, employeeId: state.employee, assignmentKind: form.elements.assignmentKind.value, travelDay: form.elements.travelDay.value,
+          date: state.date, employeeId: state.employee, absenceStart: form.elements.absenceStart.value, absenceEnd: form.elements.absenceEnd.value, travelDay: form.elements.travelDay.value,
           overnight: form.elements.overnight.checked, location: form.elements.location.value.trim(), notes: form.elements.notes.value.trim(),
           privateKm: form.elements.privateKm.value.trim().replace(",", "."), privateKmPurpose: form.elements.privateKmPurpose.value.trim(), privateKmOrderId: form.elements.privateKmOrderId.value,
         } });
@@ -379,18 +433,14 @@
         <select data-report-employee aria-label="Mitarbeiter"><option value="">Alle Mitarbeiter</option>${reference.employees.map((item) => `<option value="${esc(item.id)}"${item.id === employee ? " selected" : ""}>${esc(item.name)}${item.active ? "" : " (archiviert)"}</option>`).join("")}</select>
         <select data-report-order aria-label="Auftrag"><option value="">Alle Aufträge</option>${reference.orders.map((item) => `<option value="${esc(item.id)}"${item.id === order ? " selected" : ""}>${esc(item.orderNumber)} · ${esc(item.title)}</option>`).join("")}</select>
       </div>
-      <div class="order-value-summary time-summary">
-        <div><span>Arbeitszeit</span><strong>${hours(data.totals.workMinutes)}</strong></div>
-        <div><span>Reisezeit</span><strong>${hours(data.totals.travelMinutes)}</strong></div>
-        <div class="total"><span>Gesamt</span><strong>${hours(data.totals.netMinutes)}</strong></div>
-      </div>
+      ${summaryTiles(data.totals)}
       <h3 class="purchase-subheading">Nach Auftrag</h3>
-      <div class="overview-table-wrap"><table class="overview-table"><thead><tr><th class="cell-title">Auftrag</th><th class="cell-money">Arbeit</th><th class="cell-money">Reise</th></tr></thead>
-        <tbody>${data.byOrder.map((row) => `<tr><td class="cell-title">${row.orderId ? `${esc(row.orderNumber)} · ${esc(row.orderTitle)}` : '<span class="muted">Ohne Auftrag</span>'}</td><td class="cell-money">${hours(row.workMinutes)}</td><td class="cell-money">${hours(row.travelMinutes)}</td></tr>`).join("") || '<tr><td colspan="3" class="muted">Keine Einträge.</td></tr>'}</tbody></table></div>
+      <div class="overview-table-wrap"><table class="overview-table"><thead><tr><th class="cell-title">Auftrag</th><th class="cell-money">Nettozeit</th><th class="cell-money">Davon Reise</th><th class="cell-money">Übrige Arbeit</th></tr></thead>
+        <tbody>${data.byOrder.map((row) => `<tr><td class="cell-title">${row.orderId ? `${esc(row.orderNumber)} · ${esc(row.orderTitle)}` : '<span class="muted">Ohne Auftrag</span>'}</td><td class="cell-money">${hours(row.netMinutes)}</td><td class="cell-money">${hours(row.travelMinutes)}</td><td class="cell-money">${hours(row.workMinutes)}</td></tr>`).join("") || '<tr><td colspan="4" class="muted">Keine Einträge.</td></tr>'}</tbody></table></div>
       <h3 class="purchase-subheading">Zeitblöcke</h3>
-      <div class="overview-table-wrap"><table class="overview-table"><thead><tr><th class="cell-date">Datum</th><th class="cell-text">Mitarbeiter</th><th class="cell-text">Zeit</th><th class="cell-type">Tätigkeit</th><th class="cell-number">Auftrag</th><th class="cell-money">Netto</th></tr></thead>
+      <div class="overview-table-wrap"><table class="overview-table"><thead><tr><th class="cell-date">Datum</th><th class="cell-text">Mitarbeiter</th><th class="cell-text">Zeit</th><th class="cell-type">Tätigkeit</th><th class="cell-type">Einsatz</th><th class="cell-number">Auftrag</th><th class="cell-money">Netto</th><th class="cell-money">Reise</th></tr></thead>
         <tbody>${data.rows.map((row) => `<tr><td class="cell-date">${format.date(row.date)}</td><td class="cell-text">${esc(row.employeeName)}</td><td class="cell-text">${esc(row.start)}–${esc(row.end)}${row.endsNextDay ? " (+1)" : ""}</td>
-          <td class="cell-type"><span class="${activityClass(row.activity)}">${esc(row.activityLabel)}</span></td><td class="cell-number">${esc(row.orderNumber || "–")}</td><td class="cell-money">${hours(row.netMinutes)}</td></tr>`).join("") || '<tr><td colspan="6" class="muted">Keine Einträge.</td></tr>'}</tbody></table></div>`;
+          <td class="cell-type"><span class="${activityClass(row.activity)}">${esc(row.activityLabel)}</span></td><td class="cell-type" title="${esc(row.assignmentLabel)}">${row.assignmentKind === "external" ? "Auswärts" : row.assignmentKind === "regular" ? "Erste T." : "–"}</td><td class="cell-number">${esc(row.orderNumber || "–")}</td><td class="cell-money">${hours(row.netMinutes)}</td><td class="cell-money">${row.travelMinutes ? hours(row.travelMinutes) : "–"}</td></tr>`).join("") || '<tr><td colspan="8" class="muted">Keine Einträge.</td></tr>'}</tbody></table></div>`;
     content.querySelector("[data-report-employee]").addEventListener("change", (event) => {
       state.employee = event.target.value;
       render();
@@ -428,6 +478,16 @@
       state.date = dayRow.dataset.openDay;
       state.view = "day";
       return render();
+    }
+    const source = event.target.closest("[data-source]");
+    if (source) {
+      try {
+        current = await api("/api/time-tracking/source", { method: "PUT", body: { employeeId: current.employee.id, date: state.date, orderId: source.dataset.order, source: source.dataset.source } });
+        await renderDay();
+      } catch (exception) {
+        notify(message, exception.message);
+      }
+      return;
     }
     if (event.target.closest("[data-add-entry]")) return entryDialog();
     if (event.target.closest("[data-details]")) return detailsDialog();

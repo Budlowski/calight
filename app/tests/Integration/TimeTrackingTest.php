@@ -47,10 +47,11 @@ final class TimeTrackingTest extends TestCase
         $this->withEnvironment(function (array $env): void {
             ['service' => $service, 'tech' => $tech, 'order' => $order] = $env;
             $add = fn (array $input): array => $service->createEntry(['date' => '2026-11-16'] + $input, $tech);
-            $add(['start' => '07:00', 'end' => '08:00', 'activity' => 'travel', 'orderId' => $order]);
+            // Reine Fahrtblöcke: gesamte Nettozeit als Reisezeit.
+            $add(['start' => '07:00', 'end' => '08:00', 'activity' => 'work', 'travelMinutes' => '60', 'orderId' => $order]);
             $add(['start' => '08:00', 'end' => '12:00', 'activity' => 'work', 'orderId' => $order]);
             $add(['start' => '12:30', 'end' => '14:30', 'breakMinutes' => '15', 'activity' => 'work', 'orderId' => $order]);
-            $add(['start' => '14:30', 'end' => '15:30', 'activity' => 'travel']);
+            $add(['start' => '14:30', 'end' => '15:30', 'activity' => 'work', 'travelMinutes' => '60']);
             $day = $add(['start' => '16:00', 'end' => '17:00', 'activity' => 'preparation', 'notes' => 'Werkstatt']);
             $this->assertSame(5, count($day['entries']));
             $this->assertSame(105, $day['entries'][2]['netMinutes'], '2 h abzüglich 15 min Pause.');
@@ -66,6 +67,9 @@ final class TimeTrackingTest extends TestCase
             $this->assertThrows(DocumentValidationException::class, fn () => $add(['start' => '18:00', 'end' => '19:00', 'breakMinutes' => '60', 'activity' => 'work']), 'Pause kürzer als Block.');
             $this->assertThrows(DocumentValidationException::class, fn () => $add(['start' => '18:00', 'end' => '19:00', 'breakMinutes' => '-5', 'activity' => 'work']));
             $this->assertThrows(DocumentValidationException::class, fn () => $add(['start' => '18:00', 'end' => '19:00', 'activity' => 'lunch']));
+            $this->assertThrows(DocumentValidationException::class, fn () => $add(['start' => '18:00', 'end' => '19:00', 'activity' => 'travel']), 'Separate Reisetätigkeit wird für neue Blöcke nicht mehr angeboten.');
+            $this->assertThrows(DocumentValidationException::class, fn () => $add(['start' => '18:00', 'end' => '19:00', 'activity' => 'work', 'travelMinutes' => '61']), 'Reisezeit höchstens Nettozeit.');
+            $this->assertThrows(DocumentValidationException::class, fn () => $add(['start' => '18:00', 'end' => '19:00', 'activity' => 'work', 'travelMinutes' => '-1']));
             // Überschneidung.
             $this->assertThrows(DocumentValidationException::class, fn () => $add(['start' => '11:00', 'end' => '13:00', 'activity' => 'work']));
 
@@ -103,9 +107,11 @@ final class TimeTrackingTest extends TestCase
     {
         $this->withEnvironment(function (array $env): void {
             ['service' => $service, 'tech' => $tech, 'order' => $order, 'tmp' => $tmp, 'files' => $files] = $env;
-            $day = $service->saveDetails(['date' => '2026-11-18', 'assignmentKind' => 'external', 'overnight' => true, 'travelDay' => 'arrival', 'location' => 'Leipzig',
+            $day = $service->saveDetails(['date' => '2026-11-18', 'overnight' => true, 'travelDay' => 'arrival', 'location' => 'Leipzig', 'absenceStart' => '05:30', 'absenceEnd' => '19:00',
                 'privateKm' => '182,5', 'privateKmPurpose' => 'Anreise', 'privateKmOrderId' => $order], $tech);
-            $this->assertSame('external', $day['details']['assignmentKind']);
+            $this->assertSame('05:30', $day['details']['absenceStart']);
+            $this->assertTrue(!array_key_exists('assignmentKind', $day['details']), 'Einsatzart nicht mehr je Tag.');
+            $this->assertThrows(DocumentValidationException::class, fn () => $service->saveDetails(['date' => '2026-11-18', 'absenceStart' => '25:00'], $tech));
             $this->assertSame('182.5', $day['details']['privateKm']);
             $this->assertThrows(DocumentValidationException::class, fn () => $service->saveDetails(['date' => '2026-11-18', 'travelDay' => 'holiday'], $tech));
             $this->assertThrows(DocumentValidationException::class, fn () => $service->saveDetails(['date' => '2026-11-18', 'privateKm' => '-3'], $tech));
@@ -159,7 +165,7 @@ final class TimeTrackingTest extends TestCase
         });
     }
 
-    public function testDailyReportsAndWorkReportsAreNotCountedTwice(): void
+    public function testDailyReportConflictsAreExplicitAndNeverCountedTwice(): void
     {
         $this->withEnvironment(function (array $env): void {
             ['service' => $service, 'tech' => $tech, 'office' => $office, 'employee' => $employee, 'order' => $order, 'pdo' => $pdo, 'customer' => $customer] = $env;
@@ -180,17 +186,100 @@ final class TimeTrackingTest extends TestCase
             $pdo->prepare("INSERT INTO work_report_labor (id, report_id, employee_id, worker_name, hours, sort_order) VALUES (:id, :report, :employee, 'Monteur', '6.000', 1)")
                 ->execute(['id' => Uuid::v4(), 'report' => $workReport, 'employee' => $employee]);
 
-            // Am 16.11. Zeiterfassung für denselben Auftrag: ersetzt den Bericht (8 h statt 7,5 h + 8 h).
-            $day = $service->createEntry(['date' => '2026-11-16', 'start' => '07:00', 'end' => '15:00', 'activity' => 'work', 'orderId' => $order], $tech);
-            $this->assertSame(480, $day['totals']['netMinutes'], 'Rapport- und Berichtsstunden werden nicht addiert.');
-            $this->assertSame(false, $day['dailyReportTimes'][0]['countsAsActual']);
+            // Am 16.11. zusätzlich 2 h Zeiterfassung für denselben Auftrag: Ergänzung oder Korrektur? → Konflikt.
+            $day = $service->createEntry(['date' => '2026-11-16', 'start' => '15:00', 'end' => '17:00', 'activity' => 'work', 'orderId' => $order], $tech);
+            $this->assertSame(120, $day['totals']['netMinutes'], 'Rapport- und Berichtsstunden werden nicht addiert.');
+            $this->assertSame('conflict', $day['dailyReportTimes'][0]['status']);
             $this->assertSame('6.000', $day['workReportTimes'][0]['hours'], 'Rapportzeit als Referenz sichtbar.');
             $actual = $service->actualHoursForOrder($order, $office);
-            $this->assertSame(480 + 360, $actual['totalMinutes'], '16.11. aus der Zeiterfassung (8 h), 17.11. aus dem Bericht (6 h); Rapport zählt nie.');
-            $this->assertSame(['time_tracking', 'daily_report'], array_column($actual['items'], 'source'));
+            $this->assertSame(360, $actual['totalMinutes'], 'Nur der 17.11. (Bericht 6 h) ist eindeutig; Rapport zählt nie.');
+            $this->assertSame(1, count($actual['conflicts']), 'Konflikt geht nicht unbemerkt in die Ist-Stunden ein.');
+            $this->assertSame(450, $actual['conflicts'][0]['reportMinutes']);
+            $this->assertSame(120, $actual['conflicts'][0]['trackingMinutes']);
+
+            // Büro wählt die maßgebliche Quelle; nichts wird addiert oder still verworfen.
+            $this->assertThrows(AccessDeniedException::class, fn () => $service->chooseSource(['employeeId' => $employee, 'date' => '2026-11-16', 'orderId' => $order, 'source' => 'daily_report'], $tech));
+            $chosen = $service->chooseSource(['employeeId' => $employee, 'date' => '2026-11-16', 'orderId' => $order, 'source' => 'daily_report'], $office);
+            $this->assertSame('chosen_daily_report', $chosen['dailyReportTimes'][0]['status']);
+            $actual = $service->actualHoursForOrder($order, $office);
+            $this->assertSame(450 + 360, $actual['totalMinutes']);
+            $this->assertSame([], $actual['conflicts']);
+            $this->assertSame(['daily_report', 'daily_report'], array_column($actual['items'], 'source'));
+            $service->chooseSource(['employeeId' => $employee, 'date' => '2026-11-16', 'orderId' => $order, 'source' => 'time_tracking'], $office);
+            $this->assertSame(120 + 360, $service->actualHoursForOrder($order, $office)['totalMinutes']);
             $this->assertSame($before, $pdo->query('SELECT id, duration_hours, updated_at FROM daily_report_time_entries ORDER BY work_date')->fetchAll(), 'Berichte bleiben unverändert.');
             $this->assertThrows(AccessDeniedException::class, fn () => $service->actualHoursForOrder($order, $tech));
         });
+    }
+
+    public function testTravelWithinBlockAssignmentPerBlockAndYearBoundary(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['service' => $service, 'tech' => $tech, 'order' => $order] = $env;
+            // Beispiel: 07:00–16:00, 30 min Pause, davon 90 min Reise.
+            $day = $service->createEntry(['date' => '2026-11-19', 'start' => '07:00', 'end' => '12:00', 'breakMinutes' => '0', 'travelMinutes' => '0', 'activity' => 'work',
+                'assignmentKind' => 'regular'], $tech);
+            $day = $service->createEntry(['date' => '2026-11-19', 'start' => '12:00', 'end' => '16:00', 'breakMinutes' => '30', 'travelMinutes' => '90', 'activity' => 'work',
+                'assignmentKind' => 'external', 'orderId' => $order], $tech);
+            $this->assertSame(510, $day['totals']['netMinutes'], 'Nettozeit = Ende − Beginn − Pause.');
+            $this->assertSame(90, $day['totals']['travelMinutes'], 'Reisezeit ist Teil der Nettozeit.');
+            $this->assertSame(420, $day['totals']['workMinutes'], 'Übrige Arbeitszeit = Nettozeit − Reisezeit.');
+            $this->assertSame(['regular', 'external'], array_column($day['entries'], 'assignmentKind'), 'Einsatzart wechselt innerhalb des Tages.');
+            $this->assertSame(120, $day['entries'][1]['workMinutes']);
+
+            // Über den Jahreswechsel: 31.12. 22:00 – 01.01. 02:30, 30 min Pause, 60 min Reise.
+            $night = $service->createEntry(['date' => '2026-12-31', 'start' => '22:00', 'end' => '02:30', 'breakMinutes' => '30', 'travelMinutes' => '60', 'activity' => 'work'], $tech);
+            $this->assertSame(240, $night['entries'][0]['netMinutes']);
+            $split = TimeTrackingService::split(['net_minutes' => 240, 'travel_minutes' => 60, 'break_minutes' => 30, 'start_time' => '22:00', 'ends_next_day' => 1]);
+            $this->assertSame([['net' => 107, 'travel' => 27], ['net' => 133, 'travel' => 33]], $split, 'Brutto nach Uhrzeit, Pause und Reise anteilig.');
+            $range = $service->range(null, '2026-12-31', '2027-01-01', $tech);
+            $this->assertSame([107, 133], array_column($range['days'], 'netMinutes'));
+            $this->assertSame(240, $range['totals']['netMinutes'], 'Tagessummen ergeben die Gesamtsumme.');
+            $january = $service->range(null, '2027-01-01', '2027-01-31', $tech);
+            $this->assertSame(133, $january['totals']['netMinutes'], 'Monat Januar enthält nur den Anteil nach Mitternacht.');
+            $newYear = $service->day(null, '2027-01-01', $tech);
+            $this->assertSame(133, $newYear['totals']['netMinutes']);
+            $this->assertSame(1, count($newYear['carriedOver']), 'Fortsetzung vom Vortag sichtbar.');
+            $this->assertSame([], $newYear['entries']);
+        });
+    }
+
+    public function testLegacyTravelEntriesAndDayAssignmentAreMigrated(): void
+    {
+        $tmp = sys_get_temp_dir() . '/calight-time-legacy-' . bin2hex(random_bytes(6));
+        mkdir($tmp . '/migrations', 0770, true);
+        try {
+            foreach (glob(dirname(__DIR__, 2) . '/migrations/*.sql') ?: [] as $file) {
+                if (strcmp(basename($file), '0033') < 0) {
+                    copy($file, $tmp . '/migrations/' . basename($file));
+                }
+            }
+            $pdo = ConnectionFactory::create($tmp . '/db.sqlite');
+            (new Migrator($pdo, $tmp . '/migrations'))->migrate();
+            $now = '2026-11-12T08:00:00Z';
+            $tech = $this->user($pdo, 'technician', $now);
+            $employee = $this->employee($pdo, $tech['id'], 'Max', $now);
+            foreach ([['t1', '07:00', '08:00', 60, 'travel'], ['t2', '08:00', '12:00', 240, 'work']] as [$id, $start, $end, $net, $activity]) {
+                $pdo->prepare("INSERT INTO time_entries (id, employee_id, work_date, start_time, end_time, net_minutes, activity, created_by_user_id, created_at, updated_by_user_id, updated_at)
+                    VALUES (:id, :employee, '2026-11-16', :start, :end, :net, :activity, :user, :now, :user, :now)")
+                    ->execute(['id' => $id, 'employee' => $employee, 'start' => $start, 'end' => $end, 'net' => $net, 'activity' => $activity, 'user' => $tech['id'], 'now' => $now]);
+            }
+            $pdo->prepare("INSERT INTO time_day_details (employee_id, work_date, assignment_kind, updated_by_user_id, updated_at) VALUES (:employee, '2026-11-16', 'external', :user, :now)")
+                ->execute(['employee' => $employee, 'user' => $tech['id'], 'now' => $now]);
+            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate();
+
+            $service = new TimeTrackingService(new TimeTrackingRepository($pdo), new AttachmentStore($tmp));
+            $day = $service->day(null, '2026-11-16', $tech);
+            $this->assertSame(300, $day['totals']['netMinutes']);
+            $this->assertSame(60, $day['totals']['travelMinutes'], 'Bisherige Fahrt zählt genau einmal als Reisezeit.');
+            $this->assertSame(['external', 'external'], array_column($day['entries'], 'assignmentKind'), 'Tagesangabe auf Blöcke ohne eigene Angabe übertragen.');
+            // Bestandsblock „Fahrt“ bleibt bearbeitbar.
+            $legacy = $day['entries'][0];
+            $edited = $service->updateEntry($legacy['id'], ['version' => $legacy['version'], 'date' => '2026-11-16', 'start' => '06:45', 'end' => '08:00', 'activity' => 'travel', 'travelMinutes' => '75'], $tech);
+            $this->assertSame(75, $edited['totals']['travelMinutes']);
+        } finally {
+            $this->remove($tmp);
+        }
     }
 
     /** @param callable(array<string,mixed>):void $test */

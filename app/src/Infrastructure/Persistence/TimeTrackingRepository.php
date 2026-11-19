@@ -66,9 +66,11 @@ final readonly class TimeTrackingRepository
     /** @param array<string,mixed> $data */
     public function saveDetails(array $data): void
     {
-        $this->pdo->prepare('INSERT INTO time_day_details (employee_id, work_date, assignment_kind, overnight, travel_day, location, notes, private_km, private_km_purpose, private_km_order_id, updated_by_user_id, updated_at)
-            VALUES (:employee_id, :work_date, :assignment_kind, :overnight, :travel_day, :location, :notes, :private_km, :private_km_purpose, :private_km_order_id, :updated_by_user_id, :updated_at)
-            ON CONFLICT(employee_id, work_date) DO UPDATE SET assignment_kind = excluded.assignment_kind, overnight = excluded.overnight, travel_day = excluded.travel_day,
+        // Die Einsatzart je Tag (bis 0033) bleibt als historischer Wert unverändert erhalten.
+        $this->pdo->prepare('INSERT INTO time_day_details (employee_id, work_date, overnight, travel_day, location, notes, absence_start, absence_end, private_km, private_km_purpose, private_km_order_id, updated_by_user_id, updated_at)
+            VALUES (:employee_id, :work_date, :overnight, :travel_day, :location, :notes, :absence_start, :absence_end, :private_km, :private_km_purpose, :private_km_order_id, :updated_by_user_id, :updated_at)
+            ON CONFLICT(employee_id, work_date) DO UPDATE SET overnight = excluded.overnight, travel_day = excluded.travel_day,
+            absence_start = excluded.absence_start, absence_end = excluded.absence_end,
             location = excluded.location, notes = excluded.notes, private_km = excluded.private_km, private_km_purpose = excluded.private_km_purpose,
             private_km_order_id = excluded.private_km_order_id, updated_by_user_id = excluded.updated_by_user_id, updated_at = excluded.updated_at')->execute($data);
     }
@@ -138,13 +140,36 @@ final readonly class TimeTrackingRepository
     /** Ist-Stunden-Quellen eines Auftrags. @return array{entries:list<array<string,mixed>>,reports:list<array<string,mixed>>} */
     public function orderTimes(string $orderId): array
     {
-        $entries = $this->pdo->prepare('SELECT t.employee_id, t.work_date, t.activity, t.net_minutes, t.hourly_cost_rate_snapshot, e.display_name AS employee_name
+        $entries = $this->pdo->prepare('SELECT t.employee_id, t.work_date, t.activity, t.net_minutes, t.travel_minutes, t.hourly_cost_rate_snapshot, e.display_name AS employee_name
             FROM time_entries t JOIN employees e ON e.id = t.employee_id WHERE t.order_id = :order ORDER BY t.work_date');
         $entries->execute(['order' => $orderId]);
         $reports = $this->pdo->prepare('SELECT e.employee_id, e.work_date, e.duration_hours, e.hourly_cost_rate_snapshot, m.display_name AS employee_name
             FROM daily_report_time_entries e JOIN daily_reports r ON r.id = e.report_id JOIN employees m ON m.id = e.employee_id WHERE r.order_id = :order ORDER BY e.work_date');
         $reports->execute(['order' => $orderId]);
-        return ['entries' => $entries->fetchAll(), 'reports' => $reports->fetchAll()];
+        $choices = $this->pdo->prepare('SELECT employee_id, work_date, source FROM time_source_choices WHERE order_id = :order');
+        $choices->execute(['order' => $orderId]);
+        return ['entries' => $entries->fetchAll(), 'reports' => $reports->fetchAll(), 'choices' => $choices->fetchAll()];
+    }
+
+    /** Maßgebliche Quellen eines Mitarbeiters im Zeitraum. @return list<array<string,mixed>> */
+    public function choices(string $employeeId, string $from, string $to): array
+    {
+        $statement = $this->pdo->prepare('SELECT c.*, u.display_name AS chosen_by_name FROM time_source_choices c JOIN users u ON u.id = c.chosen_by_user_id
+            WHERE c.employee_id = :employee AND c.work_date BETWEEN :from AND :to');
+        $statement->execute(['employee' => $employeeId, 'from' => $from, 'to' => $to]);
+        return $statement->fetchAll();
+    }
+
+    public function saveChoice(string $employeeId, string $date, string $orderId, ?string $source, string $userId, string $now): void
+    {
+        if ($source === null) {
+            $this->pdo->prepare('DELETE FROM time_source_choices WHERE employee_id = :employee AND work_date = :date AND order_id = :order')
+                ->execute(['employee' => $employeeId, 'date' => $date, 'order' => $orderId]);
+            return;
+        }
+        $this->pdo->prepare('INSERT INTO time_source_choices (employee_id, work_date, order_id, source, chosen_by_user_id, chosen_at) VALUES (:employee, :date, :order, :source, :user, :now)
+            ON CONFLICT(employee_id, work_date, order_id) DO UPDATE SET source = excluded.source, chosen_by_user_id = excluded.chosen_by_user_id, chosen_at = excluded.chosen_at')
+            ->execute(['employee' => $employeeId, 'date' => $date, 'order' => $orderId, 'source' => $source, 'user' => $userId, 'now' => $now]);
     }
 
     /** Auswertung für das Büro. @return list<array<string,mixed>> */

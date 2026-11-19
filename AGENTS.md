@@ -285,8 +285,8 @@ Keine zweite Nummernlogik in einem Controller oder Frontend anlegen.
 
 ### 4.17 Zeiterfassung (Phase 3.4.3)
 
-- Tabellen `time_entries` (Zeitblöcke mit Beginn/Ende/Pause/Tätigkeit, `net_minutes` serverseitig, `ends_next_day`), `time_day_details` (Einsatz, Reise, Privat-km) und `time_expenses` (Auslagen, Beleg unter `expenses/`). Keine Lohn-, Reisekosten- oder Steuerlogik.
-- Ist-Stunden eines Auftrags ausschließlich über `TimeTrackingService::actualHoursForOrder`: je Mitarbeiter + Tag gilt die Zeiterfassung, sobald für den Auftrag Zeitblöcke bestehen, sonst der Bautagesbericht. Rapportstunden sind nie Ist-Zeit. Bautagesberichte nicht verändern oder migrieren.
+- Tabellen `time_entries` (Zeitblöcke mit Beginn/Ende/Pause/Tätigkeit, `net_minutes` serverseitig, `travel_minutes` als Teil der Nettozeit, `assignment_kind` je Block, `ends_next_day`), `time_day_details` (Reise, Abwesenheit, Privat-km), `time_expenses` (Auslagen, Beleg unter `expenses/`) und `time_source_choices`. Keine Lohn-, Reisekosten- oder Steuerlogik. Tagesanteile über Mitternacht nur über `TimeTrackingService::split`.
+- Ist-Stunden eines Auftrags ausschließlich über `TimeTrackingService::actualHoursForOrder`: je Mitarbeiter + Tag + Auftrag eine Quelle; bestehen Zeitblöcke und Bautagesbericht, gilt die ausdrücklich gewählte Quelle, sonst ist es ein Konflikt, der nicht in die Summen eingeht. Rapportstunden sind nie Ist-Zeit. Bautagesberichte nicht verändern oder migrieren.
 - Rechte: `timesheet.own` (eigener Mitarbeiterdatensatz über `employees.user_id`, nur aktiv, Techniker nur freigegebene Aufträge), `timesheet.manage` (alle Mitarbeiter, Korrektur, Auswertung). Kostensatz-Snapshots nur mit `costs.read`.
 
 ### 4.18 Fachliche Abgrenzung späterer Module

@@ -1375,8 +1375,6 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 .time-period strong { min-width: 170px; text-align: center; }
 .time-toolbar > select { width: auto; min-width: 200px; margin-left: auto; }
 .time-summary { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
-.time-table tr.time-empty td { color: var(--muted); }
-.time-table tr.time-today td:first-child { box-shadow: inset 3px 0 0 var(--primary); font-weight: 700; }
 .time-blocks, .time-reference-list, .time-expenses { display: grid; margin: 0; padding: 0; list-style: none; }
 .time-block { display: grid; grid-template-columns: 120px minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-2) var(--space-3); padding: 9px 4px; border-bottom: 1px solid var(--border); }
 .time-block:last-child { border-bottom: 0; }
@@ -1409,6 +1407,40 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
     .time-block-main { grid-column: 1 / -1; order: 4; }
     .time-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .time-summary strong { font-size: 14px; }
-    .time-col-optional { display: none; }
     .time-entry-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* Zeiterfassung: Wochen- und Monatskalender (immer sieben Spalten, auch auf Smartphones). */
+.time-calendar { display: grid; gap: 4px; }
+.time-cal-weekdays, .time-cal-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.time-cal-weekdays span { color: var(--muted); font-size: var(--font-small); font-weight: 700; text-align: center; }
+.time-cal-day { position: relative; display: grid; align-content: start; gap: 2px; min-width: 0; min-height: 92px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; color: var(--text); cursor: pointer; font: inherit; text-align: left; }
+.time-calendar.is-week .time-cal-day { min-height: 120px; }
+.time-cal-day:hover, .time-cal-day:focus-visible { border-color: #93b5c9; background: #f6fafc; }
+.time-cal-day.has-time { background: #f2f8fc; border-color: #c7dbe8; }
+.time-cal-day.is-today { box-shadow: inset 0 0 0 2px var(--primary); }
+.time-cal-day.is-outside { opacity: .45; }
+.time-cal-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
+.time-cal-weekday { color: var(--muted); font-size: var(--font-small); }
+.time-calendar.is-month .time-cal-weekday { display: none; }
+.time-cal-date { font-weight: 700; }
+.time-cal-week { margin-left: auto; color: var(--muted); font-size: 10px; }
+.time-cal-hours { margin-top: auto; font-size: 18px; font-variant-numeric: tabular-nums; }
+.time-cal-travel { min-height: 1em; color: #8a5a00; font-size: var(--font-small); font-variant-numeric: tabular-nums; }
+.time-cal-flag { position: absolute; top: 2px; right: 6px; color: var(--primary); }
+.time-assignment { padding: 1px 7px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); font-size: var(--font-small); }
+.time-travel { color: #8a5a00; }
+.time-carried { margin: var(--space-1) 0 0; }
+.time-reference-list li.is-conflict { padding: 8px; border: 1px solid #d8a538; border-radius: var(--radius); background: #fff7dd; }
+.time-conflict-text { color: #684b08; font-weight: 650; }
+.time-source-actions { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; }
+@media (max-width: 700px) {
+    .time-calendar, .time-cal-weekdays, .time-cal-row { gap: 2px; }
+    .time-cal-day { min-height: 58px; padding: 4px 3px; text-align: center; justify-items: center; }
+    .time-calendar.is-week .time-cal-day { min-height: 74px; }
+    .time-cal-head { justify-content: center; }
+    .time-cal-week { display: none; }
+    .time-cal-hours { font-size: 13px; }
+    .time-cal-travel { font-size: 10px; }
+    .time-calendar.is-week .time-cal-date { font-size: 12px; }
 }
