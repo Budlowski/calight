@@ -12,6 +12,14 @@
   const materialBox = root.querySelector("[data-materials]");
   const billingSection = root.querySelector("[data-billing-section]");
   const billingBox = root.querySelector("[data-billing]");
+  // Meldungen zur kaufmännischen Bearbeitung erscheinen im Abschnitt selbst,
+  // weil die Kopfmeldung beim Arbeiten an den Positionen außer Sicht ist.
+  const billingMessage = root.querySelector("[data-billing-message]");
+  const notifyBilling = (text, type) => {
+    message.hidden = true;
+    notify(billingMessage, text, type);
+    billingMessage.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  };
   const catalogSearch = root.querySelector("[data-catalog-search]");
   const catalogResults = root.querySelector("[data-catalog-results]");
   const STATUS_LABELS = { draft: "Entwurf", submitted: "Eingereicht", processed: "Bearbeitet" };
@@ -432,7 +440,7 @@
 
   async function saveBilling({ silent = false } = {}) {
     adopt(await api(`/api/work-reports/${encodeURIComponent(report.id)}/billing`, { method: "PUT", body: billingPayload() }));
-    if (!silent) notify(message, "Abrechnungspositionen wurden gespeichert.", "success");
+    if (!silent) notifyBilling("Abrechnungspositionen wurden gespeichert.", "success");
     return true;
   }
 
@@ -443,7 +451,8 @@
     try {
       await operation();
     } catch (exception) {
-      notify(message, exception.message);
+      if (button?.closest("[data-billing-section]")) notifyBilling(exception.message);
+      else notify(message, exception.message);
     } finally {
       busy = false;
       if (button?.isConnected) button.disabled = false;
@@ -488,11 +497,11 @@
         ${summaryList([["Positionen", String(report.billing.length)], ["Nettobetrag", format.money(report.billingTotal)]])}`, "Abschließen");
       if (!ok) return;
       adopt(await api(`/api/work-reports/${encodeURIComponent(report.id)}/process`, { method: "POST", body: { version: report.version } }));
-      notify(message, "Kaufmännische Bearbeitung abgeschlossen.", "success");
+      notifyBilling("Kaufmännische Bearbeitung abgeschlossen.", "success");
     },
     async reopen() {
       adopt(await api(`/api/work-reports/${encodeURIComponent(report.id)}/reopen`, { method: "POST", body: { version: report.version } }));
-      notify(message, "Die kaufmännische Bearbeitung ist wieder geöffnet.", "success");
+      notifyBilling("Die kaufmännische Bearbeitung ist wieder geöffnet.", "success");
     },
     async confirm() {
       const form = document.createElement("form");

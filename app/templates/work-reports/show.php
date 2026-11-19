@@ -66,6 +66,7 @@
                 <button class="button button-light button-small" type="button" data-billing-add data-icon="plus">Freie Position</button>
             </div>
         </div>
+        <div class="notice" data-billing-message role="status" hidden></div>
         <div class="work-report-billing-bar">
             <span class="measurement-dirty-hint" data-billing-dirty-hint hidden>Ungespeicherte Positionen</span>
             <div class="order-detail-actions" data-billing-actions></div>
