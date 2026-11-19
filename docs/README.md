@@ -104,11 +104,12 @@ Die folgenden Funktionen sind geplant und teilweise noch nicht implementiert.
 | 1 | Stammdaten, Artikel- und Positionsstamm | Abgeschlossen |
 | 2.1–2.3 | Angebotseditor, Kalkulation, PDF und JSON | Abgeschlossen |
 | 2.4 | Angebotsabgabe, Prüfung, Archivierung und Statusverwaltung | Implementiert, weitere Tests ausstehend |
-| 2.5 | Angebotsrevisionen und Nachträge | Geplant |
-| 3.1 | Auftragsverwaltung, optionale Projekte und direkte Regieaufträge | Geplant |
-| 3.2 | Bautagesberichte, Zeit- und Materialerfassung | In Umsetzung: Mitarbeiter und Zeiterfassung implementiert |
-| 3.3 | Aufmaße für Angebotsarbeiten | Geplant |
-| 3.4 | Rapporte für Regiearbeiten | Geplant |
+| 2.5 | Angebotsrevisionen und Nachträge | Implementiert |
+| 3.1 | Auftragsverwaltung, optionale Projekte, direkte Regieaufträge, Rollen und Bearbeitungssperren | Implementiert |
+| 3.2 | Bautagesberichte mit Zeiterfassung, Materialanforderungen, Fotos und Anhängen; einheitliche Listen mit Pagination und URL-Status | Implementiert |
+| 3.3 | Aufmaße für Angebotsarbeiten (Teilaufmaße, Fortschritt, Korrekturen) | Implementiert |
+| 3.4 | Rapporte für Regiearbeiten (Leistungsnachweis, kaufmännische Bearbeitung, vorbereitete Kundenbestätigung) | Implementiert |
+| 3.2.3 | Gemeinsame PDF-Ausgabe (Bautagesberichte, Aufmaße, Rapporte), Kundenunterschrift und Dokumentenarchiv | Geplant |
 | 3.5 | Nachkalkulation und Soll-Ist-Vergleich | Geplant |
 | 3.6 | Abrechnungstracking | Geplant |
 | 4.1 | Ansprechpartnerverwaltung | Geplant |

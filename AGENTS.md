@@ -49,9 +49,8 @@ Vor einer Änderung sind die betroffenen Implementierungen und Dokumente zu lese
 
 ### Bekannte Dokumentationsabweichungen
 
-Stand 12.11.2026 sind Teile von `docs/README.md` veraltet (die Statustabelle in `docs/ROADMAP.md` wurde mit Phase 3.2.1.3 nachgezogen):
+Stand 19.11.2026 geben die Statustabellen in `docs/README.md` und `docs/ROADMAP.md` den Implementierungsstand bis Phase 3.4 (Migration `0025`) wieder. Verbleibende bekannte Abweichungen:
 
-- Revisionen (Migration `0017`), Aufträge und projektfreie Angebote (`0018`), Nachträge (`0019`), Rollen/Sperren (`0020`) sowie Mitarbeiter, Bautagesberichte und Zeiterfassung (`0021`) sind implementiert, obwohl die README-Roadmap sie teilweise als geplant bezeichnet.
 - `app/config/offer-schema-v1.json` bezeichnet `projectId` noch ausschließlich als UUID und bildet nicht alle später ergänzten Dokumentfelder ab. Der tatsächliche Import- und Speichervertrag ergibt sich aus `OfferValidator`, `OfferNormalizer`, `OfferService` und den Tests. Das Schema nicht isoliert als einzige Wahrheit behandeln.
 - `docs/README.md` nennt Ansprechpartnerverwaltung in der Roadmap als geplant, obwohl Kundenkontakte und mehrere Adressen seit Migration `0007` vorhanden sind. Eine weitergehende Kontakt-/CardDAV-Integration bleibt geplant.
 
