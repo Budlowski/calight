@@ -96,7 +96,7 @@
 
     const actions = [];
     const more = [];
-    if (can("issue")) actions.push(`<button class="button" type="button" data-action="issue" data-icon="clipboard-check">${order.revision > 0 ? "Neue Fassung bestellen …" : "Bestellen …"}</button>`);
+    if (can("issue")) actions.push(`<button class="button" type="button" data-action="issue" data-icon="clipboard-check">${order.revision > 0 ? "Neue Fassung bestellen …" : "Bestellung abschließen …"}</button>`);
     if (order.origin === "internal") {
       actions.push(`<a class="button button-light" href="${url("/pdf")}" target="_blank" rel="noopener" data-icon="file-down">${order.status === "draft" ? "PDF-Vorschau" : "PDF"}</a>`);
     }
@@ -126,7 +126,7 @@
   function renderOrderSection() {
     const draft = order.status === "draft";
     root.querySelector("[data-order-hint]").textContent = draft
-      ? "Entwurf – Positionen erfassen, dann „Bestellen“."
+      ? "Entwurf – Positionen erfassen, dann „Bestellung abschließen“."
       : (order.origin === "internal" ? "Lieferant und Positionen sind mit dem Bestellen festgeschrieben; Änderungen über „Neue Fassung“." : "Extern ausgelöste Bestellung.");
     root.querySelector("[data-order-actions]").innerHTML = can("edit") && !editing
       ? '<button class="button button-light button-small" type="button" data-edit-start data-icon="square-pen">Bearbeiten</button>' : "";
@@ -534,7 +534,7 @@
       const ok = await CalightModal.confirm({
         title: order.revision > 0 ? "Neue Fassung bestellen" : "Bestellung ausgeben",
         content: `Die Bestellung ${order.orderNumber} an ${order.supplierName} wird verbindlich: Lieferant und Positionen werden festgeschrieben und das Bestell-PDF${order.revision > 0 ? ` (Fassung ${order.revision + 1})` : ""} archiviert. Den Versand an den Lieferanten übernehmen Sie wie gewohnt.`,
-        confirmLabel: "Bestellen",
+        confirmLabel: "Bestellung abschließen",
       });
       if (!ok) return;
       editing = false;
