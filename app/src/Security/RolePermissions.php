@@ -23,8 +23,10 @@ final class RolePermissions
             'purchases.read', 'purchases.write',
             // Zentrale Dokumentenübersicht und Anhänge (Phase 3.4.2); Rechte der Fachmodule gelten zusätzlich.
             'documents.read',
+            // Zeiterfassung (Phase 3.4.3): eigene Zeiten sowie Auswertung/Korrektur aller Mitarbeiter.
+            'timesheet.own', 'timesheet.manage',
         ],
-        'technician' => ['dashboard.read', 'orders.read', 'reports.read', 'reports.write', 'measurements.read', 'measurements.write', 'workreports.read', 'workreports.write'],
+        'technician' => ['dashboard.read', 'orders.read', 'reports.read', 'reports.write', 'measurements.read', 'measurements.write', 'workreports.read', 'workreports.write', 'timesheet.own'],
     ];
 
     public static function allows(string $role, string $permission): bool

@@ -101,7 +101,7 @@ Nur `CalightModal` bzw. `Calight.createDialog`. Aufbau:
 Die Sidebar ist nach Arbeitsbereichen gegliedert: **Allgemein**, **Ausführung**, **Verwaltung**.
 - Eine Gruppe erscheint nur, wenn der Benutzer mindestens einen Eintrag sehen darf.
 - Es gibt keine deaktivierten Platzhalter.
-- Die Gruppe **Kaufmännisch** (Bestellungen, Lieferscheine, Nachkalkulation, Abrechnung) und die Zeiterfassung unter „Ausführung“ kommen erst mit ihrer Implementierung hinzu (`templates/layout/app.php`).
+- Die Gruppe **Kaufmännisch** zeigt derzeit Bestellungen; Lieferscheine, Nachkalkulation und Abrechnung kommen erst mit ihrer Implementierung hinzu. Die Zeiterfassung steht unter „Ausführung“ (Woche als Startansicht, kompakte Zeitblöcke statt breiter Tabelle, optionale Angaben im Dialog „Einsatz und Auslagen“).
 
 ## Responsive und Barrierearmut
 

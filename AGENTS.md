@@ -283,7 +283,13 @@ Keine zweite Nummernlogik in einem Controller oder Frontend anlegen.
 - Allgemeine Anhänge: `attachments` + `attachment_links` (Kunde, Ansprechpartner, Projekt, Angebot, Auftrag); Datei einmal unter `attachments/JJJJ/MM/<uuid>.<ext>`.
 - Rechte: `documents.read` für Übersicht und Dokumentbereiche; je Quelle zusätzlich das Leserecht des Fachmoduls (Lieferantenrechnungen und Bestell-PDFs `costs.read`). Anhänge nur sichtbar, wenn **alle** zugeordneten Objekte lesbar sind; Schreiben erfordert Schreibrecht auf jedes Ziel. Neue Dokumentquellen (z. B. Lieferscheine) als weitere Methode in `DocumentRepository`/`DocumentService` ergänzen.
 
-### 4.17 Fachliche Abgrenzung späterer Module
+### 4.17 Zeiterfassung (Phase 3.4.3)
+
+- Tabellen `time_entries` (Zeitblöcke mit Beginn/Ende/Pause/Tätigkeit, `net_minutes` serverseitig, `ends_next_day`), `time_day_details` (Einsatz, Reise, Privat-km) und `time_expenses` (Auslagen, Beleg unter `expenses/`). Keine Lohn-, Reisekosten- oder Steuerlogik.
+- Ist-Stunden eines Auftrags ausschließlich über `TimeTrackingService::actualHoursForOrder`: je Mitarbeiter + Tag gilt die Zeiterfassung, sobald für den Auftrag Zeitblöcke bestehen, sonst der Bautagesbericht. Rapportstunden sind nie Ist-Zeit. Bautagesberichte nicht verändern oder migrieren.
+- Rechte: `timesheet.own` (eigener Mitarbeiterdatensatz über `employees.user_id`, nur aktiv, Techniker nur freigegebene Aufträge), `timesheet.manage` (alle Mitarbeiter, Korrektur, Auswertung). Kostensatz-Snapshots nur mit `costs.read`.
+
+### 4.18 Fachliche Abgrenzung späterer Module
 
 Folgende Punkte sind Zielbild, soweit nicht durch aktuelle Migrationen/Code implementiert:
 

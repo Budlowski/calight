@@ -47,8 +47,8 @@ if ($showShell): ?>
 ?>
             <?php
             // Gruppen erscheinen nur mit mindestens einem sichtbaren Eintrag. Noch nicht
-            // implementierte Bereiche (Lieferscheine, Nachkalkulation, Abrechnung,
-            // Zeiterfassung) werden erst mit ihrer Umsetzung aufgenommen.
+            // implementierte Bereiche (Lieferscheine, Nachkalkulation, Abrechnung)
+            // werden erst mit ihrer Umsetzung aufgenommen.
             $navGroup = static function (string $label, string $links) use ($escape): string {
                 return $links === '' ? '' : '<span class="sidebar-section-label">' . $escape($label) . '</span>' . $links;
             };
@@ -59,7 +59,8 @@ if ($showShell): ?>
                 . $navLink('/offers', 'file-text', 'Angebote', ['offers.read'])
                 . $navLink('/orders', 'clipboard-list', 'Aufträge', ['orders.read'])
                 . $navLink('/documents', 'files', 'Dokumente', ['documents.read'])) ?>
-            <?= $navGroup('Ausführung', $navLink('/daily-reports', 'calendar-days', 'Bautagesberichte', ['reports.read'])
+            <?= $navGroup('Ausführung', $navLink('/time-tracking', 'clock-3', 'Zeiterfassung', ['timesheet.own'])
+                . $navLink('/daily-reports', 'calendar-days', 'Bautagesberichte', ['reports.read'])
                 . $navLink('/work-reports', 'clipboard-check', 'Rapporte', ['workreports.read'])
                 . $navLink('/measurements', 'ruler', 'Aufmaße', ['measurements.read'])
                 . $navLink('/material-requests', 'package', 'Materialanforderungen', ['reports.read'])) ?>

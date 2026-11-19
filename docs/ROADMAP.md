@@ -18,7 +18,7 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 | 2.4 | Angebotsabgabe, Validierung, Snapshot, archivierte PDF, Status | Implementiert; Integrationstests teilweise ausstehend |
 | 2.5 | Angebotsrevisionen und Nachträge | Implementiert (Revisionen `0017`, Nachträge `0019`) |
 | 3.1 | Auftragsverwaltung, projektfreie Angebote, direkte Regieaufträge | Implementiert (`0018`), Rollen und Bearbeitungssperren (`0020`) |
-| 3.2 | Bautagesberichte und interne Ist-Erfassung | Implementiert: Mitarbeiter, Bautagesberichte und berichtsbezogene Ist-Zeiten (`0021`); übergreifende Zeiterfassung geplant (3.4.3) |
+| 3.2 | Bautagesberichte und interne Ist-Erfassung | Implementiert: Mitarbeiter, Bautagesberichte und berichtsbezogene Ist-Zeiten (`0021`); übergreifende Zeiterfassung seit Phase 3.4.3 |
 | 3.2.2 | Materialanforderungen, Fotos und Anhänge zu Bautagesberichten | Implementiert (`0023`); PDF-Ausgabe mit Phase 3.2.3 |
 | 3.2.1.x | Einheitliche Übersichts- und Detailseiten; serverseitige Pagination, Sortierung und URL-basierter Listenstatus | Implementiert (`0022`) |
 | 3.2.3 | Gemeinsamer Briefbogen, PDFs für Rapporte, Aufmaße und Bautagesberichte, digitale Kundenunterschrift, Rücklauf und Dokumentarchiv | Implementiert (`0027`); externe Ablage (NAS/SMB), E-Mail-Versand und Kundenportal geplant |
@@ -27,10 +27,11 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 | 3.4.1 | Bestellungen mit PDF-Ausgabe (schlanke Materialbeschaffung) | Implementiert (`0029`); Versand per E-Mail und Bestellungen am Auftragsdetail geplant |
 | 3.4.1.1 | Bestellverwaltung als Vorgang: AB, Lieferungen, Belege, Zahlungen, Lieferantenanschrift | Implementiert (`0030`); Phase 3.4.1 damit abgeschlossen |
 | 3.4.2 | Zentrale Dokumentenübersicht und geschäftsbezogene Anhänge | Implementiert (`0031`) |
-| 3.4.3 | Lieferscheine mit PDF-Ausgabe (Liefernachweise) | Geplant |
-| 3.4.4 | Mitarbeiter-Zeiterfassung (übergreifende Arbeitszeiten) | Geplant |
+| 3.4.3 | Zeiterfassung: Arbeits- und Reisezeiten, Einsatz, Kilometer und Auslagen | Implementiert (`0032`) |
+| 3.4.4 | Monteurs-Interface (mobile Oberfläche für Zeiterfassung, Berichte, Rapporte) | Geplant |
 | 3.5 | Nachkalkulation und Soll-Ist-Vergleich | Geplant |
 | 3.6 | Abrechnungstracking, ohne Rechnungsstellung | Geplant |
+| 3.7 | Lieferscheine mit PDF-Ausgabe (Liefernachweise) | Geplant |
 | 4.1 | Ansprechpartnerverwaltung | Geplant |
 | 4.2 | CardDAV-Adressbücher lesend anbinden | Geplant |
 | 4.3 | Kontaktübernahme und manuelle Aktualisierung | Geplant |
@@ -412,42 +413,28 @@ Bestellungen sind **an Lieferanten gerichtete Beschaffungsdokumente**, keine Rec
 
 **Bewusst offen:** serverseitige SQL-Pagination der Projektion (derzeit Zusammenführung im Server, ausreichend für überschaubare Mengen); Upload-Ereignisse im fachlichen Verlauf der Objekte. Lieferscheine (Phase 3.4.3) werden als weitere Quelle der Projektion ergänzt.
 
-## Phase 3.4.3 – Lieferscheine und Liefernachweise (geplant)
+## Phase 3.4.3 – Zeiterfassung (implementiert, Migration `0032`)
 
-Lieferscheine dokumentieren **an Kunden oder Baustellen tatsächlich übergebene Materialien beziehungsweise Gegenstände**. Sie sind unabhängig von Bestellungen, Bautagesberichten, Aufmaßen und Rapporten.
+**Grundsatz:** tatsächliche Arbeits- und Reisezeiten je Mitarbeiter und Tag – keine Lohn-, Reisekosten- oder Personalverwaltung, keine Stempeluhr, kein GPS, keine automatischen Pauschalen oder steuerlichen Einstufungen.
 
-- Lieferschein in der Regel zu einem Auftrag erstellen; ein unabhängiger Lieferschein kann bei echtem Bedarf später ergänzt werden.
+- **Zeitblöcke:** Datum, Beginn, Ende (Ende ≤ Beginn = Folgetag), Pause, Tätigkeit (fest: Arbeit/Montage, Reisezeit/Fahrt, Vorbereitung/Werkstatt, Interne Tätigkeit, Sonstiges), optional Auftrag und Bemerkung. Nettozeit serverseitig; eigene Blöcke dürfen sich nicht überschneiden (auch über Mitternacht). Hinweise bei mehr als 10 Stunden und weniger als 11 Stunden Ruhezeit, keine Regel-Engine.
+- **Einsatz und Auslagen (Dialog je Tag):** Einsatzart (erste Tätigkeitsstätte / Auswärtstätigkeit), Übernachtung, Reisetag (Anreise/Abreise), Einsatzort, Bemerkung, Privat-Pkw-Kilometer mit Zweck und optionalem Auftrag; mehrere Auslagen mit Betrag, Zweck, optionalem Auftrag und Beleg (PDF/Bild, `APP_DOCUMENTS_PATH/expenses/`). Reine Dokumentation, keine Erstattung oder Buchung.
+- **Ansichten:** Woche (Start), Tag (Erfassung, „Speichern und weiter“ für schnelle Folgeblöcke), Monat (Summen inkl. Kilometer und Auslagen), für das Büro zusätzlich Mitarbeiterauswahl und Auswertung nach Zeitraum, Mitarbeiter und Auftrag.
+- **Ist-Stunden ohne Doppelzählung:** Für Mitarbeiter + Tag + Auftrag zählt die Zeiterfassung, sobald dort Zeitblöcke bestehen; sonst die Zeit aus dem Bautagesbericht (`TimeTrackingService::actualHoursForOrder`). Bautagesberichte bleiben unverändert und werden nicht migriert. Rapportstunden (abrechenbare Leistung) erscheinen in der Tagesansicht nur als Referenz und zählen nie als Ist-Zeit; angezeigt werden nur Rapportzeilen mit eindeutig zugeordnetem Mitarbeiter.
+- **Kostensatz:** Snapshot des Stundenkostensatzes beim Anlegen (wie bei Bautagesberichten), nur mit `costs.read` sichtbar. Bewertung erst in Phase 3.5.
+- **Rechte:** `timesheet.own` (Techniker, Büro) für eigene Zeiten – nur über den eigenen Mitarbeiterdatensatz, nur aktive Mitarbeiter, Techniker nur freigegebene Aufträge; `timesheet.manage` (Büro) für alle Mitarbeiter, Korrekturen und Auswertung. Korrekturen bleiben über „geändert von … am …“ nachvollziehbar.
 
-- Empfänger, Lieferadresse, Datum und optionalen Ansprechpartner aus vorhandenen Daten vorbelegen; Änderungen im Dokument zulassen, ohne Stammdaten rückwirkend zu verändern.
+**Bewusst offen:** Übernahme einzelner Bautagesbericht-Zeiten als Zeitblöcke (derzeit Auflösungsregel statt Verknüpfung), Freigabe-Workflow, Export, Ruhezeit über mehrere Tage, Gültigkeitshistorie der Kostensätze (nur Snapshot je Eintrag).
 
-- Gelieferte Positionen mit Bezeichnung, Menge, Einheit und optional Bemerkung erfassen; bei Bedarf aus vorhandenen Auftragspositionen oder Artikeln übernehmen.
+## Phase 3.4.4 – Monteurs-Interface (geplant)
 
-- Eigener Lieferscheinnummernkreis und einheitliches PDF ohne standardmäßige Preisangaben.
-
-- Optionale Empfangsbestätigung beziehungsweise Unterschrift; keine Pflicht zu einer komplexen digitalen Signaturfunktion.
-
-- Ausgestellte Lieferscheine und zugehörige Empfängerdaten als unveränderliche Dokumentstände archivieren.
-
-- Kein automatischer Materialverbrauch, keine Lagerbuchung und keine Gleichsetzung gelieferter Mengen mit aufgemessenen oder abrechenbaren Mengen.
-
-## Phase 3.4.4 – Mitarbeiter-Zeiterfassung (geplant)
-
-Die Zeiterfassung dokumentiert die **tatsächlich geleistete Arbeitszeit eines Mitarbeiters über den gesamten Arbeitstag**. Sie ergänzt die bestehenden Bautagesberichte und Rapporte, ohne deren fachliche Aufgabe zu ersetzen. Die vorhandenen Zeiteinträge in Bautagesberichten (Phase 3.2) sind **keine vollständige Mitarbeiter-Zeiterfassung**.
-
-- Mitarbeiterbezogene Tages- und Wochenansicht mit Datum, Dauer und Tätigkeitsart; Bearbeitung eigener Zeiten und büroseitige Übersicht nach Berechtigung.
-- Vorhandene Arbeitszeiten aus Bautagesberichten und Rapporten als zuordenbare Quellen anzeigen und bei Bedarf übernehmen. Verknüpfungen und eindeutige Quell-IDs verwenden, damit dieselbe Arbeitszeit nicht doppelt gezählt wird. Rapportstunden sind dabei nicht zwangsläufig tatsächliche Arbeitsstunden; eine Übernahme erfordert Prüfung beziehungsweise Bestätigung.
-- Zusätzliche Arbeitszeiten unabhängig von Kunde und Auftrag erfassen: Rüstzeit, Werkstatt, interne Arbeiten, Besprechungen, Fortbildung sowie weitere Zeiten ohne Auftrag. Optional Kunde, Projekt oder Auftrag zuordnen.
-- Manuelle Einträge mit Tätigkeitsart und Bemerkung; bestehende Quelldokumente und deren unveränderliche Leistungsnachweise nicht rückwirkend verändern.
-- Wochenübersicht mit Summe, fehlenden Einträgen und optionaler Prüfung beziehungsweise Freigabe durch das Büro. Keine automatische Gleichsetzung mit abrechenbaren Stunden.
-- Auswertung nach Mitarbeiter, Zeitraum, Tätigkeitsart und Auftrag; auftragsbezogene Ist-Zeiten können später der Nachkalkulation dienen. Kostenberechnung nur anhand berechtigter und eindeutig zugeordneter Ist-Zeiten.
-- Beginn/Ende/Pausen gegenüber reiner Stundendauer, Korrektur- und Freigaberegeln sowie gesetzliche Aufzeichnungspflichten vor Implementierung fachlich klären.
-- Keine Lohnabrechnung, Zeiterfassungsterminals, komplexe Personalverwaltung oder vollständige Urlaubsverwaltung in dieser Phase.
+Mobile, auf das Wesentliche reduzierte Oberfläche für Monteure: Zeiterfassung als Einstieg, dazu Bautagesberichte, Rapporte, Aufmaße und Materialanforderungen der freigegebenen Aufträge. Nutzt die vorhandenen Fachmodule und Rechte; keine eigene Datenhaltung.
 
 ## Phase 3.5 – Nachkalkulation
 
 - **Soll bei Angebotsaufträgen:** Angenommene Angebotsrevision sowie angenommene Nachträge.
 
-- **Ist:** Tatsächliche Lohn-, Material-, Fremdleistungs- und sonstige Kosten aus Bautagesberichten bzw. ergänzender Ist-Erfassung. Nach Umsetzung der Mitarbeiter-Zeiterfassung können eindeutig zugeordnete Ist-Zeiten einfließen; doppelte Übernahme derselben Zeit ist ausgeschlossen.
+- **Ist:** Lohnstunden aus `TimeTrackingService::actualHoursForOrder` (Zeiterfassung vor Bautagesbericht je Mitarbeiter, Tag und Auftrag – keine Doppelzählung), bewertet mit den gespeicherten Kostensatz-Snapshots; Material, Fremdleistung und sonstige Kosten aus Bestellungen. Auslagen und Privatkilometer der Zeiterfassung nur nach ausdrücklicher Entscheidung einbeziehen.
 
 - Tatsächliche Bestellgesamtkosten können in die Ist-Kosten einfließen; Doppelzählung gegenüber bereits erfasstem Materialverbrauch vermeiden.
 
@@ -472,6 +459,24 @@ Calight ersetzt **keine** Faktura oder Buchhaltung.
 - Auftragsstatus „Abgerechnet“ ausdrücklich bestätigen lassen.
 
 - Keine eigene Rechnungsstellung, Zahlungsbuchhaltung oder Debitorenverwaltung.
+
+## Phase 3.7 – Lieferscheine und Liefernachweise (geplant)
+
+Lieferscheine dokumentieren **an Kunden oder Baustellen tatsächlich übergebene Materialien beziehungsweise Gegenstände**. Sie sind unabhängig von Bestellungen, Bautagesberichten, Aufmaßen und Rapporten.
+
+- Lieferschein in der Regel zu einem Auftrag erstellen; ein unabhängiger Lieferschein kann bei echtem Bedarf später ergänzt werden.
+
+- Empfänger, Lieferadresse, Datum und optionalen Ansprechpartner aus vorhandenen Daten vorbelegen; Änderungen im Dokument zulassen, ohne Stammdaten rückwirkend zu verändern.
+
+- Gelieferte Positionen mit Bezeichnung, Menge, Einheit und optional Bemerkung erfassen; bei Bedarf aus vorhandenen Auftragspositionen oder Artikeln übernehmen.
+
+- Eigener Lieferscheinnummernkreis und einheitliches PDF ohne standardmäßige Preisangaben.
+
+- Optionale Empfangsbestätigung beziehungsweise Unterschrift; keine Pflicht zu einer komplexen digitalen Signaturfunktion.
+
+- Ausgestellte Lieferscheine und zugehörige Empfängerdaten als unveränderliche Dokumentstände archivieren.
+
+- Kein automatischer Materialverbrauch, keine Lagerbuchung und keine Gleichsetzung gelieferter Mengen mit aufgemessenen oder abrechenbaren Mengen.
 
 ## Phase 4 – Ansprechpartner und CardDAV
 

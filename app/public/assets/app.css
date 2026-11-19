@@ -1366,3 +1366,49 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 @media (max-width: 480px) {
     .overview-filter-panel { grid-template-columns: 1fr; }
 }
+
+/* Zeiterfassung (Phase 3.4.3): Woche/Tag/Monat, kompakte Zeitblöcke statt breiter Tabelle. */
+.time-tracking { display: grid; gap: var(--space-3); }
+.time-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.time-view-switch .button.is-active { border-color: var(--primary); background: #fff; color: var(--primary); box-shadow: 0 1px 3px rgb(15 42 62 / 15%); }
+.time-period { display: flex; align-items: center; gap: var(--space-2); }
+.time-period strong { min-width: 170px; text-align: center; }
+.time-toolbar > select { width: auto; min-width: 200px; margin-left: auto; }
+.time-summary { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.time-table tr.time-empty td { color: var(--muted); }
+.time-table tr.time-today td:first-child { box-shadow: inset 3px 0 0 var(--primary); font-weight: 700; }
+.time-blocks, .time-reference-list, .time-expenses { display: grid; margin: 0; padding: 0; list-style: none; }
+.time-block { display: grid; grid-template-columns: 120px minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-2) var(--space-3); padding: 9px 4px; border-bottom: 1px solid var(--border); }
+.time-block:last-child { border-bottom: 0; }
+.time-block-range { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.time-block-main { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; }
+.time-block-main small { flex-basis: 100%; }
+.time-block-net { display: grid; justify-items: end; font-variant-numeric: tabular-nums; }
+.time-block-actions { display: flex; gap: 2px; }
+/* Tätigkeitsarten gut unterscheidbar (Text plus Farbe). */
+.time-activity { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: var(--font-small); font-weight: 650; background: var(--status-neutral-bg); color: var(--status-neutral-fg); }
+.time-activity-work { background: var(--status-info-bg); color: var(--status-info-fg); }
+.time-activity-travel { background: var(--status-warning-bg); color: var(--status-warning-fg); }
+.time-activity-preparation { background: var(--status-success-bg); color: var(--status-success-fg); }
+.time-activity-internal { background: var(--status-special-bg, #efe9f8); color: var(--status-special-fg, #4b2f7a); }
+.time-entry-grid { display: grid; grid-template-columns: 1fr 1fr 110px; gap: var(--space-2); }
+.time-activity-choice { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; border: 0; }
+.time-activity-choice > label { cursor: pointer; padding: 6px 10px; border: 1px solid transparent; }
+.time-activity-choice > label:has(input:checked) { border-color: currentColor; box-shadow: 0 0 0 1px currentColor; }
+.time-activity-choice input { width: auto; min-height: 0; margin: 0 4px 0 0; }
+.time-choice { display: grid; gap: 4px; margin: 0; padding: 0; border: 0; }
+.time-overnight { align-self: end; min-height: var(--control-height); }
+.time-expenses li, .time-reference-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px var(--space-2); padding: 6px 0; border-bottom: 1px solid #e5eaed; }
+.time-reference-list small { flex-basis: 100%; }
+.time-expense-total { margin: 0; text-align: right; }
+.time-references { background: #fafbfc; }
+@media (max-width: 700px) {
+    .time-toolbar > select { margin-left: 0; width: 100%; }
+    .time-period strong { min-width: 0; flex: 1; }
+    .time-block { grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px var(--space-2); }
+    .time-block-main { grid-column: 1 / -1; order: 4; }
+    .time-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .time-summary strong { font-size: 14px; }
+    .time-col-optional { display: none; }
+    .time-entry-grid { grid-template-columns: 1fr 1fr; }
+}

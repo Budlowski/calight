@@ -28,6 +28,8 @@ final class AuthorizationPolicy
         // Materialanforderungen: Erfassen wie Berichte, Erledigen/Wiedereröffnen nur durch Büro/Admin.
         if (preg_match('#^/api/material-requests/[^/]+/status$#', $path) === 1) return ['reports.read', 'materials.manage'];
         if (str_starts_with($path, '/material-requests') || str_starts_with($path, '/api/material-requests')) return [$write ? 'reports.write' : 'reports.read'];
+        // Zeiterfassung: Grundrecht timesheet.own (Büro hat zusätzlich timesheet.manage); Zuordnung zum Mitarbeiter prüft der Service.
+        if ($path === '/time-tracking' || str_starts_with($path, '/api/time-tracking')) return ['timesheet.own'];
         // Dokumente und Anhänge: Grundrecht documents.read; Schreib- und Objektrechte prüft DocumentService.
         if ($path === '/documents' || str_starts_with($path, '/api/documents') || str_starts_with($path, '/api/attachments')) return ['documents.read'];
         // Bestellungen: Verwaltung durch Büro/Admin; Belege, Zahlungen, Ist-Kosten und Kostenverteilung zusätzlich nur mit costs.read.
