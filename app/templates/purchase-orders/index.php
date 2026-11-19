@@ -5,7 +5,12 @@
             <h1>Bestellungen</h1>
             <p class="muted">Beschaffung bei Lieferanten – in Calight ausgelöst oder extern bereits bestellt.</p>
         </div>
-        <?php if ($canWrite): ?><button class="button" type="button" data-new data-icon="plus">Bestellung anlegen</button><?php endif; ?>
+        <?php if ($canWrite): ?>
+        <div class="form-actions">
+            <button class="button button-light" type="button" data-new-external data-icon="file-up">Externe Bestellung aufnehmen</button>
+            <button class="button" type="button" data-new data-icon="plus">Neue Bestellung</button>
+        </div>
+        <?php endif; ?>
     </div>
     <div class="notice" data-message role="status" hidden></div>
     <div class="overview-toolbar">

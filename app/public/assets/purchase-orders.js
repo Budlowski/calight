@@ -1,4 +1,4 @@
-// Bestellungen: zentrale Übersicht und Anlegen (intern leer, intern aus Materialbedarf, extern).
+// Bestellungen: zentrale Übersicht und Anlegen (neue interne Bestellung, externe Bestellung aufnehmen).
 (() => {
   "use strict";
 
@@ -100,61 +100,35 @@
     return new Date(now - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   };
 
-  /** Anlegen: Art wählen, danach nur die dafür nötigen Felder. */
-  function newOrder() {
+  /** Anlegen: getrennte Dialoge für neue (interne) und extern bereits ausgelöste Bestellungen. */
+  function newOrder(external) {
     const form = document.createElement("form");
     form.className = "form-stack";
     form.noValidate = true;
-    const requests = reference.materialRequests;
     form.innerHTML = `
-      <fieldset class="purchase-kind-choice">
-        <legend class="field-label">Art der Bestellung</legend>
-        <label><input type="radio" name="kind" value="internal" checked> <span><strong>Interne Bestellung</strong><small>Positionen erfassen und Bestell-PDF aus Calight erzeugen</small></span></label>
-        <label><input type="radio" name="kind" value="requests"${requests.length ? "" : " disabled"}> <span><strong>Aus Materialbedarf</strong><small>${requests.length ? `${requests.length} offene Materialanforderung${requests.length === 1 ? "" : "en"} übernehmen` : "Keine offenen Materialanforderungen"}</small></span></label>
-        <label><input type="radio" name="kind" value="external"> <span><strong>Externe Bestellung erfassen</strong><small>Bereits online, telefonisch oder vor Ort bestellt</small></span></label>
-      </fieldset>
       <label><span class="field-label">Lieferant <span aria-hidden="true">*</span></span>
         <select name="supplierId" required><option value="">Lieferant auswählen …</option>${supplierOptions()}</select></label>
-      <div class="purchase-requests" data-requests hidden>
-        <span class="field-label">Materialanforderungen <span aria-hidden="true">*</span></span>
-        <div class="purchase-request-list">${requests.map((request) => `
-          <label class="purchase-request"><input type="checkbox" name="materialRequestIds" value="${esc(request.id)}">
-            <span><strong>${esc(request.description)}</strong><small>${esc(request.orderNumber)} · ${esc(request.orderTitle)}${request.neededBy ? ` · benötigt bis ${format.date(request.neededBy)}` : ""}${request.alreadyOrdered ? " · bereits in einer Bestellung" : ""}</small></span></label>`).join("")}</div>
-      </div>
-      <div class="form-grid" data-external hidden>
+      ${external ? `<div class="form-grid">
         <label><span class="field-label">Externe Bestellnummer (optional)</span><input name="externalReference" maxlength="100" autocomplete="off"></label>
         <label><span class="field-label">Bestelldatum</span><input name="orderDate" type="date" value="${today()}"></label>
         ${canCosts ? '<label><span class="field-label">Bestellwert netto (optional)</span><input name="expectedNetTotal" inputmode="decimal" placeholder="0,00"></label>' : ""}
         <label><span class="field-label">Bestätigung als Datei (optional)</span><input name="file" type="file" accept="application/pdf,image/*"></label>
-      </div>
+      </div>` : ""}
       <label><span class="field-label">Auftrag (optional)</span>
         <select name="orderId"><option value="">Ohne Auftrag</option>${orderOptions()}</select></label>
       <p class="field-error" data-dialog-error hidden></p>`;
-    const kind = () => form.elements.kind.value;
-    const sync = () => {
-      form.querySelector("[data-requests]").hidden = kind() !== "requests";
-      form.querySelector("[data-external]").hidden = kind() !== "external";
-    };
-    form.addEventListener("change", (event) => {
-      if (event.target.name === "kind") sync();
-    });
-    sync();
     Calight.searchableSelect(form.elements.supplierId, { placeholder: "Lieferantennummer oder Name eingeben …" });
     Calight.searchableSelect(form.elements.orderId, { placeholder: "Auftragsnummer oder Bezeichnung …" });
 
     Calight.createDialog({
-      title: "Bestellung anlegen",
+      title: external ? "Externe Bestellung aufnehmen" : "Neue Bestellung",
       form,
-      submitLabel: "Anlegen",
+      submitLabel: external ? "Aufnehmen" : "Anlegen",
       discardMessage: "Das Anlegen abbrechen?",
       initialFocus: ".suggest-select input",
       submit: async () => {
         const body = { supplierId: form.elements.supplierId.value, orderId: form.elements.orderId.value };
-        if (kind() === "requests") {
-          body.materialRequestIds = [...form.querySelectorAll('[name="materialRequestIds"]:checked')].map((input) => input.value);
-          if (!body.materialRequestIds.length) throw new Error("Bitte mindestens eine Materialanforderung auswählen.");
-        }
-        if (kind() === "external") {
+        if (external) {
           Object.assign(body, {
             origin: "external",
             externalReference: form.elements.externalReference.value.trim(),
@@ -163,7 +137,7 @@
           });
         }
         const order = await api("/api/purchase-orders", { method: "POST", body });
-        const file = kind() === "external" ? form.elements.file.files[0] : null;
+        const file = external ? form.elements.file.files[0] : null;
         if (file) await uploadDocument(order.id, file, "supplier_confirmation");
         location.assign(href(order));
       },
@@ -188,6 +162,7 @@
     list.start();
   }
 
-  root.querySelector("[data-new]")?.addEventListener("click", newOrder);
+  root.querySelector("[data-new]")?.addEventListener("click", () => newOrder(false));
+  root.querySelector("[data-new-external]")?.addEventListener("click", () => newOrder(true));
   init().catch((exception) => notify(message, exception.message));
 })();

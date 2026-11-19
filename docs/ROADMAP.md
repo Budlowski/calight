@@ -222,7 +222,7 @@ Bautagesberichte dokumentieren die tatsächliche Ausführung und sind **keine** 
 
 - Fotos und Anhänge je Bericht (Bilder, PDF, Text bis 15 MB), serverseitig zugriffsgeschützt. **(implementiert, Phase 3.2.2)**
 
-- **Materialanforderungen** statt täglicher Materialverbrauchserfassung: Monteure melden benötigtes Material als Freitext mit optionaler Bemerkung und Wunschtermin aus dem Bericht oder direkt am Auftrag; das Büro bearbeitet sie zentral (offen/erledigt). Materialanforderungen sind eigenständige Datensätze mit Auftragsbezug, keine Bestellungen und keine Ist-Kosten. Bestellungen (Phase 3.4.1) können sie als Positionsvorschlag übernehmen; die Anforderung bleibt dabei offen. **(implementiert, Phase 3.2.2)**
+- **Materialanforderungen** statt täglicher Materialverbrauchserfassung: Monteure melden benötigtes Material als Freitext mit optionaler Bemerkung und Wunschtermin aus dem Bericht oder direkt am Auftrag; das Büro bearbeitet sie zentral (offen/erledigt). Materialanforderungen sind eigenständige Datensätze mit Auftragsbezug, keine Bestellungen und keine Ist-Kosten. Die Bestell-API (Phase 3.4.1) kann sie als Positionsvorschlag übernehmen (in der Oberfläche derzeit nicht angeboten); die Anforderung bleibt dabei offen. **(implementiert, Phase 3.2.2)**
 
 - Artikelgenaue Ist-Materialkosten, Fahrzeiten und weitere Aufwendungen sind bewusst noch nicht umgesetzt; sie werden bei Bedarf im Zusammenhang mit der Nachkalkulation (Phase 3.5) geklärt.
 
@@ -341,7 +341,7 @@ Rapporte dokumentieren **abrechenbare Regieleistungen** und entsprechen in ihrer
 **Umgesetzt:** Eine Bestellung ist ein zentraler Beschaffungsvorgang. Drei Erfassungswege führen in dieselbe Übersicht („Kaufmännisch → Bestellungen“):
 
 - **Intern, leer:** Lieferant wählen, Positionen frei oder aus dem Artikelstamm (Einkaufspreis als Vorschlag) erfassen, Bestell-PDF aus Calight erzeugen.
-- **Intern aus Materialbedarf:** offene Materialanforderungen auswählen; ihr Freitext wird als bearbeitbare Position übernommen, der Bezug bleibt gespeichert, die Anforderung bleibt offen.
+- **Intern aus Materialbedarf:** serverseitig vorbereitet (`materialRequestIds` beim Anlegen; Freitext wird bearbeitbare Position, Bezug bleibt gespeichert, Anforderung bleibt offen). In der Oberfläche bewusst nicht angeboten: Die Übersicht hat nur „Neue Bestellung“ und „Externe Bestellung aufnehmen“ mit je eigenem Dialog.
 - **Extern:** bereits online, telefonisch oder vor Ort aufgegebene Bestellung schnell erfassen (Lieferant, Referenz, Datum, optional Betrag, Auftrag und Bestätigung als Datei). Keine Positionen nötig, kein künstlicher Calight-Beleg.
 
 Regeln:
