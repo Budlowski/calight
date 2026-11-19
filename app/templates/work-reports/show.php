@@ -73,6 +73,7 @@
         </div>
         <div class="work-report-catalog" data-catalog-box>
             <input type="search" data-catalog-search placeholder="Artikelstamm durchsuchen …" aria-label="Stammartikel suchen" autocomplete="off">
+            <button class="offer-search-clear" type="button" data-catalog-clear aria-label="Suche leeren" title="Suche leeren" hidden>×</button>
             <div class="work-report-catalog-results" data-catalog-results role="listbox" hidden></div>
         </div>
         <div data-billing></div>

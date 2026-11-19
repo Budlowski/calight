@@ -284,7 +284,19 @@
   });
 
   // Stammartikel suchen und als Position übernehmen (nur Verkaufspreise).
+  const catalogClear = root.querySelector("[data-catalog-clear]");
+  function resetCatalog() {
+    clearTimeout(catalogTimer);
+    catalogSearch.value = "";
+    catalogResults.hidden = true;
+    catalogClear.hidden = true;
+  }
+  catalogClear.addEventListener("click", () => {
+    resetCatalog();
+    catalogSearch.focus();
+  });
   catalogSearch.addEventListener("input", () => {
+    catalogClear.hidden = catalogSearch.value === "";
     clearTimeout(catalogTimer);
     catalogTimer = setTimeout(async () => {
       const query = catalogSearch.value.trim();
@@ -295,11 +307,11 @@
       try {
         catalogItems = await api(`/api/work-reports/catalog?q=${encodeURIComponent(query)}`);
         catalogResults.innerHTML = catalogItems.length
-          ? catalogItems.map((item, index) => `<button type="button" role="option" data-catalog-index="${index}"><span>${esc(item.name)}${item.articleNumber ? ` <small class="muted">${esc(item.articleNumber)}</small>` : ""}</span><span>${format.money(item.salesPrice)} / ${esc(item.unit)}</span></button>`).join("")
+          ? catalogItems.map((item, index) => `<button type="button" role="option" data-catalog-index="${index}"><span>${esc(item.name)}${item.articleNumber ? ` <small class="muted">${esc(item.articleNumber)}</small>` : ""}</span><span class="work-report-catalog-price">${format.money(item.salesPrice)} / ${esc(item.unit)}</span></button>`).join("")
           : '<p class="muted">Keine Treffer.</p>';
         catalogResults.hidden = false;
       } catch (exception) {
-        notify(message, exception.message);
+        notifyBilling(exception.message);
       }
     }, 250);
   });
@@ -308,8 +320,7 @@
     if (!button) return;
     const item = catalogItems[Number(button.dataset.catalogIndex)];
     billing.push({ type: item.type, description: item.name, quantity: "1", unit: item.unit, unitPrice: item.salesPrice, costItemId: item.id });
-    catalogSearch.value = "";
-    catalogResults.hidden = true;
+    resetCatalog();
     setDirty("billing", true);
     renderBilling();
     billingBox.querySelector(".work-report-billing-row:last-child [data-billing-field='quantity']")?.focus();

@@ -1147,6 +1147,11 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .work-report-catalog-results { position:absolute; top:100%; right:0; left:0; z-index:10; display:grid; max-height:300px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius); background:#fff; box-shadow:0 8px 20px rgb(15 42 62 / 15%); }
 .work-report-catalog-results button { display:flex; justify-content:space-between; gap:var(--space-3); padding:8px 10px; border:0; border-bottom:1px solid var(--border); background:#fff; font:inherit; text-align:left; cursor:pointer; }
 .work-report-catalog-results button:hover, .work-report-catalog-results button:focus-visible { background:#f3f9fd; outline:none; }
+.work-report-catalog input { padding-right:36px; }
+.work-report-catalog input::-webkit-search-cancel-button { display:none; }
+.work-report-catalog .offer-search-clear { position:absolute; z-index:2; top:calc(var(--control-height) / 2); right:5px; width:26px; height:26px; padding:0; transform:translateY(-50%); border:0; border-radius:4px; background:transparent; color:var(--muted); font-size:20px; line-height:1; cursor:pointer; }
+.work-report-catalog .offer-search-clear:hover, .work-report-catalog .offer-search-clear:focus-visible { background:#e8eef2; color:var(--text); }
+.work-report-catalog-price { flex:0 0 auto; white-space:nowrap; }
 .work-report-catalog-results p { margin:0; padding:8px 10px; }
 
 @media (max-width: 1100px) {
