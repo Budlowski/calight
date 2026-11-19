@@ -81,15 +81,27 @@ final readonly class WorkReportPdfService
             $pdf->section('Arbeitsstunden');
             $total = BigDecimal::zero();
             $rows = [];
+            // Die Spalte „Tätigkeit“ erscheint nur, wenn mindestens eine Zeile eine Tätigkeit enthält.
+            $withActivity = array_filter($report['labor'], static fn (array $row): bool => trim((string) ($row['activity'] ?? '')) !== '') !== [];
+            $text = static fn (mixed $value): string => trim((string) ($value ?? '')) !== '' ? (string) $value : '–';
             foreach ($report['labor'] as $row) {
                 $total = $total->plus((string) $row['hours']);
-                $rows[] = ['cells' => [(string) $row['workerName'], (string) ($row['laborItemName'] ?? ''), (string) ($row['activity'] ?? ''), $numbers->quantity((string) $row['hours']) . ' h']];
+                $cells = [(string) $row['workerName'], $text($row['laborItemName'] ?? '')];
+                if ($withActivity) {
+                    $cells[] = $text($row['activity'] ?? '');
+                }
+                $cells[] = $numbers->quantity((string) $row['hours']) . ' h';
+                $rows[] = ['cells' => $cells];
             }
-            $rows[] = ['cells' => ['Summe', '', '', $numbers->quantity((string) $total) . ' h'], 'bold' => true];
-            $pdf->table([
+            $rows[] = ['cells' => $withActivity ? ['Summe', '', '', $numbers->quantity((string) $total) . ' h'] : ['Summe', '', $numbers->quantity((string) $total) . ' h'], 'bold' => true];
+            $pdf->table($withActivity ? [
                 ['label' => 'Mitarbeiter', 'width' => 150, 'wrap' => 32],
                 ['label' => 'Tätigkeitsart', 'width' => 110, 'wrap' => 24],
                 ['label' => 'Tätigkeit', 'width' => 175, 'wrap' => 38],
+                ['label' => 'Stunden', 'width' => 70, 'align' => 'right'],
+            ] : [
+                ['label' => 'Mitarbeiter', 'width' => 220, 'wrap' => 48],
+                ['label' => 'Tätigkeitsart', 'width' => 215, 'wrap' => 47],
                 ['label' => 'Stunden', 'width' => 70, 'align' => 'right'],
             ], $rows);
         }
@@ -97,7 +109,7 @@ final readonly class WorkReportPdfService
         if ($report['materials'] !== []) {
             $pdf->section('Material und sonstige Leistungen');
             $pdf->table([
-                ['label' => 'Menge', 'width' => 70, 'align' => 'right'],
+                ['label' => 'Menge', 'width' => 70, 'align' => 'right', 'pad' => 14],
                 ['label' => 'Einheit', 'width' => 60],
                 ['label' => 'Bezeichnung', 'width' => 375, 'wrap' => 85],
             ], array_map(static fn (array $row): array => ['cells' => [$numbers->quantity((string) $row['quantity']), (string) $row['unit'], (string) $row['description']]], $report['materials']));

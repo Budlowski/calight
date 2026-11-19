@@ -247,7 +247,7 @@ final class LetterheadPdf
     {
         $text = isset($column['wrap']) ? $text : self::shorten($text, max(4, (int) ($column['width'] / ($this->font * .5))));
         if (($column['align'] ?? 'left') === 'right') {
-            $this->pdf->textRight($x + $column['width'] - 4, $y ?? $this->y, $this->font, $text, $bold, $color);
+            $this->pdf->textRight($x + $column['width'] - ($column['pad'] ?? 4), $y ?? $this->y, $this->font, $text, $bold, $color);
             return;
         }
         $this->pdf->text($x, $y ?? $this->y, $this->font, $text, $bold, $color);
