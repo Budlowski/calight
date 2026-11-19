@@ -1242,7 +1242,9 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .purchase-supplier-create { flex: 0 0 auto; width: var(--control-height); min-height: var(--control-height); padding: 0; }
 .purchase-supplier-create .icon { margin: 0; }
 /* Übersicht: drei Status kompakt, stornierte Bestellungen deutlich gekennzeichnet. */
-.purchase-status-stack { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.purchase-status-stack { display: inline-flex; flex-wrap: nowrap; gap: 4px; }
+/* Drei Status nebeneinander: Statusspalte der Bestellübersicht breiter als der Standard. */
+#purchase-orders-app .overview-table .cell-status { width: 360px; }
 .purchase-confirmed-value { display: block; color: var(--muted); font-size: var(--font-small); white-space: nowrap; }
 tr.purchase-cancelled > td, .overview-card.purchase-cancelled { color: var(--muted); background: #f4f5f6; }
 @media (max-width: 1100px) {
