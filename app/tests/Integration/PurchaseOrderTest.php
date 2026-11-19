@@ -91,7 +91,14 @@ final class PurchaseOrderTest extends TestCase
 
             // Spätere Stammdatenänderung ändert die ausgegebene Bestellung nicht.
             $masterData->updateSupplier($supplier['id'], ['name' => 'Kabelwerk Ost GmbH', 'city' => 'Halle', 'customerNumber' => 'NEU']);
-            $this->assertSame('Leipzig', $service->detail($issued['id'], $office)['supplierSnapshot']['city']);
+            $after = $service->detail($issued['id'], $office);
+            $this->assertSame('Leipzig', $after['supplierSnapshot']['city']);
+            $this->assertSame('KD-778899', $after['supplierSnapshot']['customerNumber']);
+            $this->assertSame($pdf, $service->pdf($issued['id'], $office)['pdf'], 'Archiviertes Bestell-PDF bleibt byte-identisch.');
+            // Neue Bestellungen verwenden dagegen die aktuellen Stammdaten.
+            $next = $service->createInternal(['supplierId' => $supplier['id']], $office);
+            $next = $service->update($next['id'], ['version' => $next['version'], 'items' => [['description' => 'Kabel', 'quantity' => '1']]], $office);
+            $this->assertSame('NEU', $service->issue($next['id'], ['version' => $next['version']], $office)['supplierSnapshot']['customerNumber']);
         });
     }
 

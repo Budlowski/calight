@@ -134,6 +134,14 @@ final class MasterDataTest extends TestCase
                 'longText' => $template['longText'], 'unit' => $template['unit'], 'components' => $template['components'],
             ]);
             $this->assertSame('5.0000', $resavedWithoutPriceUpdate['components'][0]['costPrice']);
+            // Erneutes Öffnen (wie die Positionsseite: Gesamtbestand laden) liefert alle Bausteine unverändert.
+            $reopened = array_values(array_filter($service->overview()['services'], static fn (array $item): bool => $item['id'] === $template['id']))[0];
+            $this->assertSame(2, count($reopened['components']));
+            $this->assertSame(['1.000', '0.500'], array_column($reopened['components'], 'quantity'));
+            $this->assertSame(['5.0000', '40.0000'], array_column($reopened['components'], 'costPrice'));
+            $this->assertSame(['20.00', '25.00'], array_column($reopened['components'], 'markupPercent'));
+            $this->assertSame(['master', 'manual'], array_column($reopened['components'], 'priceMode'));
+            $this->assertSame($template['calculation']['calculatedUnitPrice'], $reopened['calculation']['calculatedUnitPrice']);
             $priceUpdate = $service->previewMasterPriceUpdates(['components' => $template['components']]);
             $this->assertSame(1, count($priceUpdate['changes']));
             $this->assertSame('6.0000', $priceUpdate['updates'][0]['costPrice']);

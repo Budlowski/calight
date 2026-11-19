@@ -250,6 +250,10 @@
     if (!event.target.closest("#components-list")) setDirty(true);
     if (event.target.name === "unit") schedulePreview();
   });
+  // Auswahlfelder und Kontrollkästchen melden Änderungen über „change“.
+  form.addEventListener("change", (event) => {
+    if (!event.target.closest("#components-list")) setDirty(true);
+  });
   form.elements.autoArticleNumber.addEventListener("change", () => {
     const automatic = form.elements.autoArticleNumber.checked;
     form.elements.articleNumber.disabled = automatic;
