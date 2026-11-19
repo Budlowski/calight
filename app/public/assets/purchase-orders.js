@@ -47,12 +47,20 @@
     const label = select.closest("label");
     const toggle = document.createElement("button");
     toggle.type = "button";
-    toggle.className = "button button-light button-small purchase-supplier-create";
+    toggle.className = "button button-light purchase-supplier-create";
     toggle.dataset.icon = "plus";
-    toggle.textContent = "Neuen Lieferanten anlegen";
-    // Im Label unter dem Suchfeld, damit das Formularraster unverändert bleibt.
-    if (label) label.append(toggle);
-    else select.after(toggle);
+    toggle.title = "Neuen Lieferanten anlegen";
+    toggle.setAttribute("aria-label", "Neuen Lieferanten anlegen");
+    // Plus-Knopf direkt neben dem Suchfeld, damit das Formularraster unverändert bleibt.
+    const box = select.nextElementSibling?.classList.contains("suggest-select") ? select.nextElementSibling : null;
+    if (box) {
+      const row = document.createElement("div");
+      row.className = "purchase-supplier-row";
+      box.before(row);
+      row.append(box, toggle);
+    } else {
+      select.after(toggle);
+    }
     toggle.addEventListener("click", () => {
       const form = document.createElement("form");
       form.className = "form-stack";

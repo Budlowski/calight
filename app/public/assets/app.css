@@ -1236,7 +1236,10 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .purchase-final-mode { display: grid; gap: 6px; margin: 0; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); }
 .purchase-final-mode .check-inline { font-weight: 400; }
 /* Lieferanten-Schnellanlage: Knopf unter der Lieferantenauswahl, Dialog darüber. */
-.purchase-supplier-create { justify-self: start; align-self: start; width: auto; margin-top: var(--space-1); }
+.purchase-supplier-row { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+.purchase-supplier-row > .suggest-select { flex: 1 1 auto; min-width: 0; }
+.purchase-supplier-create { flex: 0 0 auto; width: var(--control-height); min-height: var(--control-height); padding: 0; }
+.purchase-supplier-create .icon { margin: 0; }
 /* Übersicht: drei Status kompakt, stornierte Bestellungen deutlich gekennzeichnet. */
 .purchase-status-stack { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .purchase-confirmed-value { display: block; color: var(--muted); font-size: var(--font-small); white-space: nowrap; }
