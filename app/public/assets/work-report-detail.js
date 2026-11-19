@@ -438,7 +438,21 @@
     return true;
   }
 
+  // Verständliche Prüfung vor dem Speichern; der Server prüft unverändert erneut.
+  function checkBilling() {
+    const fields = [["quantity", "eine Menge"], ["unitPrice", "einen Einzelpreis (0 für ohne Berechnung)"]];
+    billing.forEach((item, index) => {
+      for (const [field, label] of fields) {
+        if (exact.DECIMAL_PATTERN.test(decimal(item[field]))) continue;
+        billingBox.querySelector(`[data-billing-index="${index}"] [data-billing-field="${field}"]`)?.focus();
+        const empty = decimal(item[field]) === "";
+        throw new Error(`Position ${index + 1}: Bitte ${empty ? label + " eintragen" : "eine gültige Zahl eintragen, z. B. 12,50"}.`);
+      }
+    });
+  }
+
   async function saveBilling({ silent = false } = {}) {
+    checkBilling();
     adopt(await api(`/api/work-reports/${encodeURIComponent(report.id)}/billing`, { method: "PUT", body: billingPayload() }));
     if (!silent) notifyBilling("Abrechnungspositionen wurden gespeichert.", "success");
     return true;
