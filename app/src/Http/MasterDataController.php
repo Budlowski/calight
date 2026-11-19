@@ -20,6 +20,13 @@ final readonly class MasterDataController
         $router->add('GET', '/master-data', fn (): Response => $this->page(
             fn (): Response => $this->view->render('master-data/index')
         ));
+        // Stammpositionen mit Kalkulationsbausteinen werden auf einer eigenen Seite bearbeitet.
+        $router->add('GET', '/master-data/services/new', fn (): Response => $this->page(
+            fn (): Response => $this->view->render('master-data/service', ['serviceId' => ''])
+        ));
+        $router->add('GET', '/master-data/services/{id}', fn (Request $request, array $parameters): Response => $this->page(
+            fn (): Response => $this->view->render('master-data/service', ['serviceId' => $parameters['id']])
+        ));
         $router->add('GET', '/api/master-data', fn (Request $request): Response => $this->api(
             fn (): Response => Response::json($this->service->overview(($request->query['archived'] ?? '1') !== '0'))
         ));

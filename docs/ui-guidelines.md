@@ -64,6 +64,7 @@ Reine Icon-Buttons brauchen `aria-label` und `title`.
 `list-view.js` regelt Suche, Filter, Sortierung, Pagination, URL-Zustand und Karten-/Tabellenansicht.
 
 - Geldbeträge und Mengen stehen rechtsbündig.
+- **Stammdaten** (Artikel, Positionen, Schlepptexte, Kategorien, Lieferanten) nutzen dieselbe Tabellen-/Kartenansicht je Reiter (`master-data.js`). Bearbeitung im Modal; Stammpositionen mit Kalkulationsbausteinen auf eigener Seite (`/master-data/services/{id}`). Suche und Filter laufen hier bewusst im Browser, weil der Stamm einmal vollständig geladen wird; der gewählte Reiter steht in der URL (`#suppliers`).
 - Leere Listen zeigen einen Text statt einer leeren Tabelle.
 - Auf dem Smartphone steht die Suche über die volle Breite, Filter stehen zweispaltig.
 

@@ -1,655 +1,456 @@
+// Stammdaten-Übersicht: fünf Bereiche mit Suche, Filtern, Tabellen-/Kartenansicht und
+// Bearbeitung im Modal. Stammpositionen (mit Kalkulationsbausteinen) haben eine eigene Seite
+// (master-data-service.js). Alle Berechnungen und Prüfungen erfolgen serverseitig.
 (() => {
-    'use strict';
+  "use strict";
 
-    const root = document.querySelector('#master-data-app');
-    if (!root) return;
+  const root = document.querySelector("#master-data-app");
+  if (!root) return;
 
-    const csrf = root.dataset.csrf;
-    const state = { categories: [], suppliers: [], costItems: [], services: [], trailingTexts: [], components: [] };
-    const typeLabels = { material: 'Material', labor: 'Lohn', external: 'Fremdleistung', other: 'Sonstige Kosten' };
-    const euro = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' });
-    const number = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
-    const message = document.querySelector('#master-message');
-    const showArchived = document.querySelector('#show-archived');
-    const costForm = document.querySelector('#cost-item-form');
-    const categoryForm = document.querySelector('#category-form');
-    const supplierForm = document.querySelector('#supplier-form');
-    const serviceForm = document.querySelector('#service-form');
-    const trailingTextForm=document.querySelector('#trailing-text-form');
-    const masterPricePreview = document.querySelector('#master-price-preview');
-    const importFile = document.querySelector('#master-import-file');
-    let previewTimer = 0;
-    let dirty = false;
-    let pendingPriceUpdates = [];
-    let importScope = '';
+  const { esc, api, notify } = Calight;
+  const state = { categories: [], suppliers: [], costItems: [], services: [], trailingTexts: [] };
+  const typeLabels = { material: "Material", labor: "Lohn", external: "Fremdleistung", other: "Sonstige Kosten" };
+  const euro = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
+  // Einkaufspreise und Kostensätze bis 4 Nachkommastellen.
+  const costFormat = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  const message = root.querySelector("#master-message");
+  const showArchived = root.querySelector("#show-archived");
+  const importFile = document.querySelector("#master-import-file");
+  let importScope = "";
 
-    const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({
-        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
-    })[character]);
-    const formatEuro = (value) => euro.format(Number(value || 0));
-    const visible = (entry) => entry.active || showArchived.checked;
-    const decimalValue = (value) => String(value ?? '').trim().replace(',', '.');
-    const decimalInput = (value, fallback) => String(value ?? fallback).replace('.', ',');
-    const activeClass = (entry) => entry.active ? '' : ' archived-row';
+  const money = (value) => euro.format(Number(value || 0));
+  const cost = (value) => costFormat.format(Number(value || 0));
+  const decimalValue = (value) => String(value ?? "").trim().replace(",", ".");
+  const decimalInput = (value, fallback) => String(value ?? fallback).replace(".", ",");
+  const visible = (entry) => entry.active || showArchived.checked;
+  const matches = (query, ...parts) => !query || parts.filter(Boolean).join(" ").toLocaleLowerCase("de").includes(query);
+  const archivedClass = (entry) => (entry.active ? "" : " archived-row");
+  const archivedBadge = (entry) => (entry.active ? "" : '<span class="status-badge status-archived">Archiviert</span>');
+  const success = (text) => notify(message, text, "success");
+  const failure = (text) => notify(message, text);
 
-    function notify(text, type = 'success') {
-        message.textContent = text;
-        message.className = `notice notice-${type}`;
-        message.hidden = false;
-        window.clearTimeout(notify.timer);
-        notify.timer = window.setTimeout(() => { message.hidden = true; }, 5000);
+  async function load() {
+    try {
+      Object.assign(state, await api("/api/master-data"));
+      renderAll();
+    } catch (exception) {
+      failure(exception.message);
     }
+  }
 
-    async function api(path, options = {}) {
-        const headers = { Accept: 'application/json', ...(options.headers || {}) };
-        if (options.body !== undefined) {
-            headers['Content-Type'] = 'application/json';
-            headers['X-CSRF-Token'] = csrf;
-            options.body = JSON.stringify(options.body);
+  /** Speichern/Statuswechsel: Server prüft, danach Bestand neu laden. */
+  async function mutate(path, body, text, method = "POST") {
+    const result = await api(path, { method, body });
+    success(text);
+    await load();
+    return result;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Hilfen für Kategorien und Lieferanten
+  // ---------------------------------------------------------------------------
+  function flatCategories(excluded = new Set()) {
+    const byParent = new Map();
+    state.categories.filter(visible).forEach((category) => {
+      const key = category.parentId || "";
+      if (!byParent.has(key)) byParent.set(key, []);
+      byParent.get(key).push(category);
+    });
+    const result = [];
+    const visit = (parentId, depth, seen) => {
+      (byParent.get(parentId) || []).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, "de")).forEach((category) => {
+        if (seen.has(category.id)) return;
+        if (!excluded.has(category.id)) result.push({ ...category, depth });
+        visit(category.id, depth + 1, new Set(seen).add(category.id));
+      });
+    };
+    visit("", 0, new Set());
+    return result;
+  }
+
+  function descendantsOf(categoryId) {
+    const result = new Set([categoryId]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      state.categories.forEach((category) => {
+        if (category.parentId && result.has(category.parentId) && !result.has(category.id)) {
+          result.add(category.id);
+          changed = true;
         }
-        const response = await fetch(path, { credentials: 'same-origin', ...options, headers });
-        let result;
-        try {
-            result = await response.json();
-        } catch {
-            throw new Error('Der Server hat keine gültige Antwort geliefert.');
-        }
-        if (!response.ok) {
-            const details = Array.isArray(result.details) ? result.details.join(' ') : '';
-            throw new Error(details || result.error || 'Anfrage fehlgeschlagen.');
-        }
-        return result.data ?? result;
+      });
     }
+    return result;
+  }
 
-    async function load() {
-        try {
-            const data = await api('/api/master-data');
-            Object.assign(state, data);
-            renderAll();
-        } catch (error) {
-            notify(error.message, 'error');
-        }
-    }
+  const categoryOptions = (selected = "", excluded = new Set(), empty = "Keine Kategorie") => `<option value="">${esc(empty)}</option>`
+    + flatCategories(excluded).map((category) => `<option value="${esc(category.id)}"${category.id === selected ? " selected" : ""}>${"&nbsp;".repeat(category.depth * 4)}${esc(category.name)}${category.active ? "" : " (archiviert)"}</option>`).join("");
+  const supplierOptions = (selected = "") => '<option value="">Kein Lieferant</option>'
+    + state.suppliers.filter((supplier) => supplier.active || supplier.id === selected)
+      .map((supplier) => `<option value="${esc(supplier.id)}"${supplier.id === selected ? " selected" : ""}>${esc(supplier.supplierNumber ? `${supplier.supplierNumber} · ${supplier.name}` : supplier.name)}</option>`).join("");
+  const supplierPlace = (item) => [[item.street, item.houseNumber].filter(Boolean).join(" "), [item.postalCode, item.city].filter(Boolean).join(" ")].filter(Boolean).join(", ");
 
-    root.addEventListener('click',async event=>{
-        const exportButton=event.target.closest('[data-master-export]');
-        if(exportButton){
-            const link=document.createElement('a');link.href=`/api/master-data/export/${encodeURIComponent(exportButton.dataset.masterExport)}`;link.download='';link.click();return;
-        }
-        const importButton=event.target.closest('[data-master-import]');
-        if(!importButton)return;
-        if(dirty&&!(await CalightModal.confirm({title:'Ungespeicherte Änderungen',content:'Ungespeicherte Änderungen verwerfen und den vollständigen Stamm importieren?',confirmLabel:'Verwerfen und importieren',danger:true})))return;
-        importScope=importButton.dataset.masterImport;importFile.value='';importFile.click();
+  // ---------------------------------------------------------------------------
+  // Bereiche: Filter, Tabelle, Karte, Zeilenaktionen
+  // ---------------------------------------------------------------------------
+  const actionButtons = (kind, item, { copy = false, remove = false } = {}) => [
+    `<button class="icon-button" type="button" data-action="edit" data-kind="${kind}" data-id="${esc(item.id)}" data-icon="square-pen" title="Bearbeiten" aria-label="Bearbeiten"></button>`,
+    copy ? `<button class="icon-button" type="button" data-action="copy" data-kind="${kind}" data-id="${esc(item.id)}" data-icon="copy" title="Kopieren" aria-label="Kopieren"></button>` : "",
+    remove
+      ? `<button class="icon-button icon-button-danger" type="button" data-action="delete" data-kind="${kind}" data-id="${esc(item.id)}" data-icon="trash" title="Löschen" aria-label="Löschen"></button>`
+      : `<button class="icon-button${item.active ? " icon-button-danger" : ""}" type="button" data-action="archive" data-kind="${kind}" data-id="${esc(item.id)}" data-icon="${item.active ? "package" : "refresh-cw"}" title="${item.active ? "Archivieren" : "Reaktivieren"}" aria-label="${item.active ? "Archivieren" : "Reaktivieren"}"></button>`,
+  ].join("");
+
+  const table = (head, rows) => `<div class="overview-table-wrap"><table class="overview-table master-table"><thead><tr>${head}<th class="cell-actions"><span class="visually-hidden">Aktionen</span></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  const row = (kind, item, cells, options) => `<tr tabindex="0" data-open="${kind}" data-id="${esc(item.id)}" class="${archivedClass(item).trim()}">${cells}<td class="cell-actions">${actionButtons(kind, item, options)}</td></tr>`;
+  const card = (kind, item, { number, title, meta, badges = "" }, options) => `
+    <article class="overview-card${archivedClass(item)}" tabindex="0" data-open="${kind}" data-id="${esc(item.id)}">
+      <div class="management-card-head"><span class="service-number">${esc(number || "Ohne Nr.")}</span><span class="management-card-badges">${badges}${archivedBadge(item)}</span></div>
+      <div class="overview-card-title" title="${esc(title)}">${esc(title)}</div>
+      <div class="overview-card-meta">${meta.filter(Boolean).map((part) => `<span>${part}</span>`).join("")}</div>
+      <div class="overview-card-actions">${actionButtons(kind, item, options)}</div>
+    </article>`;
+
+  const sections = {
+    "cost-items": {
+      kind: "cost-item",
+      empty: "Keine Stammartikel gefunden.",
+      items(panel, query) {
+        const category = panel.querySelector('[data-filter="category"]').value;
+        const allowed = category ? descendantsOf(category) : null;
+        const type = panel.querySelector('[data-filter="type"]').value;
+        return state.costItems.filter(visible).filter((item) => matches(query, item.articleNumber, item.name, item.description, item.supplierArticleNumber)
+          && (!allowed || allowed.has(item.categoryId)) && (!type || item.calculationType === type));
+      },
+      table: (items) => table(
+        '<th class="cell-number">Artikel-Nr.</th><th class="cell-title master-cell-wide">Bezeichnung</th><th class="cell-text">Kategorie</th><th class="cell-type">Typ</th><th class="cell-type">Einheit</th><th class="cell-money">EK / Kostensatz</th><th class="cell-money">VK netto</th>',
+        items.map((item) => row("cost-item", item, `<td class="cell-number">${esc(item.articleNumber || "–")}</td><td class="cell-title master-cell-wide" title="${esc(item.name)}">${esc(item.name)}</td>
+          <td class="cell-text" title="${esc(item.categoryName || "")}">${esc(item.categoryName || "–")}</td><td class="cell-type">${esc(typeLabels[item.calculationType] || "")}</td><td class="cell-type">${esc(item.unit)}</td>
+          <td class="cell-money">${cost(item.costPrice)}</td><td class="cell-money">${money(item.salesPrice)}</td>`, { copy: true })).join(""),
+      ),
+      card: (item) => card("cost-item", item, {
+        number: item.articleNumber, title: item.name, badges: `<span class="status-badge">${esc(typeLabels[item.calculationType] || "")}</span>`,
+        meta: [esc(item.categoryName || "Keine Kategorie"), `EK ${cost(item.costPrice)} / ${esc(item.unit)}`, `VK ${money(item.salesPrice)}`],
+      }, { copy: true }),
+    },
+    services: {
+      kind: "service",
+      empty: "Keine Stammpositionen gefunden.",
+      items: (panel, query) => state.services.filter(visible).filter((item) => matches(query, item.articleNumber, item.shortText, item.longText)),
+      table: (items) => table(
+        '<th class="cell-number">Positions-Nr.</th><th class="cell-title master-cell-wide">Kurztext</th><th class="cell-type">Einheit</th><th class="cell-count">Bausteine</th><th class="cell-money">VK netto</th>',
+        items.map((item) => row("service", item, `<td class="cell-number">${esc(item.articleNumber || "–")}</td><td class="cell-title master-cell-wide" title="${esc(item.shortText)}">${esc(item.shortText)}</td>
+          <td class="cell-type">${esc(item.unit)}</td><td class="cell-count">${item.components.length}</td><td class="cell-money">${money(item.calculation.calculatedUnitPrice)}</td>`, { copy: true })).join(""),
+      ),
+      card: (item) => card("service", item, {
+        number: item.articleNumber, title: item.shortText,
+        meta: [`je ${esc(item.unit)}`, `${item.components.length} ${item.components.length === 1 ? "Baustein" : "Bausteine"}`, `VK ${money(item.calculation.calculatedUnitPrice)}`],
+      }, { copy: true }),
+    },
+    "trailing-texts": {
+      kind: "trailing-text",
+      empty: "Keine Schlepptexte vorhanden.",
+      // Schlepptexte haben keinen Archivstatus; sie werden gelöscht.
+      items: (panel, query) => state.trailingTexts.map((item) => ({ ...item, active: true })).filter((item) => matches(query, item.code, item.name)),
+      table: (items) => table(
+        '<th class="cell-number">Kürzel</th><th class="cell-title master-cell-wide">Ausgabetext</th>',
+        items.map((item) => row("trailing-text", item, `<td class="cell-number">${esc(item.code)}</td><td class="cell-title master-cell-wide master-cell-plain" title="${esc(item.name)}">${esc(item.name)}</td>`, { remove: true })).join(""),
+      ),
+      card: (item) => card("trailing-text", item, { number: item.code, title: item.name, meta: [] }, { remove: true }),
+    },
+    categories: {
+      kind: "category",
+      empty: "Keine Kategorien gefunden.",
+      items: (panel, query) => flatCategories().filter((item) => matches(query, item.name, item.description)),
+      // Hierarchie über Einrückung; Reihenfolge wie im Baum.
+      table: (items) => table(
+        '<th class="cell-title master-cell-wide">Kategorie</th><th class="cell-text master-cell-wide">Beschreibung</th><th class="cell-count">Sortierung</th>',
+        items.map((item) => row("category", item, `<td class="cell-title master-cell-wide" title="${esc(item.name)}"><span class="master-category-indent" style="--depth:${item.depth}">${item.depth ? "↳ " : ""}${esc(item.name)}</span></td>
+          <td class="cell-text master-cell-wide" title="${esc(item.description)}">${esc(item.description || "–")}</td><td class="cell-count">${item.sortOrder}</td>`)).join(""),
+      ),
+      card: (item) => {
+        const parent = state.categories.find((category) => category.id === item.parentId);
+        return card("category", item, { number: parent ? `Unter ${parent.name}` : "Oberste Ebene", title: item.name, meta: [esc(item.description || "")] });
+      },
+    },
+    suppliers: {
+      kind: "supplier",
+      empty: "Keine Lieferanten gefunden.",
+      items: (panel, query) => state.suppliers.filter(visible).filter((item) => matches(query, item.supplierNumber, item.name, item.contact, supplierPlace(item), item.customerNumber)),
+      table: (items) => table(
+        '<th class="cell-number">Nummer</th><th class="cell-title master-cell-wide">Name</th><th class="cell-text master-cell-wide">Anschrift</th><th class="cell-text">Unsere Kd.-Nr.</th><th class="cell-text">Kontakt</th>',
+        items.map((item) => row("supplier", item, `<td class="cell-number">${esc(item.supplierNumber || "–")}</td><td class="cell-title master-cell-wide" title="${esc(item.name)}">${esc(item.name)}</td>
+          <td class="cell-text master-cell-wide" title="${esc(supplierPlace(item))}">${esc(supplierPlace(item) || "–")}</td><td class="cell-text">${esc(item.customerNumber || "–")}</td>
+          <td class="cell-text" title="${esc(item.contact)}">${esc(item.contact || "–")}</td>`)).join(""),
+      ),
+      card: (item) => card("supplier", item, {
+        number: item.supplierNumber, title: item.name,
+        meta: [esc(supplierPlace(item) || "Keine Anschrift"), item.customerNumber ? `Kd.-Nr. ${esc(item.customerNumber)}` : "", esc(item.contact || "")],
+      }),
+    },
+  };
+
+  const views = {};
+  for (const [scope, section] of Object.entries(sections)) {
+    const panel = root.querySelector(`[data-panel="${scope}"]`);
+    const list = panel.querySelector("[data-list]");
+    const count = panel.querySelector("[data-count]");
+    const render = (view) => {
+      const query = panel.querySelector("[data-search]").value.trim().toLocaleLowerCase("de");
+      const items = section.items(panel, query);
+      count.textContent = `${items.length} ${items.length === 1 ? "Eintrag" : "Einträge"}`;
+      if (!items.length) {
+        list.innerHTML = `<p class="empty-state">${esc(section.empty)}</p>`;
+      } else {
+        list.innerHTML = view === "cards" ? `<div class="overview-card-grid">${items.map(section.card).join("")}</div>` : section.table(items);
+      }
+    };
+    views[scope] = CalightListView.create({ root: panel, module: `master-data-${scope}`, render });
+    panel.querySelector("[data-search]").addEventListener("input", () => views[scope].render());
+    panel.querySelectorAll("[data-filter]").forEach((filter) => filter.addEventListener("change", () => views[scope].render()));
+    panel.querySelector("[data-new]").addEventListener("click", () => editors[section.kind](null));
+  }
+
+  function renderAll() {
+    const categoryFilter = root.querySelector('[data-panel="cost-items"] [data-filter="category"]');
+    const selected = categoryFilter.value;
+    categoryFilter.innerHTML = categoryOptions(selected, new Set(), "Alle Kategorien");
+    Object.values(views).forEach((view) => view.render());
+  }
+  showArchived.addEventListener("change", renderAll);
+
+  // Bereiche als Reiter; der gewählte Bereich steht in der URL (#suppliers), damit Zurück funktioniert.
+  const tabs = [...root.querySelectorAll(".tab-button")];
+  function selectTab(scope, push = false) {
+    if (!sections[scope]) scope = "cost-items";
+    tabs.forEach((tab) => {
+      const active = tab.dataset.tab === scope;
+      tab.classList.toggle("active", active);
+      tab.setAttribute("aria-selected", String(active));
     });
-    importFile.addEventListener('change',async()=>{
-        const file=importFile.files[0];if(!file||!importScope)return;
-        if(file.size>10_000_000){notify('Die JSON-Datei darf höchstens 10 MB groß sein.','error');return;}
-        if(!(await CalightModal.confirm({title:'Stammdaten importieren',content:'Den vollständigen Stamm aus dieser Datei importieren? Vorhandene Datensätze mit gleicher interner ID werden aktualisiert.',confirmLabel:'Stammdaten importieren'})))return;
-        try{
-            const document=JSON.parse(await file.text());
-            const result=await api(`/api/master-data/import/${encodeURIComponent(importScope)}`,{method:'POST',body:document});
-            dirty=false;await load();notify(`${result.imported} Datensätze wurden importiert.`);
-        }catch(error){notify(error instanceof SyntaxError?'Die ausgewählte Datei enthält kein gültiges JSON.':error.message,'error');}
-        finally{importFile.value='';importScope='';}
+    root.querySelectorAll(".tab-panel").forEach((panel) => {
+      panel.hidden = panel.dataset.panel !== scope;
+      panel.classList.toggle("active", !panel.hidden);
     });
+    if (push) history.replaceState(null, "", `#${scope}`);
+  }
+  tabs.forEach((tab) => tab.addEventListener("click", () => selectTab(tab.dataset.tab, true)));
+  selectTab(location.hash.slice(1));
 
-    function renderAll() {
-        renderCategoryOptions();
-        renderCategories();
-        renderSuppliers();
-        renderCostItems();
-        renderServices();
-        renderTrailingTexts();
-        serviceForm.elements.trailingTextId.innerHTML='<option value="">Kein Schlepptext</option>'+state.trailingTexts.map(item=>`<option value="${item.id}">${escapeHtml(item.code)} · ${escapeHtml(item.name)}</option>`).join('');
-        renderMasterComponentOptions();
+  // ---------------------------------------------------------------------------
+  // Bearbeiten im Modal
+  // ---------------------------------------------------------------------------
+  const field = (label, control, className = "") => `<label${className ? ` class="${className}"` : ""}><span class="field-label">${label}</span>${control}</label>`;
+  const required = (label) => `${label} <span aria-hidden="true">*</span>`;
+  const dialogForm = (html) => {
+    const form = document.createElement("form");
+    form.className = "form-stack";
+    form.noValidate = true;
+    form.innerHTML = `${html}<p class="field-error" data-dialog-error hidden></p>`;
+    return form;
+  };
+  const value = (form, name) => form.elements[name].value.trim();
+  const editDialog = ({ title, form, isNew, save, initialFocus }) => Calight.createDialog({
+    title, form, initialFocus, submitLabel: isNew ? "Anlegen" : "Speichern", discardMessage: "Ungespeicherte Änderungen verwerfen?", submit: save,
+  });
+
+  const editors = {
+    supplier(item) {
+      const v = (key) => esc(item?.[key] || "");
+      const form = dialogForm(`<div class="dialog-form-grid">
+          ${field("Lieferantennummer (optional)", `<input name="supplierNumber" maxlength="80" value="${v("supplierNumber")}" autocomplete="off">`)}
+          ${field(required("Name"), `<input name="name" maxlength="200" required value="${v("name")}" autocomplete="off">`)}
+          ${field("Straße", `<input name="street" maxlength="200" value="${v("street")}">`)}
+          ${field("Hausnummer", `<input name="houseNumber" maxlength="30" value="${v("houseNumber")}">`)}
+          ${field("PLZ", `<input name="postalCode" maxlength="20" value="${v("postalCode")}">`)}
+          ${field("Ort", `<input name="city" maxlength="120" value="${v("city")}">`)}
+          ${field("Land", `<input name="country" maxlength="100" value="${v("country")}">`)}
+          ${field("Unsere Kundennummer beim Lieferanten", `<input name="customerNumber" maxlength="100" value="${v("customerNumber")}">`)}
+          ${field("Kontakt und Bemerkungen", `<textarea name="contact" rows="3" maxlength="2000">${v("contact")}</textarea>`, "span-all")}
+        </div>`);
+      editDialog({
+        title: item ? "Lieferant bearbeiten" : "Lieferant anlegen", form, isNew: !item, initialFocus: '[name="name"]',
+        save: async () => {
+          const body = Object.fromEntries(["street", "houseNumber", "postalCode", "city", "country", "customerNumber", "contact", "name"].map((key) => [key, value(form, key)]));
+          body.supplierNumber = value(form, "supplierNumber") || null;
+          await mutate(item ? `/api/master-data/suppliers/${encodeURIComponent(item.id)}` : "/api/master-data/suppliers", body, item ? "Lieferant gespeichert." : "Lieferant angelegt.", item ? "PUT" : "POST");
+        },
+      });
+    },
+
+    category(item) {
+      const excluded = item ? descendantsOf(item.id) : new Set();
+      const form = dialogForm(`<div class="dialog-form-grid">
+          ${field(required("Bezeichnung"), `<input name="name" maxlength="150" required value="${esc(item?.name || "")}">`, "span-all")}
+          ${field("Übergeordnete Kategorie", `<select name="parentId">${categoryOptions(item?.parentId || "", excluded, "Oberste Ebene")}</select>`)}
+          ${field(required("Sortierung"), `<input name="sortOrder" type="number" min="0" step="1" required value="${esc(item?.sortOrder ?? 0)}">`)}
+          ${field("Beschreibung", `<textarea name="description" rows="3" maxlength="2000">${esc(item?.description || "")}</textarea>`, "span-all")}
+        </div>`);
+      editDialog({
+        title: item ? "Kategorie bearbeiten" : "Kategorie anlegen", form, isNew: !item, initialFocus: '[name="name"]',
+        save: async () => {
+          await mutate(item ? `/api/master-data/categories/${encodeURIComponent(item.id)}` : "/api/master-data/categories", {
+            name: value(form, "name"), description: value(form, "description"), parentId: form.elements.parentId.value || null, sortOrder: Number(form.elements.sortOrder.value),
+          }, item ? "Kategorie gespeichert." : "Kategorie angelegt.", item ? "PUT" : "POST");
+        },
+      });
+    },
+
+    "trailing-text"(item) {
+      const form = dialogForm(`
+        ${field(required("Kürzel"), `<input name="code" maxlength="30" required value="${esc(item?.code || "")}" autocomplete="off">`)}
+        ${field(required("Bezeichnung und Ausgabetext"), `<textarea name="name" rows="3" maxlength="500" required>${esc(item?.name || "")}</textarea>`)}`);
+      editDialog({
+        title: item ? "Schlepptext bearbeiten" : "Schlepptext anlegen", form, isNew: !item, initialFocus: '[name="code"]',
+        save: async () => {
+          await mutate(item ? `/api/master-data/trailing-texts/${encodeURIComponent(item.id)}` : "/api/master-data/trailing-texts",
+            { code: value(form, "code"), name: value(form, "name") }, item ? "Schlepptext gespeichert." : "Schlepptext angelegt.", item ? "PUT" : "POST");
+        },
+      });
+    },
+
+    "cost-item"(item) {
+      const form = dialogForm(`<div class="dialog-form-grid">
+          ${field("Artikelnummer (optional)", `<input name="articleNumber" maxlength="100" value="${esc(item?.articleNumber || "")}" autocomplete="off">`)}
+          ${field(required("Bezeichnung"), `<input name="name" maxlength="250" required value="${esc(item?.name || "")}">`)}
+          ${field(required("Kalkulationstyp"), `<select name="calculationType" required>${Object.entries(typeLabels).map(([key, label]) => `<option value="${key}"${(item?.calculationType || "material") === key ? " selected" : ""}>${label}</option>`).join("")}</select>`)}
+          ${field(required("Einheit"), `<input name="unit" maxlength="40" required placeholder="Stk., h, m …" value="${esc(item?.unit || "")}">`)}
+          ${field("Kategorie", `<select name="categoryId">${categoryOptions(item?.categoryId || "")}</select>`)}
+          ${field("Lieferant", `<select name="supplierId">${supplierOptions(item?.supplierId || "")}</select>`)}
+          ${field("Lieferantenartikelnummer", `<input name="supplierArticleNumber" maxlength="100" value="${esc(item?.supplierArticleNumber || "")}">`)}
+          <div></div>
+          ${field(required("Netto-Einkaufspreis / Kostensatz"), `<input name="costPrice" inputmode="decimal" pattern="[0-9]+([.,][0-9]{1,4})?" required value="${esc(decimalInput(item?.costPrice, "0.0000"))}">`)}
+          ${field(required("Zuschlag in %"), `<input name="markupPercent" inputmode="decimal" pattern="-?[0-9]+([.,][0-9]{1,2})?" required value="${esc(decimalInput(item?.markupPercent, "0.00"))}">`)}
+          <div class="price-preview span-all"><span>Verkaufspreis netto</span><strong data-sales-price>${money(item?.salesPrice || 0)}</strong></div>
+          ${field("Beschreibung", `<textarea name="description" rows="3" maxlength="5000">${esc(item?.description || "")}</textarea>`, "span-all")}
+        </div>`);
+      // Verkaufspreis rechnet der Server (gleiche Kalkulation wie im Angebot).
+      let timer = 0;
+      form.addEventListener("input", (event) => {
+        if (!["costPrice", "markupPercent", "calculationType"].includes(event.target.name)) return;
+        clearTimeout(timer);
+        timer = setTimeout(async () => {
+          if (!form.elements.costPrice.validity.valid || !form.elements.markupPercent.validity.valid) return;
+          const output = form.querySelector("[data-sales-price]");
+          try {
+            const preview = await api("/api/master-data/preview-price", { method: "POST", body: { components: [{
+              calculationType: form.elements.calculationType.value, quantity: "1.000",
+              costPrice: decimalValue(form.elements.costPrice.value), markupPercent: decimalValue(form.elements.markupPercent.value),
+            }] } });
+            output.textContent = money(preview.calculatedUnitPrice);
+          } catch (exception) {
+            output.textContent = exception.message;
+          }
+        }, 200);
+      });
+      Calight.searchableSelect(form.elements.supplierId, { placeholder: "Lieferant suchen …" });
+      editDialog({
+        title: item ? "Stammartikel bearbeiten" : "Stammartikel anlegen", form, isNew: !item, initialFocus: '[name="name"]',
+        save: async () => {
+          await mutate(item ? `/api/master-data/cost-items/${encodeURIComponent(item.id)}` : "/api/master-data/cost-items", {
+            articleNumber: value(form, "articleNumber") || null, name: value(form, "name"), description: value(form, "description"),
+            categoryId: form.elements.categoryId.value || null, calculationType: form.elements.calculationType.value, unit: value(form, "unit"),
+            costPrice: decimalValue(form.elements.costPrice.value), markupPercent: decimalValue(form.elements.markupPercent.value),
+            supplierId: form.elements.supplierId.value || null, supplierArticleNumber: value(form, "supplierArticleNumber"),
+          }, item ? "Stammartikel gespeichert." : "Stammartikel angelegt.", item ? "PUT" : "POST");
+        },
+      });
+    },
+
+    // Stammpositionen mit Kalkulationsbausteinen: eigene Seite.
+    service(item) {
+      location.href = item ? `/master-data/services/${encodeURIComponent(item.id)}` : "/master-data/services/new";
+    },
+  };
+
+  const collections = { "cost-item": "costItems", service: "services", "trailing-text": "trailingTexts", category: "categories", supplier: "suppliers" };
+  const endpoints = { "cost-item": "cost-items", service: "services", "trailing-text": "trailing-texts", category: "categories", supplier: "suppliers" };
+  const nouns = { "cost-item": "Stammartikel", service: "Stammposition", "trailing-text": "Schlepptext", category: "Kategorie", supplier: "Lieferant" };
+  const find = (kind, id) => state[collections[kind]].find((entry) => entry.id === id);
+
+  async function action(button) {
+    const { kind, id } = button.dataset;
+    const item = find(kind, id);
+    if (!item) return;
+    const path = `/api/master-data/${endpoints[kind]}/${encodeURIComponent(id)}`;
+    if (button.dataset.action === "edit") return editors[kind](item);
+    if (button.dataset.action === "copy") return mutate(`${path}/copy`, {}, `${nouns[kind]} kopiert.`);
+    if (button.dataset.action === "archive") return mutate(`${path}/archive`, { archived: item.active }, `${nouns[kind]} ${item.active ? "archiviert" : "reaktiviert"}.`);
+    // Löschen mit eigener Bestätigung, die den Datensatz benennt.
+    if (button.dataset.action === "delete") {
+      if (!(await CalightModal.confirm({ title: `${nouns[kind]} löschen`, content: `„${item.code || item.name}“ wird gelöscht.`, confirmLabel: "Löschen", danger: true }))) return;
+      return mutate(path, {}, `${nouns[kind]} gelöscht.`, "DELETE");
     }
+  }
 
-    document.querySelectorAll('.tab-button').forEach((button) => {
-        button.addEventListener('click', () => {
-            document.querySelectorAll('.tab-button').forEach((item) => item.classList.toggle('active', item === button));
-            document.querySelectorAll('.tab-panel').forEach((panel) => {
-                const selected = panel.dataset.panel === button.dataset.tab;
-                panel.classList.toggle('active', selected);
-                panel.hidden = !selected;
-            });
-        });
-    });
-    showArchived.addEventListener('change', renderAll);
-
-    function renderTrailingTexts(){document.querySelector('#trailing-texts-body').innerHTML=state.trailingTexts.map(item=>`<tr><td><strong>${escapeHtml(item.code)}</strong></td><td>${escapeHtml(item.name)}</td><td><button class="table-action" data-trailing-edit="${item.id}">Bearbeiten</button> <button class="table-action danger-text" data-trailing-delete="${item.id}">Löschen</button></td></tr>`).join('')||'<tr><td colspan="3" class="muted">Keine Schlepptexte vorhanden.</td></tr>';}
-    function openTrailingText(item=null){dirty=false;trailingTextForm.reset();trailingTextForm.elements.id.value=item?.id||'';trailingTextForm.elements.code.value=item?.code||'';trailingTextForm.elements.name.value=item?.name||'';trailingTextForm.hidden=false;trailingTextForm.elements.code.focus();}
-    document.querySelector('#new-trailing-text').addEventListener('click',()=>openTrailingText());
-    document.querySelector('#trailing-texts-body').addEventListener('click',async event=>{const edit=event.target.closest('[data-trailing-edit]'),remove=event.target.closest('[data-trailing-delete]');if(edit)return openTrailingText(state.trailingTexts.find(item=>item.id===edit.dataset.trailingEdit));if(remove)await mutate(`/api/master-data/trailing-texts/${remove.dataset.trailingDelete}`,{},'Schlepptext gelöscht.','DELETE');});
-    trailingTextForm.addEventListener('submit',async event=>{event.preventDefault();const id=trailingTextForm.elements.id.value,saved=await mutate(id?`/api/master-data/trailing-texts/${id}`:'/api/master-data/trailing-texts',{code:trailingTextForm.elements.code.value,name:trailingTextForm.elements.name.value},id?'Schlepptext gespeichert.':'Schlepptext angelegt.',id?'PUT':'POST');if(saved){dirty=false;trailingTextForm.hidden=true;}});
-    root.addEventListener('input', (event) => {
-        if (event.target.closest('#cost-item-form, #category-form, #supplier-form, #service-form, #trailing-text-form')) dirty = true;
-    });
-    window.addEventListener('beforeunload', (event) => {
-        if (!dirty) return;
-        event.preventDefault();
-        event.returnValue = '';
-    });
-
-    function flatCategories(excludedIds = new Set()) {
-        const byParent = new Map();
-        state.categories.filter(visible).forEach((category) => {
-            const key = category.parentId || '';
-            if (!byParent.has(key)) byParent.set(key, []);
-            byParent.get(key).push(category);
-        });
-        const result = [];
-        const visit = (parentId, depth, visited) => {
-            (byParent.get(parentId) || []).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, 'de')).forEach((category) => {
-                if (visited.has(category.id)) return;
-                const nextVisited = new Set(visited).add(category.id);
-                if (!excludedIds.has(category.id)) result.push({ ...category, depth });
-                visit(category.id, depth + 1, nextVisited);
-            });
-        };
-        visit('', 0, new Set());
-        return result;
+  root.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-action][data-kind]");
+    if (button) {
+      event.stopPropagation();
+      button.disabled = true;
+      try {
+        await action(button);
+      } catch (exception) {
+        failure(exception.message);
+      } finally {
+        button.disabled = false;
+      }
+      return;
     }
-
-    function descendantsOf(categoryId) {
-        const result = new Set([categoryId]);
-        let changed = true;
-        while (changed) {
-            changed = false;
-            state.categories.forEach((category) => {
-                if (category.parentId && result.has(category.parentId) && !result.has(category.id)) {
-                    result.add(category.id);
-                    changed = true;
-                }
-            });
-        }
-        return result;
+    const open = event.target.closest("[data-open]");
+    if (open && !event.target.closest("a,button,input,select,textarea,details,summary")) {
+      const item = find(open.dataset.open, open.dataset.id);
+      if (item) editors[open.dataset.open](item);
     }
+  });
+  root.addEventListener("keydown", (event) => {
+    const open = event.target.closest?.("[data-open]");
+    if (!open || event.target !== open || !["Enter", " "].includes(event.key)) return;
+    event.preventDefault();
+    const item = find(open.dataset.open, open.dataset.id);
+    if (item) editors[open.dataset.open](item);
+  });
 
-    function categoryOptions(selected = '', excludedIds = new Set(), emptyLabel = 'Keine Kategorie') {
-        return `<option value="">${escapeHtml(emptyLabel)}</option>` + flatCategories(excludedIds).map((category) =>
-            `<option value="${category.id}" ${category.id === selected ? 'selected' : ''}>${'&nbsp;'.repeat(category.depth * 4)}${escapeHtml(category.name)}${category.active ? '' : ' (archiviert)'}</option>`
-        ).join('');
+  // ---------------------------------------------------------------------------
+  // JSON-Austausch je Bereich
+  // ---------------------------------------------------------------------------
+  root.addEventListener("click", (event) => {
+    const exportButton = event.target.closest("[data-master-export]");
+    if (exportButton) {
+      const link = document.createElement("a");
+      link.href = `/api/master-data/export/${encodeURIComponent(exportButton.dataset.masterExport)}`;
+      link.download = "";
+      link.click();
+      return;
     }
-
-    function renderCategoryOptions() {
-        document.querySelector('#cost-category-filter').innerHTML = categoryOptions('', new Set(), 'Alle Kategorien');
-        costForm.elements.categoryId.innerHTML = categoryOptions();
-        categoryForm.elements.parentId.innerHTML = categoryOptions('', new Set(), 'Oberste Ebene');
-        supplierOptions();
+    const importButton = event.target.closest("[data-master-import]");
+    if (!importButton) return;
+    importScope = importButton.dataset.masterImport;
+    importFile.value = "";
+    importFile.click();
+  });
+  importFile.addEventListener("change", async () => {
+    const file = importFile.files[0];
+    if (!file || !importScope) return;
+    try {
+      if (file.size > 10_000_000) throw new Error("Die JSON-Datei darf höchstens 10 MB groß sein.");
+      if (!(await CalightModal.confirm({ title: "Stammdaten importieren", content: "Den vollständigen Stamm aus dieser Datei importieren? Vorhandene Datensätze mit gleicher interner ID werden aktualisiert.", confirmLabel: "Importieren" }))) return;
+      let document;
+      try {
+        document = JSON.parse(await file.text());
+      } catch {
+        throw new Error("Die ausgewählte Datei enthält kein gültiges JSON.");
+      }
+      const result = await api(`/api/master-data/import/${encodeURIComponent(importScope)}`, { method: "POST", body: document });
+      await load();
+      success(`${result.imported} Datensätze wurden importiert.`);
+    } catch (exception) {
+      failure(exception.message);
+    } finally {
+      importFile.value = "";
+      importScope = "";
     }
+  });
 
-    function renderCategories() {
-        const query = document.querySelector('#category-search').value.trim().toLocaleLowerCase('de');
-        const rows = flatCategories().filter((category) => !query || `${category.name} ${category.description}`.toLocaleLowerCase('de').includes(query));
-        document.querySelector('#category-tree').innerHTML = rows.length ? rows.map((category) => `
-            <div class="category-row${activeClass(category)}" style="--depth:${category.depth}">
-                <button type="button" class="category-name" data-category-edit="${category.id}">${escapeHtml(category.name)}</button>
-                <span class="muted">${escapeHtml(category.description)}</span>
-                <button type="button" class="table-action" data-category-archive="${category.id}">${category.active ? 'Archivieren' : 'Reaktivieren'}</button>
-            </div>`).join('') : '<p class="muted">Keine Kategorien gefunden.</p>';
-    }
-
-    document.querySelector('#category-search').addEventListener('input', renderCategories);
-    document.querySelector('#new-category').addEventListener('click', () => openCategory());
-    document.querySelector('#category-tree').addEventListener('click', async (event) => {
-        const edit = event.target.closest('[data-category-edit]');
-        const archive = event.target.closest('[data-category-archive]');
-        if (edit) openCategory(state.categories.find((item) => item.id === edit.dataset.categoryEdit));
-        if (archive) {
-            const item = state.categories.find((entry) => entry.id === archive.dataset.categoryArchive);
-            await mutate(`/api/master-data/categories/${item.id}/archive`, { archived: item.active }, item.active ? 'Kategorie archiviert.' : 'Kategorie reaktiviert.');
-        }
-    });
-
-    function openCategory(item = null) {
-        categoryForm.reset();
-        categoryForm.elements.id.value = item?.id || '';
-        categoryForm.elements.name.value = item?.name || '';
-        categoryForm.elements.description.value = item?.description || '';
-        categoryForm.elements.sortOrder.value = item?.sortOrder ?? 0;
-        const excluded = item ? descendantsOf(item.id) : new Set();
-        categoryForm.elements.parentId.innerHTML = categoryOptions(item?.parentId || '', excluded, 'Oberste Ebene');
-        categoryForm.hidden = false;
-        dirty = false;
-        categoryForm.elements.name.focus();
-    }
-
-    categoryForm.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const id = categoryForm.elements.id.value;
-        const saved = await mutate(id ? `/api/master-data/categories/${id}` : '/api/master-data/categories', {
-            name: categoryForm.elements.name.value,
-            description: categoryForm.elements.description.value,
-            parentId: categoryForm.elements.parentId.value || null,
-            sortOrder: Number(categoryForm.elements.sortOrder.value),
-        }, id ? 'Kategorie gespeichert.' : 'Kategorie angelegt.', id ? 'PUT' : 'POST');
-        if (!saved) return;
-        dirty = false;
-        categoryForm.hidden = true;
-    });
-
-    function supplierOptions(selected = '') {
-        const options = '<option value="">Kein Lieferant</option>' + state.suppliers.filter((item) => item.active).map((supplier) =>
-            `<option value="${supplier.id}" ${supplier.id === selected ? 'selected' : ''}>${escapeHtml(supplier.name)}</option>`
-        ).join('');
-        costForm.elements.supplierId.innerHTML = options;
-    }
-
-    function renderSuppliers() {
-        const query = document.querySelector('#supplier-search').value.trim().toLocaleLowerCase('de');
-        const items = state.suppliers.filter(visible).filter((item) => !query || `${item.supplierNumber || ''} ${item.name} ${item.contact} ${supplierPlace(item)} ${item.customerNumber || ''}`.toLocaleLowerCase('de').includes(query));
-        document.querySelector('#suppliers-body').innerHTML = items.length ? items.map((item) => `
-            <tr class="${activeClass(item)}"><td>${escapeHtml(item.supplierNumber || '–')}</td><td>${escapeHtml(item.name)}</td><td>${escapeHtml(supplierPlace(item) || '–')}</td><td>${escapeHtml(item.contact || '–')}</td>
-            <td class="actions"><button type="button" class="table-action" data-supplier-edit="${item.id}">Bearbeiten</button><button type="button" class="table-action" data-supplier-archive="${item.id}">${item.active ? 'Archivieren' : 'Reaktivieren'}</button></td></tr>`).join('') : '<tr><td colspan="5" class="muted">Keine Lieferanten gefunden.</td></tr>';
-    }
-
-    document.querySelector('#supplier-search').addEventListener('input', renderSuppliers);
-    document.querySelector('#new-supplier').addEventListener('click', () => openSupplier());
-    document.querySelector('#suppliers-body').addEventListener('click', async (event) => {
-        const edit = event.target.closest('[data-supplier-edit]');
-        const archive = event.target.closest('[data-supplier-archive]');
-        if (edit) openSupplier(state.suppliers.find((item) => item.id === edit.dataset.supplierEdit));
-        if (archive) {
-            const item = state.suppliers.find((entry) => entry.id === archive.dataset.supplierArchive);
-            await mutate(`/api/master-data/suppliers/${item.id}/archive`, { archived: item.active }, item.active ? 'Lieferant archiviert.' : 'Lieferant reaktiviert.');
-        }
-    });
-
-    // Anschrift und eigene Kundennummer beim Lieferanten (optional, erscheinen auf Bestellungen).
-    const supplierAddressFields = ['street', 'houseNumber', 'postalCode', 'city', 'country', 'customerNumber'];
-    const supplierPlace = (item) => [[item.street, item.houseNumber].filter(Boolean).join(' '), [item.postalCode, item.city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
-
-    function openSupplier(item = null) {
-        supplierForm.reset();
-        supplierForm.elements.id.value = item?.id || '';
-        supplierForm.elements.supplierNumber.value = item?.supplierNumber || '';
-        supplierForm.elements.name.value = item?.name || '';
-        supplierForm.elements.contact.value = item?.contact || '';
-        for (const key of supplierAddressFields) supplierForm.elements[key].value = item?.[key] || '';
-        supplierForm.hidden = false;
-        dirty = false;
-        supplierForm.elements.name.focus();
-    }
-
-    supplierForm.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const id = supplierForm.elements.id.value;
-        const saved = await mutate(id ? `/api/master-data/suppliers/${id}` : '/api/master-data/suppliers', {
-            supplierNumber: supplierForm.elements.supplierNumber.value || null,
-            name: supplierForm.elements.name.value,
-            contact: supplierForm.elements.contact.value,
-            ...Object.fromEntries(supplierAddressFields.map((key) => [key, supplierForm.elements[key].value])),
-        }, id ? 'Lieferant gespeichert.' : 'Lieferant angelegt.', id ? 'PUT' : 'POST');
-        if (!saved) return;
-        dirty = false;
-        supplierForm.hidden = true;
-    });
-
-    function renderCostItems() {
-        const query = document.querySelector('#cost-search').value.trim().toLocaleLowerCase('de');
-        const categoryId = document.querySelector('#cost-category-filter').value;
-        const allowedCategories = categoryId ? descendantsOf(categoryId) : null;
-        const type = document.querySelector('#cost-type-filter').value;
-        const items = state.costItems.filter(visible).filter((item) => {
-            const matchesText = !query || `${item.articleNumber || ''} ${item.name} ${item.description}`.toLocaleLowerCase('de').includes(query);
-            return matchesText && (!allowedCategories || allowedCategories.has(item.categoryId)) && (!type || item.calculationType === type);
-        });
-        document.querySelector('#cost-items-body').innerHTML = items.length ? items.map((item) => `
-            <tr class="${activeClass(item)}"><td>${escapeHtml(item.articleNumber || '–')}</td><td><strong>${escapeHtml(item.name)}</strong><br><span class="muted">${escapeHtml(item.categoryName || '')}</span></td>
-            <td>${escapeHtml(typeLabels[item.calculationType])}</td><td>${escapeHtml(item.unit)}</td><td>${number.format(Number(item.costPrice))}</td><td>${formatEuro(item.salesPrice)}</td>
-            <td class="actions"><button type="button" class="table-action" data-cost-edit="${item.id}">Bearbeiten</button><button type="button" class="table-action" data-cost-copy="${item.id}">Kopieren</button><button type="button" class="table-action" data-cost-archive="${item.id}">${item.active ? 'Archivieren' : 'Reaktivieren'}</button></td></tr>`).join('') : '<tr><td colspan="7" class="muted">Keine Stammartikel gefunden.</td></tr>';
-    }
-
-    ['#cost-search', '#cost-category-filter', '#cost-type-filter'].forEach((selector) => document.querySelector(selector).addEventListener('input', renderCostItems));
-    document.querySelector('#new-cost-item').addEventListener('click', () => openCostItem());
-    document.querySelector('#cost-items-body').addEventListener('click', async (event) => {
-        const edit = event.target.closest('[data-cost-edit]');
-        const copy = event.target.closest('[data-cost-copy]');
-        const archive = event.target.closest('[data-cost-archive]');
-        if (edit) openCostItem(state.costItems.find((item) => item.id === edit.dataset.costEdit));
-        if (copy) await mutate(`/api/master-data/cost-items/${copy.dataset.costCopy}/copy`, {}, 'Stammartikel kopiert.');
-        if (archive) {
-            const item = state.costItems.find((entry) => entry.id === archive.dataset.costArchive);
-            await mutate(`/api/master-data/cost-items/${item.id}/archive`, { archived: item.active }, item.active ? 'Stammartikel archiviert.' : 'Stammartikel reaktiviert.');
-        }
-    });
-
-    function openCostItem(item = null) {
-        costForm.reset();
-        costForm.elements.id.value = item?.id || '';
-        costForm.elements.articleNumber.value = item?.articleNumber || '';
-        costForm.elements.name.value = item?.name || '';
-        costForm.elements.description.value = item?.description || '';
-        costForm.elements.calculationType.value = item?.calculationType || 'material';
-        costForm.elements.unit.value = item?.unit || '';
-        costForm.elements.categoryId.innerHTML = categoryOptions(item?.categoryId || '');
-        supplierOptions(item?.supplierId || '');
-        costForm.elements.costPrice.value = decimalInput(item?.costPrice, '0.0000');
-        costForm.elements.markupPercent.value = decimalInput(item?.markupPercent, '0.00');
-        costForm.elements.supplierArticleNumber.value = item?.supplierArticleNumber || '';
-        document.querySelector('#cost-sales-price').textContent = formatEuro(item?.salesPrice || 0);
-        costForm.hidden = false;
-        dirty = false;
-        costForm.elements.name.focus();
-    }
-
-    costForm.addEventListener('input', (event) => {
-        if (['costPrice', 'markupPercent', 'calculationType'].includes(event.target.name)) scheduleCostPreview();
-    });
-    costForm.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const id = costForm.elements.id.value;
-        const saved = await mutate(id ? `/api/master-data/cost-items/${id}` : '/api/master-data/cost-items', costPayload(), id ? 'Stammartikel gespeichert.' : 'Stammartikel angelegt.', id ? 'PUT' : 'POST');
-        if (!saved) return;
-        dirty = false;
-        costForm.hidden = true;
-    });
-
-    function costPayload() {
-        return {
-            articleNumber: costForm.elements.articleNumber.value || null,
-            name: costForm.elements.name.value,
-            description: costForm.elements.description.value,
-            categoryId: costForm.elements.categoryId.value || null,
-            calculationType: costForm.elements.calculationType.value,
-            unit: costForm.elements.unit.value,
-            costPrice: decimalValue(costForm.elements.costPrice.value),
-            markupPercent: decimalValue(costForm.elements.markupPercent.value),
-            supplierId: costForm.elements.supplierId.value || null,
-            supplierArticleNumber: costForm.elements.supplierArticleNumber.value,
-        };
-    }
-
-    function scheduleCostPreview() {
-        window.clearTimeout(previewTimer);
-        previewTimer = window.setTimeout(async () => {
-            if (!costForm.elements.costPrice.validity.valid || !costForm.elements.markupPercent.validity.valid) return;
-            try {
-                const preview = await api('/api/master-data/preview-price', { method: 'POST', body: { components: [{
-                    calculationType: costForm.elements.calculationType.value,
-                    quantity: '1.000', costPrice: decimalValue(costForm.elements.costPrice.value), markupPercent: decimalValue(costForm.elements.markupPercent.value),
-                }] } });
-                document.querySelector('#cost-sales-price').textContent = formatEuro(preview.calculatedUnitPrice);
-            } catch (error) {
-                document.querySelector('#cost-sales-price').textContent = error.message;
-            }
-        }, 180);
-    }
-
-    function renderServices() {
-        const servicesList = document.querySelector('#services-list');
-        const query = document.querySelector('#service-search').value.trim().toLocaleLowerCase('de');
-        const items = state.services.filter(visible).filter((item) => !query || `${item.articleNumber || ''} ${item.shortText} ${item.longText}`.toLocaleLowerCase('de').includes(query));
-        servicesList.innerHTML = items.length ? items.map((item) => `
-            <article class="service-list-item${activeClass(item)}" data-service-card="${item.id}">
-                <div class="service-list-main"><span class="service-number">${escapeHtml(item.articleNumber || 'Ohne Nr.')}</span><strong>${escapeHtml(item.shortText)}</strong><span class="muted">je ${escapeHtml(item.unit)} · ${item.components.length} ${item.components.length === 1 ? 'Baustein' : 'Bausteine'}</span></div>
-                <strong class="service-list-price">${formatEuro(item.calculation.calculatedUnitPrice)}</strong>
-                <div class="service-list-actions"><button type="button" class="table-action" data-service-edit="${item.id}">Bearbeiten</button><button type="button" class="table-action" data-service-copy="${item.id}">Kopieren</button><button type="button" class="table-action" data-service-archive="${item.id}">${item.active ? 'Archivieren' : 'Reaktivieren'}</button></div>
-            </article>`).join('') : '<p class="card muted">Keine Stammpositionen gefunden.</p>';
-    }
-
-    document.querySelector('#service-search').addEventListener('input', renderServices);
-    document.querySelector('#new-service').addEventListener('click', () => openService());
-    document.querySelector('#services-list').addEventListener('click', async (event) => {
-        const edit = event.target.closest('[data-service-edit]');
-        const copy = event.target.closest('[data-service-copy]');
-        const archive = event.target.closest('[data-service-archive]');
-        if (edit) openService(state.services.find((item) => item.id === edit.dataset.serviceEdit));
-        if (copy) await mutate(`/api/master-data/services/${copy.dataset.serviceCopy}/copy`, {}, 'Stammposition kopiert.');
-        if (archive) {
-            const item = state.services.find((entry) => entry.id === archive.dataset.serviceArchive);
-            await mutate(`/api/master-data/services/${item.id}/archive`, { archived: item.active }, item.active ? 'Stammposition archiviert.' : 'Stammposition reaktiviert.');
-        }
-    });
-
-    function openService(item = null) {
-        serviceForm.reset();
-        serviceForm.elements.id.value = item?.id || '';
-        serviceForm.elements.articleNumber.value = item?.articleNumber || '';
-        const canAssignAutomatically = item === null || !item.articleNumber;
-        serviceForm.elements.autoArticleNumber.checked = canAssignAutomatically;
-        serviceForm.elements.autoArticleNumber.closest('.check-inline').hidden = !canAssignAutomatically;
-        serviceForm.elements.articleNumber.disabled = canAssignAutomatically;
-        serviceForm.elements.shortText.value = item?.shortText || '';
-        serviceForm.elements.longText.value = item?.longText || '';
-        serviceForm.elements.unit.value = item?.unit || '';
-        serviceForm.elements.trailingTextId.value=item?.trailingTextId||'';
-        state.components = structuredClone(item?.components || []);
-        masterPricePreview.hidden = true;
-        pendingPriceUpdates = [];
-        renderComponents();
-        renderServiceTotals(item?.calculation || null);
-        serviceForm.hidden = false;
-        dirty = false;
-        serviceForm.elements.shortText.focus();
-    }
-
-    function renderMasterComponentOptions() {
-        document.querySelector('#component-master-options').innerHTML = state.costItems.filter((item) => item.active).map((item) =>
-            `<option value="${escapeHtml(`${item.articleNumber||'Ohne Nr.'} · ${item.name}`)}"></option>`
-        ).join('');
-    }
-
-    function clearMasterPricePreview() {
-        masterPricePreview.hidden = true;
-        pendingPriceUpdates = [];
-    }
-
-    function renderComponents() {
-        document.querySelector('#component-count').textContent = `(${state.components.length})`;
-        document.querySelector('#components-list').innerHTML = state.components.length ? state.components.map((component, index) => `
-            <details class="component-row" data-component-index="${index}" data-component-type="${escapeHtml(component.calculationType)}">
-                <summary class="component-summary"><span class="component-identity" title="${escapeHtml(component.name)}"><strong data-component-compact-name>${escapeHtml(component.name)}</strong><small data-component-compact-source>${escapeHtml(component.priceMode==='master'?`Aus Artikelstamm ${component.sourceArticleNumber||component.name}`:component.masterDataId?`Eigener Preis · Artikelstamm ${component.sourceArticleNumber||component.name}`:'Eigener Preis')}</small></span><span class="component-type-badge" data-component-compact-type>${escapeHtml(typeLabels[component.calculationType])}</span><span class="component-summary-value"><small>Menge</small><strong data-component-compact-quantity>${escapeHtml(decimalInput(component.quantity,'1.000'))} ${escapeHtml(component.unit)}</strong></span><span class="component-summary-value"><small>Kosten-EP</small><strong data-component-compact-cost>${formatEuro(component.costPrice)}</strong></span><span class="component-summary-value"><small>Aufschlag</small><strong data-component-compact-markup>${escapeHtml(decimalInput(component.markupPercent,'0.00'))} %</strong></span><span class="component-summary-value component-summary-sales"><small>VK-Anteil</small><strong data-component-compact-sales>${formatEuro(component.salesPrice||0)}</strong></span></summary>
-                <div class="component-editor-body"><div class="component-primary-grid">
-                    <label>Bezeichnung<input data-field="name" value="${escapeHtml(component.name)}" maxlength="250" required></label>
-                    <label>Typ<select data-field="calculationType">${Object.entries(typeLabels).map(([value, label]) => `<option value="${value}" ${component.calculationType === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
-                    <label>Einheit<input data-field="unit" value="${escapeHtml(component.unit)}" maxlength="40" required></label>
-                    <label>Preisquelle<select data-field="priceMode" ${component.masterDataId ? '' : 'disabled'}>${component.masterDataId ? `<option value="master" ${component.priceMode === 'master' ? 'selected' : ''}>Aus Artikelstamm ${escapeHtml(component.sourceArticleNumber || component.name)}</option>` : ''}<option value="manual" ${component.priceMode !== 'master' || !component.masterDataId ? 'selected' : ''}>${component.masterDataId ? `Eigener Preis · Artikelstamm ${escapeHtml(component.sourceArticleNumber || component.name)}` : 'Eigener Preis'}</option></select></label>
-                    <div class="component-controls-actions"><button type="button" class="table-action" data-component-up ${index === 0 ? 'disabled' : ''} title="Nach oben" aria-label="Nach oben">↑</button><button type="button" class="table-action" data-component-down ${index === state.components.length - 1 ? 'disabled' : ''} title="Nach unten" aria-label="Nach unten">↓</button><button type="button" class="icon-button" data-component-copy title="Kopieren" aria-label="Kopieren"></button><button type="button" class="icon-button icon-button-danger" data-component-remove title="Entfernen" aria-label="Entfernen"></button></div>
-                </div>
-                <div class="component-price-grid">
-                    <label>Menge je Leistungseinheit<input data-field="quantity" value="${escapeHtml(decimalInput(component.quantity, '0.000'))}" inputmode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" required></label>
-                    <label>Kosten-EP<input data-field="costPrice" value="${escapeHtml(decimalInput(component.costPrice, '0.0000'))}" inputmode="decimal" pattern="[0-9]+([.,][0-9]{1,4})?" ${component.priceMode==='master'?'readonly':''} required></label>
-                    <label>Aufschlag auf Kosten %<input data-field="markupPercent" value="${escapeHtml(decimalInput(component.markupPercent, '0.00'))}" inputmode="decimal" pattern="-?[0-9]+([.,][0-9]{1,2})?" ${component.priceMode==='master'?'readonly':''} required></label>
-                    <div class="component-sales"><span>VK-Anteil je Leistungseinheit</span><strong data-component-sales="${index}">${formatEuro(component.salesPrice || 0)}</strong></div>
-                </div></div>
-            </details>`).join('') : '<p class="muted component-empty">Noch keine Kalkulationsbausteine. Wählen Sie einen Stammartikel oder legen Sie einen Baustein manuell an.</p>';
-    }
-
-    function refreshMasterComponentSummary(row,component){
-        row.dataset.componentType=component.calculationType;
-        row.querySelector('[data-component-compact-name]').textContent=component.name;
-        row.querySelector('.component-identity').title=component.name;
-        row.querySelector('[data-component-compact-source]').textContent=component.priceMode==='master'?`Aus Artikelstamm ${component.sourceArticleNumber||component.name}`:component.masterDataId?`Eigener Preis · Artikelstamm ${component.sourceArticleNumber||component.name}`:'Eigener Preis';
-        row.querySelector('[data-component-compact-type]').textContent=typeLabels[component.calculationType]||component.calculationType;
-        row.querySelector('[data-component-compact-quantity]').textContent=`${decimalInput(component.quantity,'1.000')} ${component.unit}`;
-        row.querySelector('[data-component-compact-cost]').textContent=formatEuro(component.costPrice);
-        row.querySelector('[data-component-compact-markup]').textContent=`${decimalInput(component.markupPercent,'0.00')} %`;
-        row.querySelector('[data-component-compact-sales]').textContent=formatEuro(component.salesPrice||0);
-    }
-
-    document.querySelector('#add-master-component').addEventListener('click', () => {
-        const input=document.querySelector('#component-master-select'),value=input.value.trim();
-        const matches=state.costItems.filter(item=>item.active&&`${item.articleNumber||'Ohne Nr.'} · ${item.name}`===value),item=matches[0];
-        if(matches.length!==1){notify(matches.length?'Die Auswahl ist nicht eindeutig.':'Bitte einen vorhandenen Stammartikel auswählen.','error');return;}
-        // Neue IDs werden erst serverseitig erzeugt, damit das Hinzufügen auch
-        // in Browsern ohne sichere HTTPS-Browserfunktionen im LAN funktioniert.
-        state.components.push({ id: null, masterDataId: item.id, sourceArticleNumber: item.articleNumber, name: item.name, calculationType: item.calculationType, unit: item.unit, quantity: '1.000', costPrice: item.costPrice, markupPercent: item.markupPercent, priceMode: 'master', salesPrice: item.salesPrice });
-        input.value='';
-        clearMasterPricePreview();
-        dirty = true;
-        renderComponents();
-        scheduleServicePreview();
-    });
-    document.querySelector('#add-manual-component').addEventListener('click', () => {
-        state.components.push({ id: null, masterDataId: null, sourceArticleNumber: null, name: '', calculationType: 'material', unit: 'Stk.', quantity: '1.000', costPrice: '0.0000', markupPercent: '0.00', priceMode: 'manual', salesPrice: '0.00' });
-        clearMasterPricePreview();
-        dirty = true;
-        renderComponents();
-        document.querySelector('#components-list .component-row:last-child input[data-field="name"]')?.focus();
-        scheduleServicePreview();
-    });
-    document.querySelector('#preview-master-prices').addEventListener('click', async () => {
-        try {
-            const preview = await api('/api/master-data/preview-master-price-updates', {
-                method: 'POST', body: { components: normalizedComponents() },
-            });
-            pendingPriceUpdates = preview.updates;
-            const warnings = preview.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('');
-            const changes = preview.changes.map((change) => `<tr><td><strong>${escapeHtml(change.name)}</strong><br><span class="muted">${escapeHtml(change.articleNumber || 'ohne Artikelnummer')}</span></td><td>Kosten ${formatEuro(change.oldCostPrice)}<br>Zuschlag ${escapeHtml(decimalInput(change.oldMarkupPercent, '0.00'))} %<br>VK-Anteil ${formatEuro(change.oldSalesPrice)}</td><td>Kosten ${formatEuro(change.newCostPrice)}<br>Zuschlag ${escapeHtml(decimalInput(change.newMarkupPercent, '0.00'))} %<br>VK-Anteil ${formatEuro(change.newSalesPrice)}</td></tr>`).join('');
-            masterPricePreview.innerHTML = `<h3>Vorschau der Preisaktualisierung</h3>${warnings ? `<ul class="notice notice-error">${warnings}</ul>` : ''}${changes ? `<div class="table-wrap"><table><thead><tr><th>Baustein</th><th>Bisher</th><th>Neu</th></tr></thead><tbody>${changes}</tbody></table></div><p class="muted">Eigene Preise werden nicht verändert. Die angezeigten Änderungen werden zunächst nur in den Entwurf übernommen und erst mit „Stammposition speichern“ dauerhaft gespeichert.</p><div class="form-actions"><button type="button" class="button" data-apply-master-prices>Änderungen übernehmen</button><button type="button" class="button button-light" data-cancel-master-prices>Abbrechen</button></div>` : '<p>Alle Preise aus dem Artikelstamm sind bereits aktuell. Eigene Preise wurden nicht berücksichtigt.</p><button type="button" class="button button-light" data-cancel-master-prices>Schließen</button>'}`;
-            masterPricePreview.hidden = false;
-        } catch (error) {
-            notify(error.message, 'error');
-        }
-    });
-    masterPricePreview.addEventListener('click', (event) => {
-        if (event.target.closest('[data-cancel-master-prices]')) {
-            masterPricePreview.hidden = true;
-            pendingPriceUpdates = [];
-            return;
-        }
-        if (!event.target.closest('[data-apply-master-prices]')) return;
-        pendingPriceUpdates.forEach((update) => {
-            const component = state.components[update.index];
-            if (!component) return;
-            component.costPrice = update.costPrice;
-            component.markupPercent = update.markupPercent;
-            component.salesPrice = update.salesPrice;
-            component.sourceArticleNumber = update.sourceArticleNumber;
-        });
-        pendingPriceUpdates = [];
-        masterPricePreview.hidden = true;
-        dirty = true;
-        renderComponents();
-        scheduleServicePreview();
-        notify('Preisänderungen wurden in den ungespeicherten Entwurf übernommen.');
-    });
-    document.querySelector('#components-list').addEventListener('input', (event) => {
-        const row = event.target.closest('[data-component-index]');
-        if (!row || !event.target.dataset.field) return;
-        const component = state.components[Number(row.dataset.componentIndex)];
-        clearMasterPricePreview();
-        const field = event.target.dataset.field;
-        component[field] = event.target.value;
-        if (component.masterDataId && ['costPrice', 'markupPercent'].includes(field)) {
-            component.priceMode = 'manual';
-            row.querySelector('[data-field="priceMode"]').value = 'manual';
-        }
-        if (field === 'priceMode' && event.target.value === 'master') {
-            const master = state.costItems.find((item) => item.id === component.masterDataId);
-            if (master) {
-                component.costPrice = master.costPrice;
-                component.markupPercent = master.markupPercent;
-                row.querySelector('[data-field="costPrice"]').value = decimalInput(master.costPrice, '0.0000');
-                row.querySelector('[data-field="markupPercent"]').value = decimalInput(master.markupPercent, '0.00');
-            }
-        }
-        if(field==='priceMode'){dirty=true;renderComponents();scheduleServicePreview();return;}
-        refreshMasterComponentSummary(row,component);
-        scheduleServicePreview();
-    });
-    document.querySelector('#components-list').addEventListener('click', (event) => {
-        const row = event.target.closest('[data-component-index]');
-        if (!row) return;
-        const index = Number(row.dataset.componentIndex);
-        if (event.target.closest('[data-component-remove]')) state.components.splice(index, 1);
-        else if (event.target.closest('[data-component-copy]')) state.components.splice(index + 1, 0, { ...structuredClone(state.components[index]), id: null });
-        else if (event.target.closest('[data-component-up]') && index > 0) [state.components[index - 1], state.components[index]] = [state.components[index], state.components[index - 1]];
-        else if (event.target.closest('[data-component-down]') && index < state.components.length - 1) [state.components[index + 1], state.components[index]] = [state.components[index], state.components[index + 1]];
-        else return;
-        clearMasterPricePreview();
-        dirty = true;
-        renderComponents();
-        scheduleServicePreview();
-    });
-
-    serviceForm.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const id = serviceForm.elements.id.value;
-        const saved = await mutate(id ? `/api/master-data/services/${id}` : '/api/master-data/services', {
-            shortText: serviceForm.elements.shortText.value,
-            articleNumber: serviceForm.elements.articleNumber.value || null,
-            autoArticleNumber: serviceForm.elements.autoArticleNumber.checked,
-            longText: serviceForm.elements.longText.value,
-            unit: serviceForm.elements.unit.value,
-            trailingTextId:serviceForm.elements.trailingTextId.value||null,
-            components: normalizedComponents(),
-        }, id ? 'Stammposition gespeichert.' : 'Stammposition angelegt.', id ? 'PUT' : 'POST');
-        if (!saved) return;
-        dirty = false;
-        serviceForm.hidden = true;
-    });
-    serviceForm.elements.autoArticleNumber.addEventListener('change', () => {
-        const automatic = serviceForm.elements.autoArticleNumber.checked;
-        serviceForm.elements.articleNumber.disabled = automatic;
-        if (automatic) serviceForm.elements.articleNumber.value = '';
-        else serviceForm.elements.articleNumber.focus();
-    });
-    serviceForm.elements.unit.addEventListener('input', scheduleServicePreview);
-
-    function scheduleServicePreview() {
-        window.clearTimeout(previewTimer);
-        previewTimer = window.setTimeout(async () => {
-            if (!state.components.every((component) => component.name && component.unit && component.quantity && component.costPrice && component.markupPercent)) return;
-            try {
-                const preview = await api('/api/master-data/preview-price', { method: 'POST', body: { components: normalizedComponents() } });
-                preview.componentSalesPrices.forEach((price, index) => {
-                    state.components[index].salesPrice = price;
-                    const output = document.querySelector(`[data-component-sales="${index}"]`);
-                    if (output) output.textContent = formatEuro(price);
-                    const row=document.querySelector(`[data-component-index="${index}"]`);if(row)refreshMasterComponentSummary(row,state.components[index]);
-                });
-                renderServiceTotals(preview);
-            } catch (error) {
-                document.querySelector('#service-totals').textContent = error.message;
-            }
-        }, 180);
-    }
-
-    function renderServiceTotals(calculation) {
-        const target = document.querySelector('#service-totals');
-        if (!calculation) {
-            target.innerHTML = '<span class="muted">Noch keine Kalkulation.</span>';
-            return;
-        }
-        const optionalCosts = [
-            Number(calculation.externalCosts) !== 0 ? `<div><span>Fremdleistung EK</span><strong>${formatEuro(calculation.externalCosts)}</strong></div>` : '',
-            Number(calculation.otherCosts) !== 0 ? `<div><span>Sonstige Kosten</span><strong>${formatEuro(calculation.otherCosts)}</strong></div>` : '',
-        ].join('');
-        const unit = serviceForm.elements.unit.value.trim();
-        target.innerHTML = `<div><span>Material EK</span><strong>${formatEuro(calculation.materialCosts)}</strong></div><div><span>Lohnkosten</span><strong>${formatEuro(calculation.laborCosts)}</strong></div>${optionalCosts}<div><span>Selbstkosten gesamt</span><strong>${formatEuro(calculation.totalCosts)}</strong></div><div><span>Zuschläge gesamt</span><strong>${formatEuro(calculation.markupTotal ?? calculation.contributionMargin)}</strong></div><div class="total"><span>Verkaufspreis Position netto${unit ? ` je ${escapeHtml(unit)}` : ''}</span><strong>${formatEuro(calculation.calculatedUnitPrice)}</strong></div>`;
-    }
-
-    function normalizedComponents() {
-        return state.components.map((component) => ({
-            ...component,
-            quantity: decimalValue(component.quantity),
-            costPrice: decimalValue(component.costPrice),
-            markupPercent: decimalValue(component.markupPercent),
-        }));
-    }
-
-    async function mutate(path, body, successMessage, method = 'POST') {
-        try {
-            await api(path, { method, body });
-            notify(successMessage);
-            await load();
-            return true;
-        } catch (error) {
-            notify(error.message, 'error');
-            return false;
-        }
-    }
-
-    async function closeEditor(form) {
-        if (dirty && !(await CalightModal.confirm({title:'Ungespeicherte Änderungen',content:'Ungespeicherte Änderungen wirklich verwerfen?',confirmLabel:'Verwerfen',danger:true}))) return;
-        dirty = false;
-        form.hidden = true;
-    }
-    root.querySelectorAll('[data-close-form]').forEach((button) => button.addEventListener('click', () => closeEditor(button.closest('form'))));
-    root.querySelectorAll('[data-close-service]').forEach((button) => button.addEventListener('click', () => closeEditor(serviceForm)));
-    trailingTextForm.querySelector('[data-close-trailing-text]').addEventListener('click', () => closeEditor(trailingTextForm));
-
-    load();
+  load();
 })();
