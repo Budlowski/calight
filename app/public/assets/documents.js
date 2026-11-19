@@ -43,7 +43,14 @@
     endpoint: "/api/documents",
     results: root.querySelector("[data-list]"),
     search: root.querySelector("[data-search]"),
-    filters: { type: typeFilter },
+    filters: {
+      type: typeFilter,
+      customer: root.querySelector('[data-filter="customer"]'),
+      project: root.querySelector('[data-filter="project"]'),
+      order: root.querySelector('[data-filter="order"]'),
+      period: root.querySelector('[data-filter="period"]'),
+      format: root.querySelector('[data-filter="format"]'),
+    },
     sortSelect: root.querySelector("[data-sort]"),
     count: root.querySelector("[data-count]"),
     reset: root.querySelector("[data-reset]"),
@@ -61,9 +68,20 @@
     renderCard,
   });
 
-  api("/api/documents/types")
-    .then((labels) => {
-      typeFilter.innerHTML = '<option value="">Alle Dokumentarten</option>' + Object.entries(labels).map(([value, label]) => `<option value="${esc(value)}">${esc(label)}</option>`).join("");
+  // Auswahllisten füllen; leere Listen (fehlendes Leserecht) blenden den Filter aus.
+  const fill = (select, entries, empty) => {
+    select.innerHTML = `<option value="">${esc(empty)}</option>` + entries.map(([value, label]) => `<option value="${esc(value)}">${esc(label)}</option>`).join("");
+    if (!entries.length) select.closest("label")?.remove() ?? select.remove();
+  };
+  api("/api/documents/reference-data")
+    .then((reference) => {
+      fill(typeFilter, Object.entries(reference.types), "Alle Dokumentarten");
+      fill(root.querySelector('[data-filter="period"]'), Object.entries(reference.periods), "Gesamter Zeitraum");
+      fill(root.querySelector('[data-filter="format"]'), Object.entries(reference.formats), "Alle Dateitypen");
+      for (const key of ["customers", "projects", "orders"]) {
+        const select = root.querySelector(`[data-filter="${key.slice(0, -1)}"]`);
+        fill(select, reference[key].map((entry) => [entry.id, entry.label]), select.options[0].textContent);
+      }
       list.start();
     })
     .catch((exception) => notify(message, exception.message));

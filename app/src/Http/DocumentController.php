@@ -18,7 +18,7 @@ final readonly class DocumentController
     public function register(Router $router): void
     {
         $router->add('GET', '/documents', fn (): Response => $this->view->render('documents/index'));
-        $router->add('GET', '/api/documents/types', fn (): Response => Response::json(['data' => $this->service->typeLabels($this->actor())]));
+        $router->add('GET', '/api/documents/reference-data', fn (): Response => Response::json(['data' => $this->service->referenceData($this->actor())]));
         $router->add('GET', '/api/documents', fn (Request $request): Response => Response::json(['data' => $this->service->page($request->query, $this->actor())]));
         $router->add('POST', '/api/attachments', fn (Request $request): Response => $this->upload($request));
         $router->add('GET', '/api/attachments/{id}', function (Request $request, array $parameters): Response {

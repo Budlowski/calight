@@ -119,6 +119,11 @@ final class DocumentTest extends TestCase
             $this->assertSame(0, $this->count($documents->page(['order' => $second['id']], $office), 'attachment'), 'Nicht beim fremden Auftrag.');
             $this->assertSame(0, $this->count($documents->page(['project' => $project], $office), 'attachment'));
             $this->assertSame(1, $this->count($documents->page(['q' => 'wartungsvertrag'], $office), 'attachment'), 'Suche über Titel.');
+            $this->assertSame(1, $this->count($documents->page(['format' => 'pdf', 'period' => '30'], $office), 'attachment'), 'Dateityp und Zeitraum.');
+            $this->assertSame(0, $this->count($documents->page(['format' => 'image'], $office), 'attachment'));
+            $reference = $documents->referenceData($office);
+            $this->assertTrue(in_array($customer, array_column($reference['customers'], 'id'), true) && in_array($regie['id'], array_column($reference['orders'], 'id'), true), 'Auswahllisten für Kunde und Auftrag.');
+            $this->assertThrows(AccessDeniedException::class, fn () => $documents->referenceData($env['technician']));
 
             // Indirekt: Anhang am Projekt erscheint beim Kunden des Projekts.
             $documents->upload($this->pdf($tmp), 'Plan.pdf', 'Projektplan', '', [['type' => 'project', 'id' => $project]], $office);

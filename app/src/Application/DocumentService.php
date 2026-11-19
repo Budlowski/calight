@@ -49,7 +49,10 @@ final readonly class DocumentService
         'daily_report_attachment' => 'Berichtsanhang',
     ];
     public const LIST_SORTS = ['date' => 'desc', 'title' => 'asc', 'type' => 'asc'];
-    public const LIST_FILTERS = ['type', 'customer', 'contact', 'project', 'offer', 'order'];
+    public const LIST_FILTERS = ['type', 'customer', 'contact', 'project', 'offer', 'order', 'period', 'format'];
+    /** Zeitraum-Filter: Tage zurück ab heute bzw. laufendes Jahr. */
+    public const PERIODS = ['30' => 'Letzte 30 Tage', '90' => 'Letzte 90 Tage', '365' => 'Letzte 12 Monate', 'year' => 'Dieses Jahr'];
+    public const FORMATS = ['pdf' => 'PDF', 'image' => 'Bild'];
     /** Erlaubte Dateitypen (am Inhalt geprüft) – wie bei den übrigen Belegen, keine ausführbaren Dateien. */
     public const ALLOWED_TYPES = [
         'application/pdf' => 'pdf', 'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif',
@@ -89,6 +92,17 @@ final readonly class DocumentService
                 $rows = array_filter($rows, static fn (array $row): bool => in_array($value, $row['context'][$context] ?? [], true));
             }
         }
+        $period = $query->filter('period');
+        if ($period !== null && isset(self::PERIODS[$period])) {
+            $from = $period === 'year' ? (new DateTimeImmutable('first day of january this year'))->format('Y-m-d') : (new DateTimeImmutable('-' . (int) $period . ' days'))->format('Y-m-d');
+            $rows = array_filter($rows, static fn (array $row): bool => $row['date'] !== null && substr((string) $row['date'], 0, 10) >= $from);
+        }
+        $format = $query->filter('format');
+        if ($format === 'pdf') {
+            $rows = array_filter($rows, static fn (array $row): bool => $row['mimeType'] === 'application/pdf');
+        } elseif ($format === 'image') {
+            $rows = array_filter($rows, static fn (array $row): bool => str_starts_with((string) $row['mimeType'], 'image/'));
+        }
         foreach ($query->searchTerms() as $term) {
             $needle = mb_strtolower($term);
             $rows = array_filter($rows, static fn (array $row): bool => str_contains(mb_strtolower($row['title'] . ' ' . $row['fileName'] . ' ' . $row['typeLabel'] . ' '
@@ -114,11 +128,23 @@ final readonly class DocumentService
         return ['items' => $items, 'total' => $total, 'page' => $page, 'perPage' => $query->perPage, 'pageCount' => $pageCount, 'sort' => $query->sort, 'dir' => $query->direction];
     }
 
-    /** @param array<string,mixed> $actor @return array<string,string> */
-    public function typeLabels(array $actor): array
+    /**
+     * Auswahllisten der Übersicht. Kunden, Projekte und Aufträge nur mit dem jeweiligen Leserecht.
+     *
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
+    public function referenceData(array $actor): array
     {
         $this->require($actor, 'documents.read');
-        return self::TYPE_LABELS;
+        return [
+            'types' => self::TYPE_LABELS,
+            'periods' => self::PERIODS,
+            'formats' => self::FORMATS,
+            'customers' => $this->can($actor, 'customers.read') ? $this->documents->customers() : [],
+            'projects' => $this->can($actor, 'projects.read') ? $this->documents->projects() : [],
+            'orders' => $this->can($actor, 'orders.read') ? $this->documents->orders() : [],
+        ];
     }
 
     /**

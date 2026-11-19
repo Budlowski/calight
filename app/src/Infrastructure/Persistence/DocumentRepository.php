@@ -68,4 +68,23 @@ final readonly class DocumentRepository
         return $this->pdo->query('SELECT a.id, a.report_id, a.original_name, a.mime_type, a.storage_path, a.created_at, r.report_date, r.order_id, o.order_number, o.customer_id, o.project_id
             FROM daily_report_attachments a JOIN daily_reports r ON r.id = a.report_id JOIN orders o ON o.id = r.order_id')->fetchAll();
     }
+
+    /** Auswahlliste Kunden (aktive und archivierte, damit alte Dokumente auffindbar bleiben). @return list<array{id:string,label:string}> */
+    public function customers(): array
+    {
+        return $this->pdo->query("SELECT id, trim(COALESCE(customer_number || ' · ', '') || COALESCE(NULLIF(company_name, ''), trim(first_name || ' ' || last_name))) AS label
+            FROM customers ORDER BY label COLLATE NOCASE")->fetchAll();
+    }
+
+    /** @return list<array{id:string,label:string}> */
+    public function projects(): array
+    {
+        return $this->pdo->query("SELECT id, trim(COALESCE(project_number || ' · ', '') || name) AS label FROM projects ORDER BY created_at DESC LIMIT 500")->fetchAll();
+    }
+
+    /** @return list<array{id:string,label:string}> */
+    public function orders(): array
+    {
+        return $this->pdo->query("SELECT id, order_number || ' · ' || title AS label FROM orders ORDER BY created_at DESC LIMIT 500")->fetchAll();
+    }
 }

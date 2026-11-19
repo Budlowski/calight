@@ -401,7 +401,7 @@ Bestellungen sind **an Lieferanten gerichtete Beschaffungsdokumente**, keine Rec
 - Kontext: Dokumente erscheinen direkt beim zugeordneten Objekt und indirekt bei dessen Kunde/Projekt/Auftrag (z. B. Rapport-PDF beim Auftrag), je Liste nur einmal.
 
 **Oberfläche:**
-- „Allgemein → Dokumente“: reine Lese- und Downloadübersicht (Suche, Dokumentart, Sortierung, Seiten, Tabelle/Karten). Kein Hochladen, Bearbeiten oder Löschen.
+- „Allgemein → Dokumente“: reine Lese- und Downloadübersicht (Suche, Dokumentart, Kunde, Projekt, Auftrag – auch indirekt –, Zeitraum, Dateityp, Sortierung, Seiten, Tabelle/Karten). Kein Hochladen, Bearbeiten oder Löschen.
 - Bereich „Dokumente“ bei Kunde, Projekt, Angebot und Auftrag: zugehörige Dokumente, „Dokument hochladen“ (Datei, optional Titel/Beschreibung; beim Kunden optional zusätzlich ein Ansprechpartner) und Entfernen eigener Anhänge.
 
 **Rechte:**
@@ -410,7 +410,7 @@ Bestellungen sind **an Lieferanten gerichtete Beschaffungsdokumente**, keine Rec
 - Allgemeine Anhänge: sichtbar nur, wenn der Benutzer **jedes** zugeordnete Objekt lesen darf (keine Rechteausweitung durch Mehrfachzuordnung). Hochladen/Zuordnen erfordert Schreibrecht auf jedes Ziel; Entfernen einer Zuordnung Schreibrecht auf dieses Objekt. Mit der letzten Zuordnung wird der Anhang samt Datei gelöscht; Fachdokumente sind über diesen Weg nie löschbar.
 - Zuordnungen auf nicht mehr vorhandene Objekte werden ignoriert.
 
-**Bewusst offen:** Filter nach Kunde/Projekt/Auftrag in der zentralen Übersicht nur über die Suche (Objektseiten filtern direkt); serverseitige SQL-Pagination der Projektion (derzeit Zusammenführung im Server, ausreichend für überschaubare Mengen); Upload-Ereignisse im fachlichen Verlauf der Objekte. Lieferscheine (Phase 3.4.3) werden als weitere Quelle der Projektion ergänzt.
+**Bewusst offen:** serverseitige SQL-Pagination der Projektion (derzeit Zusammenführung im Server, ausreichend für überschaubare Mengen); Upload-Ereignisse im fachlichen Verlauf der Objekte. Lieferscheine (Phase 3.4.3) werden als weitere Quelle der Projektion ergänzt.
 
 ## Phase 3.4.3 – Lieferscheine und Liefernachweise (geplant)
 

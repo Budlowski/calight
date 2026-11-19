@@ -10,6 +10,11 @@
     <div class="overview-toolbar">
         <input type="search" data-search placeholder="Titel, Dateiname, Kunde, Auftrag durchsuchen">
         <select data-type-filter aria-label="Dokumentart"><option value="">Alle Dokumentarten</option></select>
+        <select data-filter="customer" aria-label="Kunde"><option value="">Alle Kunden</option></select>
+        <select data-filter="project" aria-label="Projekt"><option value="">Alle Projekte</option></select>
+        <select data-filter="order" aria-label="Auftrag"><option value="">Alle Aufträge</option></select>
+        <select data-filter="period" aria-label="Zeitraum"><option value="">Gesamter Zeitraum</option></select>
+        <select data-filter="format" aria-label="Dateityp"><option value="">Alle Dateitypen</option></select>
         <select data-sort aria-label="Sortierung"></select>
         <span class="management-result-count" data-count></span>
         <button class="button button-light" type="button" data-reset data-icon="refresh-cw">Zurücksetzen</button>
