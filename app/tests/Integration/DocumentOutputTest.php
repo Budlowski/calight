@@ -166,6 +166,59 @@ final class DocumentOutputTest extends TestCase
     }
 
     /** @param array<string,mixed> $target @param array<string,mixed> $actor @return array<string,mixed> */
+    public function testWorkLocationAppearsInPdfAndSignPageWithSharedStatement(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['service' => $service, 'pdf' => $pdfService, 'office' => $office, 'technician' => $technician, 'customer' => $customer, 'regie' => $regie, 'orders' => $orders] = $env;
+
+            // Eigenständiger Rapport mit Einsatzort; Tätigkeit leer, Tätigkeitsart leer.
+            $draft = $service->create(['customerId' => $customer, 'workDate' => '2026-11-19'], $technician);
+            $draft = $this->saveProof($service, $draft, [
+                'workLocation' => 'Werk 2, Produktionshalle 4',
+                'description' => 'Fertigmontage Schalter',
+                'labor' => [['employeeId' => $env['anna'], 'hours' => '5']],
+                'materials' => [['quantity' => '12', 'unit' => 'Stk.', 'description' => 'Leuchtmittel E27']],
+            ], $technician);
+            $submitted = $service->submit($draft['id'], ['version' => $draft['version']], $technician);
+            $pdf = $pdfService->pdf($submitted['id'], $office)['pdf'];
+            $this->assertTrue(str_contains($pdf, '(Werk 2, Produktionshalle 4) Tj'), 'Einsatzort im PDF.');
+            $this->assertTrue(str_contains($pdf, '(Einsatzort / Objekt) Tj'));
+            $this->assertTrue(!str_contains($pdf, iconv('UTF-8', 'Windows-1252', '(Tätigkeit) Tj')), 'Leere Spalte Tätigkeit entfällt.');
+            $this->assertTrue(str_contains($pdf, (string) $submitted['submittedSha256']), 'Prüfsumme vollständig enthalten.');
+
+            // Ohne Einsatzort keine leere Angabe im PDF.
+            $orders->changeStatus($regie['id'], 'open', 'in_progress');
+            $plain = $this->submitted($service, ['orderId' => $regie['id']], $technician, $env['anna']);
+            $this->assertSame('', $plain['workLocation']);
+            $this->assertTrue(!str_contains($pdfService->pdf($plain['id'], $office)['pdf'], '(Einsatzort / Objekt) Tj'));
+
+            // Unterschriftsseite: Einsatzort sichtbar, Bestätigungstext identisch zum PDF, keine Preise.
+            $detail = $service->detail($submitted['id'], $technician);
+            $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            $render = static function (array $report) use ($escape): string {
+                $csrfToken = 'token';
+                $companyName = 'Muster GmbH';
+                ob_start();
+                require dirname(__DIR__, 2) . '/templates/work-reports/sign.php';
+                return (string) ob_get_clean();
+            };
+            $html = $render($detail);
+            $this->assertTrue(str_contains($html, 'Werk 2, Produktionshalle 4'), 'Einsatzort auf der Unterschriftsseite.');
+            $statement = WorkReportPdfService::confirmationStatement((string) $submitted['reportNumber']);
+            $this->assertTrue(str_contains($html, $escape(implode(' ', $statement))), 'Gleicher Bestätigungstext wie im PDF.');
+            $this->assertTrue(str_contains($statement[1], 'Verkaufspreise und Abrechnungsbeträge sind nicht Gegenstand'));
+            $this->assertTrue(!str_contains($html, '€') && !str_contains($html, 'unitPrice'), 'Keine Preise auf der Unterschriftsseite.');
+            $this->assertTrue(!str_contains($render($service->detail($plain['id'], $technician)), 'Einsatzort'), 'Ohne Einsatzort keine leere Zeile.');
+
+            // Nach der Unterschrift: Name und Zeitpunkt sichtbar, Prüfsumme unverändert gebunden.
+            $signed = $service->sign($submitted['id'], ['version' => $submitted['version'], 'signerName' => 'Frau Mack', 'image' => 'data:image/jpeg;base64,' . self::SIGNATURE, 'submittedSha256' => $submitted['submittedSha256']], $technician);
+            $this->assertSame($submitted['submittedSha256'], $signed['submittedSha256']);
+            $signedPdf = $pdfService->pdf($signed['id'], $office)['pdf'];
+            $this->assertTrue(str_contains($signedPdf, '(Frau Mack) Tj') && str_contains($signedPdf, '/Subtype /Image'));
+            $this->assertTrue(str_contains($signedPdf, (string) $submitted['submittedSha256']) && str_contains($signedPdf, '(Werk 2, Produktionshalle 4) Tj'));
+        });
+    }
+
     private function submitted(WorkReportService $service, array $target, array $actor, string $employee): array
     {
         $draft = $service->create([...$target, 'workDate' => '2026-11-18'], $actor);

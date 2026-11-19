@@ -1132,7 +1132,7 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
     .work-report-billing .step-section-heading { flex-wrap:wrap; }
     .work-report-billing .step-section-heading > [data-billing-tools] { width:100%; justify-content:flex-start; flex-wrap:wrap; margin-left:0; }
 }
-.work-report-head-grid { grid-template-columns:repeat(3, minmax(0, 1fr)); }
+.work-report-head-grid { grid-template-columns:minmax(0,.8fr) minmax(0,.8fr) minmax(0,1fr) minmax(0,1.4fr); }
 .work-report-proof h3 { margin:0; font-size:var(--font-base); }
 .work-report-row { display:grid; gap:var(--space-2); align-items:end; padding:var(--space-2); border:1px solid var(--border); border-radius:var(--radius); background:#fff; }
 .work-report-row + .work-report-row { margin-top:var(--space-2); }
@@ -1162,6 +1162,7 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 @media (max-width: 700px) {
     /* Mobil: große Felder untereinander, wenige Spalten. */
     .work-report-head-grid, .work-report-labor-row, .work-report-billing-row { grid-template-columns:1fr 1fr; }
+    .work-report-head-grid .work-report-location { grid-column:1 / -1; }
     .work-report-material-row { grid-template-columns:90px 90px 1fr; }
     .work-report-row .work-report-wide { grid-column:1 / -1; }
     .work-report-material-row .work-report-wide { grid-column:1 / -1; }
@@ -1190,6 +1191,9 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .sign-form input[name="signerName"] { min-height: 44px; font-size: 16px; }
 .signature-pad { position: relative; height: 220px; border: 2px dashed #9ab0c1; border-radius: var(--radius); background: #fff; }
 .signature-pad canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+.signature-baseline { position: absolute; right: 8%; bottom: 30%; left: 8%; border-bottom: 1px solid #c9d5de; pointer-events: none; }
+.sign-location { overflow-wrap: anywhere; }
+.sign-location span { color: var(--muted); }
 .signature-hint { position: absolute; inset: auto 0 14px; color: #9aaab6; font-size: 14px; text-align: center; pointer-events: none; }
 .sign-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-2); }
 .sign-actions .button { min-height: 44px; }

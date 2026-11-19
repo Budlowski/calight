@@ -46,9 +46,11 @@
   }
 
   // Punkte werden relativ (0–1) gespeichert, damit Größenänderungen die Unterschrift nicht verzerren.
+  // Bei gehaltenem Zeiger außerhalb des Feldes wird auf den Rand begrenzt.
+  const clamp = (value) => Math.min(1, Math.max(0, value));
   function point(event) {
     const rect = canvas.getBoundingClientRect();
-    return { x: (event.clientX - rect.left) / rect.width, y: (event.clientY - rect.top) / rect.height };
+    return { x: clamp((event.clientX - rect.left) / rect.width), y: clamp((event.clientY - rect.top) / rect.height) };
   }
 
   canvas.addEventListener("pointerdown", (event) => {
@@ -79,18 +81,34 @@
 
   const inkPoints = () => strokes.reduce((sum, stroke) => sum + stroke.length, 0);
 
-  // Export in fester Größe auf weißem Grund (JPEG unterstützt keine Transparenz).
+  // Export auf weißem Grund (JPEG unterstützt keine Transparenz), zugeschnitten auf die
+  // Unterschrift mit Rand: so wird sie im PDF unabhängig von Feldgröße und Schreibposition
+  // proportional und ohne Abschneiden eingepasst.
   function exportJpeg() {
     const rect = canvas.getBoundingClientRect();
-    const width = 1000;
-    const height = Math.round(width * rect.height / rect.width);
+    const scale = 1000 / rect.width;
+    const xs = strokes.flat().map((p) => p.x * rect.width);
+    const ys = strokes.flat().map((p) => p.y * rect.height);
+    const margin = 18;
+    let left = Math.min(...xs) - margin;
+    let right = Math.max(...xs) + margin;
+    let top = Math.min(...ys) - margin;
+    let bottom = Math.max(...ys) + margin;
+    // Mindestgröße, damit auch kurze Kürzel lesbar bleiben (Server verlangt mind. 100 × 40 px).
+    const grow = (low, high, min) => {
+      const missing = Math.max(0, min - (high - low)) / 2;
+      return [low - missing, high + missing];
+    };
+    [left, right] = grow(left, right, 240);
+    [top, bottom] = grow(top, bottom, 96);
     const output = document.createElement("canvas");
-    output.width = width;
-    output.height = height;
+    output.width = Math.round((right - left) * scale);
+    output.height = Math.round((bottom - top) * scale);
     const target = output.getContext("2d");
     target.fillStyle = "#ffffff";
-    target.fillRect(0, 0, width, height);
-    redraw(target, width, height, width / rect.width);
+    target.fillRect(0, 0, output.width, output.height);
+    target.translate(-left * scale, -top * scale);
+    redraw(target, rect.width, rect.height, scale);
     return output.toDataURL("image/jpeg", 0.85);
   }
 

@@ -59,6 +59,9 @@ final readonly class WorkReportPdfService
     {
         $numbers = new PdfNumberFormatter();
         $pdf = new LetterheadPdf($this->settings->get(), $watermark);
+        // Kurze Einsatzorte stehen im Kopfblock; längere vollständig über den ausgeführten Arbeiten.
+        $location = trim((string) ($report['workLocation'] ?? ''));
+        $longLocation = mb_strlen($location) > 34;
         $period = self::date((string) $report['workDate']) . ($report['workDateTo'] ? ' – ' . self::date((string) $report['workDateTo']) : '');
         $pdf->begin(
             'Rapport – Leistungsnachweis',
@@ -70,10 +73,15 @@ final readonly class WorkReportPdfService
                 ['Kundennummer', (string) ($report['customerNumber'] ?? '')],
                 ['Auftrag', $report['orderId'] ? trim($report['orderNumber'] . ' · ' . $report['orderTitle']) : ''],
                 ['Projekt', $report['projectNumber'] ? trim($report['projectNumber'] . ' · ' . $report['projectName']) : ''],
+                ['Einsatzort / Objekt', $longLocation ? '' : $location],
                 ['Ansprechpartner', (string) ($report['contactPerson'] ?? '')],
             ],
         );
 
+        if ($longLocation) {
+            $pdf->section('Einsatzort / Objekt');
+            $pdf->paragraph($location);
+        }
         $pdf->section('Ausgeführte Arbeiten');
         $pdf->paragraph(trim((string) $report['description']) !== '' ? (string) $report['description'] : '–');
 
@@ -120,28 +128,36 @@ final readonly class WorkReportPdfService
             $pdf->paragraph((string) $report['notes']);
         }
 
-        $statement = [
-            'Mit der Unterschrift wird bestätigt, dass die oben beschriebenen Arbeiten am angegebenen Leistungsdatum ausgeführt'
-            . ' und die aufgeführten Stunden sowie Materialien und sonstigen Leistungen erbracht wurden.',
-            'Die Bestätigung bezieht sich ausschließlich auf diesen Leistungsnachweis' . ($report['reportNumber'] ? ' Nr. ' . $report['reportNumber'] : '')
-            . '. Preise und Abrechnungsbeträge sind nicht Gegenstand dieser Bestätigung.',
-        ];
+        $statement = self::confirmationStatement($report['reportNumber'] ? (string) $report['reportNumber'] : null);
         $confirmed = $report['confirmationStatus'] === 'confirmed';
         $note = '';
         if ($confirmed) {
             $note = (self::KIND_NOTES[(string) $report['confirmationKind']] ?? 'Bestätigt') . ' am ' . self::dateTime((string) $report['confirmedAt'])
                 . ' durch ' . $report['confirmedByName'] . '.';
         }
-        if ($report['submittedSha256']) {
-            $note .= ($note !== '' ? ' ' : '') . 'Prüfsumme des eingereichten Leistungsnachweises (SHA-256): ' . $report['submittedSha256'];
-        }
         $pdf->confirmationBlock($statement, [
+            'checksum' => (string) ($report['submittedSha256'] ?? ''),
             'signature' => $signature,
             'name' => $confirmed ? (string) $report['confirmedByName'] : '',
             'date' => $confirmed ? self::dateTime((string) $report['confirmedAt']) : '',
             'note' => $note,
         ]);
         return $pdf->output();
+    }
+
+    /**
+     * Bestätigungstext – identisch auf der Unterschriftsseite und im PDF.
+     *
+     * @return list<string>
+     */
+    public static function confirmationStatement(?string $reportNumber): array
+    {
+        return [
+            'Mit der Unterschrift wird bestätigt, dass die in diesem Leistungsnachweis beschriebenen Arbeiten ausgeführt'
+            . ' und die aufgeführten Arbeitsstunden sowie Materialien und sonstigen Leistungen erbracht wurden.',
+            'Die Bestätigung bezieht sich ausschließlich auf den eingereichten Leistungsnachweis' . ($reportNumber !== null ? ' Nr. ' . $reportNumber : '')
+            . '. Verkaufspreise und Abrechnungsbeträge sind nicht Gegenstand dieser Bestätigung.',
+        ];
     }
 
     private static function date(string $value): string

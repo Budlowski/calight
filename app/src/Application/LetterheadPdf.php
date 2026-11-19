@@ -193,33 +193,48 @@ final class LetterheadPdf
      * leere Felder für eine handschriftliche Unterschrift.
      *
      * @param list<string> $statement Bestätigungstext
-     * @param array{signature?:?string,name?:string,date?:string,note?:string} $confirmation
+     * @param array{signature?:?string,name?:string,date?:string,note?:string,checksum?:string} $confirmation
      */
     public function confirmationBlock(array $statement, array $confirmation): void
     {
         $this->repeatHeader = null;
-        $this->ensure(150);
-        $this->section('Bestätigung durch den Kunden', 110);
+        $this->ensure(220);
+        $this->section('Bestätigung durch den Kunden', 180);
         foreach ($statement as $text) {
             $this->paragraph($text, $this->font, false, '0 0 0');
         }
-        $this->y -= 4;
+        // Unterschriftsfeld: Bild proportional eingepasst, mit Abstand zur Linie darunter.
+        $this->y -= 6;
         $boxTop = $this->y;
-        $width = ($this->right - $this->left - 20) / 2;
+        $lineY = $boxTop - 82;
+        $width = ($this->right - $this->left - 24) / 2;
+        $nameX = $this->left + $width + 24;
         $signature = $confirmation['signature'] ?? null;
         if (is_string($signature) && $signature !== '') {
-            $this->pdf->jpegContained($signature, $this->left, $boxTop - 70, $width, 66);
+            $this->pdf->jpegContained($signature, $this->left + 6, $lineY + 8, $width - 12, 66);
         }
-        $this->pdf->line($this->left, $boxTop - 74, $this->left + $width, $boxTop - 74, '.3 .35 .4');
-        $this->pdf->line($this->left + $width + 20, $boxTop - 74, $this->right, $boxTop - 74, '.3 .35 .4');
-        $this->pdf->text($this->left, $boxTop - 84, $this->font - 1, 'Unterschrift Kunde', false, '.35 .4 .45');
-        $this->pdf->text($this->left + $width + 20, $boxTop - 84, $this->font - 1, 'Name in Druckbuchstaben, Datum', false, '.35 .4 .45');
+        $this->pdf->line($this->left, $lineY, $this->left + $width, $lineY, '.3 .35 .4');
+        $this->pdf->line($nameX, $lineY, $this->right, $lineY, '.3 .35 .4');
+        $this->pdf->text($this->left, $lineY - 11, $this->font - 1, 'Unterschrift Kunde', false, '.35 .4 .45');
+        $this->pdf->text($nameX, $lineY - 11, $this->font - 1, 'Name in Druckbuchstaben, Datum', false, '.35 .4 .45');
         if (($confirmation['name'] ?? '') !== '') {
-            $this->pdf->text($this->left + $width + 20, $boxTop - 66, $this->font + 1, (string) $confirmation['name'] . (($confirmation['date'] ?? '') !== '' ? ', ' . $confirmation['date'] : ''), true);
+            $this->pdf->text($nameX, $lineY + 22, $this->font + 1.5, self::shorten((string) $confirmation['name'], 40), true);
+            if (($confirmation['date'] ?? '') !== '') {
+                $this->pdf->text($nameX, $lineY + 8, $this->font, (string) $confirmation['date']);
+            }
         }
-        $this->y = $boxTop - 100;
+        $this->y = $lineY - 28;
         if (($confirmation['note'] ?? '') !== '') {
             $this->paragraph((string) $confirmation['note'], $this->font - .5, false, '.35 .4 .45');
+        }
+        // Prüfsumme vollständig, aber dezent und ohne eigene Seite.
+        $checksum = (string) ($confirmation['checksum'] ?? '');
+        if ($checksum !== '') {
+            $this->y -= 4;
+            $this->ensure(18);
+            $this->pdf->text($this->left, $this->y, 6, 'Prüfsumme des eingereichten Leistungsnachweises (SHA-256):', false, '.5 .55 .6');
+            $this->pdf->text($this->left, $this->y - 8, 6, $checksum, false, '.5 .55 .6');
+            $this->y -= 16;
         }
     }
 

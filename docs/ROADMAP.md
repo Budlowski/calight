@@ -35,7 +35,7 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 
 | 3.3 | Aufmaße für vereinbarte Angebotsleistungen | Implementiert (`0024`), PDF seit Phase 3.2.3 |
 
-| 3.4 | Rapporte für Regieleistungen, auch eigenständig ohne Auftrag | Implementiert (`0025`, `0026`), PDF und Kundenbestätigung seit Phase 3.2.3 |
+| 3.4 | Rapporte für Regieleistungen, auch eigenständig ohne Auftrag | Implementiert (`0025`, `0026`), PDF und Kundenbestätigung seit Phase 3.2.3, Einsatzort / Objekt (`0028`) |
 
 | 3.4.1 | Bestellungen mit PDF-Ausgabe (schlanke Materialbeschaffung) | Geplant |
 | 3.4.2 | Lieferscheine mit PDF-Ausgabe (Liefernachweise) | Geplant |
@@ -240,7 +240,7 @@ Bautagesberichte dokumentieren die tatsächliche Ausführung und sind **keine** 
 
 - **Gemeinsame PDF-Grundlage:** projekteigene Engine `SimplePdf` (jetzt mit beliebig vielen JPEG-Bildern und optionalem Wasserzeichen) und ein gemeinsamer Briefbogen (`LetterheadPdf`) für Rapporte, Aufmaße und Bautagesberichte: Logo, Firmenangaben, Kopf-/Fußbereich, Empfänger, Metadaten, Tabellen mit wiederholtem Kopf, automatische Seitenumbrüche und Seitenzahlen. Alle Firmendaten stammen aus den Dokumenteinstellungen. Der Angebots-Generator bleibt bewusst eigenständig (kein Risiko für abgabefähige Angebote); er verwendet dieselbe Engine und Einstellungen.
 - **Wasserzeichen:** „ENTWURF“ nur noch auf Entwürfen. Bereits archivierte PDFs abgegebener Angebote bleiben unverändert (sie wurden mit dem früheren Verhalten erzeugt und werden nie neu erzeugt).
-- **Rapport-PDF:** eingereichter Leistungsnachweis (Arbeiten, Stunden, Material, Bemerkungen, Ansprechpartner, optional Auftrag/Projekt) mit Bestätigungsbereich – nie kaufmännische Positionen, Verkaufspreise oder Kosten; auch für eigenständige Rapporte ohne Auftrag.
+- **Rapport-PDF:** eingereichter Leistungsnachweis (Arbeiten, Stunden, Material, Bemerkungen, Ansprechpartner, optionaler Einsatzort / Objekt, optional Auftrag/Projekt) mit Bestätigungsbereich – nie kaufmännische Positionen, Verkaufspreise oder Kosten; auch für eigenständige Rapporte ohne Auftrag.
 - **Kundenbestätigung mit getrennten Nachweisarten:**
   - *Digital unterschrieben* (`signature`): Der Monteur öffnet die Kundenansicht (ohne Navigation und Preise), der Kunde unterschreibt mit Finger, Stift oder Maus. Die Unterschrift (JPEG) wird nur angenommen, wenn die angezeigte Prüfsumme dem eingereichten Leistungsnachweis entspricht.
   - *Unterschriebenes Dokument zurückerhalten* (`returned_document`): Das Büro lädt das unterschriebene PDF oder Foto hoch; das Original wird unverändert archiviert.
@@ -292,7 +292,7 @@ Rapporte dokumentieren **abrechenbare Regieleistungen** und entsprechen in ihrer
 
 **Umgesetzt (Phase 3.4, Migration `0025`):**
 
-- **Zwei getrennte Ebenen:** Der Monteur erfasst den *Leistungsnachweis* (Leistungsdatum/-zeitraum, Ansprechpartner vor Ort, ausgeführte Arbeiten, Bemerkungen, Stunden je Mitarbeiter mit optionaler Lohnkostengruppe, Material und sonstige Leistungen als Freitext mit Menge) – ohne Preise. Das Büro erstellt daraus die *kaufmännischen Abrechnungspositionen* (Arbeitsstunden, Material, Anfahrt/Fahrtkosten, Fremdleistung, Pauschale, sonstige Leistung) mit Menge, Einheit und Verkaufspreis; Artikel und Lohnkostengruppen können mit ihrem Verkaufspreis aus dem Stamm übernommen werden (Snapshot, keine spätere Aktualisierung).
+- **Zwei getrennte Ebenen:** Der Monteur erfasst den *Leistungsnachweis* (Leistungsdatum/-zeitraum, Ansprechpartner vor Ort, optionaler Einsatzort / Objekt als Freitext – z. B. „Werk 2, Produktionshalle 4“, unabhängig von Kunde, Projekt und Auftrag, Migration `0028` –, ausgeführte Arbeiten, Bemerkungen, Stunden je Mitarbeiter mit optionaler Lohnkostengruppe, Material und sonstige Leistungen als Freitext mit Menge) – ohne Preise. Das Büro erstellt daraus die *kaufmännischen Abrechnungspositionen* (Arbeitsstunden, Material, Anfahrt/Fahrtkosten, Fremdleistung, Pauschale, sonstige Leistung) mit Menge, Einheit und Verkaufspreis; Artikel und Lohnkostengruppen können mit ihrem Verkaufspreis aus dem Stamm übernommen werden (Snapshot, keine spätere Aktualisierung).
 - **Status:** Entwurf → Eingereicht → Bearbeitet. Beim Einreichen erhält der Rapport seine Nummer (Nummernkreis „Rapporte“, `RP`), der Leistungsnachweis wird gesperrt und per SHA-256 festgeschrieben. „Bearbeitet“ schreibt den Nettobetrag fest und kann vom Büro wieder geöffnet werden; der Leistungsnachweis bleibt davon unberührt.
 - **Eigenständige Rapporte (Migration `0026`):** Monteure legen vor Ort für einen bestehenden Kunden einen Rapport an, ohne dass vorher ein Auftrag existieren muss; es wird nie automatisch ein Auftrag erzeugt. Wird ein Auftrag gewählt, muss er zum Kunden gehören. Das Büro kann einen eigenständigen Rapport nachträglich einem Auftrag desselben Kunden zuordnen (einmalig, mit Benutzer und Zeitpunkt); Leistungsnachweis, Prüfsumme, Kundenbestätigung und Abrechnungspositionen bleiben dabei unverändert. Die Übersicht filtert nach Kunde und „mit/ohne Auftrag“.
 - **Korrekturen:** neuer Korrekturrapport mit Verweis auf das Original und dessen Stand als Ausgangspunkt; das Original und eine vorhandene Kundenbestätigung bleiben unverändert.

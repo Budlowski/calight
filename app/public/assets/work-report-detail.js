@@ -173,6 +173,7 @@
       workDate: proofForm.elements.workDate.value,
       workDateTo: proofForm.elements.workDateTo.value,
       contactPerson: proofForm.elements.contactPerson.value.trim(),
+      workLocation: proofForm.elements.workLocation.value.trim(),
       description: proofForm.elements.description.value.trim(),
       notes: proofForm.elements.notes.value.trim(),
       labor: labor.map((row) => ({ employeeId: row.employeeId || "", workerName: row.employeeId ? "" : (row.workerName || "").trim(), hours: decimal(row.hours), laborItemId: row.laborItemId || "", activity: (row.activity || "").trim() })),
@@ -393,7 +394,7 @@
 
   function render() {
     renderHeader();
-    for (const name of ["workDate", "workDateTo", "contactPerson", "description", "notes"]) {
+    for (const name of ["workDate", "workDateTo", "contactPerson", "workLocation", "description", "notes"]) {
       proofForm.elements[name].value = report[name] ?? "";
       proofForm.elements[name].disabled = !editableProof();
     }

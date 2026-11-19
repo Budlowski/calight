@@ -36,7 +36,7 @@ final readonly class WorkReportRepository
     public function page(ListQuery $query, ?string $technicianId, bool $priceSort): array
     {
         $page = (new Paginator($this->pdo))
-            ->search($query, ['w.report_number', 'w.description', 'w.contact_person', 'o.order_number', 'o.title', self::CUSTOMER_NAME, 'c.customer_number', 'u.display_name']);
+            ->search($query, ['w.report_number', 'w.description', 'w.contact_person', 'w.work_location', 'o.order_number', 'o.title', self::CUSTOMER_NAME, 'c.customer_number', 'u.display_name']);
         if ($technicianId !== null) {
             $page->where("w.created_by_user_id = :work_technician OR (o.id IS NOT NULL AND o.status <> 'open')", ['work_technician' => $technicianId]);
         }
@@ -116,9 +116,9 @@ final readonly class WorkReportRepository
     public function insert(array $data): void
     {
         $this->pdo->prepare('INSERT INTO work_reports
-            (id, customer_id, order_id, work_date, work_date_to, contact_person, description, notes, status, correction_of_id, version,
+            (id, customer_id, order_id, work_date, work_date_to, contact_person, work_location, description, notes, status, correction_of_id, version,
              created_by_user_id, created_at, updated_at)
-            VALUES (:id, :customer_id, :order_id, :work_date, :work_date_to, :contact_person, :description, :notes, \'draft\', :correction_of_id, 1,
+            VALUES (:id, :customer_id, :order_id, :work_date, :work_date_to, :contact_person, :work_location, :description, :notes, \'draft\', :correction_of_id, 1,
              :created_by_user_id, :created_at, :updated_at)')->execute($data);
     }
 
@@ -126,7 +126,7 @@ final readonly class WorkReportRepository
     public function updateDraft(string $id, int $version, array $data): bool
     {
         $statement = $this->pdo->prepare("UPDATE work_reports SET work_date = :work_date, work_date_to = :work_date_to,
-            contact_person = :contact_person, description = :description, notes = :notes, version = version + 1, updated_at = :updated_at
+            contact_person = :contact_person, work_location = :work_location, description = :description, notes = :notes, version = version + 1, updated_at = :updated_at
             WHERE id = :id AND version = :version AND status = 'draft'");
         $statement->execute([...$data, 'id' => $id, 'version' => $version]);
         return $statement->rowCount() === 1;

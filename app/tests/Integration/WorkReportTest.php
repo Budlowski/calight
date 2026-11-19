@@ -66,6 +66,7 @@ final class WorkReportTest extends TestCase
             $saved = $this->saveProof($service, $draft, [
                 'description' => 'Heizungsregelung geprüft, Fühler getauscht',
                 'contactPerson' => 'Herr Mack',
+                'workLocation' => '  Gebäude B, Technikzentrale  ',
                 'labor' => [
                     ['employeeId' => $anna, 'hours' => '3,5', 'laborItemId' => $laborItem, 'activity' => 'Fehlersuche'],
                     ['workerName' => 'Aushilfe Ben', 'hours' => '1'],
@@ -80,6 +81,8 @@ final class WorkReportTest extends TestCase
             $this->assertSame('Anna Monteur', $saved['labor'][0]['workerName'], 'Mitarbeitername kommt aus dem Stamm.');
             $this->assertSame('Monteurstunde', $saved['labor'][0]['laborItemName']);
             $this->assertSame('4.500', $saved['totalHours']);
+            $this->assertSame('Gebäude B, Technikzentrale', $saved['workLocation'], 'Einsatzort wird getrimmt gespeichert.');
+            $this->assertThrows(OrderValidationException::class, fn () => $this->saveProof($service, $saved, ['workLocation' => str_repeat('x', 201)], $technician));
             $json = json_encode($saved, JSON_THROW_ON_ERROR);
             $this->assertTrue(!str_contains($json, 'Price') && !str_contains($json, 'cost'), 'Keine Preise oder Kosten in der Monteuransicht.');
 
@@ -88,6 +91,9 @@ final class WorkReportTest extends TestCase
             $this->assertTrue(str_starts_with((string) $submitted['reportNumber'], 'RP'));
             $this->assertSame(1, preg_match('/^[a-f0-9]{64}$/', (string) $submitted['submittedSha256']));
             $this->assertThrows(OrderValidationException::class, fn () => $this->saveProof($service, $submitted, ['description' => 'überschrieben'], $technician));
+            $this->assertSame('Gebäude B, Technikzentrale', $submitted['workLocation'], 'Einsatzort ist Teil des eingereichten Nachweises.');
+            $this->assertThrows(OrderValidationException::class, fn () => $this->saveProof($service, $submitted, ['workLocation' => 'Anderes Werk'], $technician), 'Einsatzort nach dem Einreichen unveränderlich.');
+            $this->assertSame('Gebäude B, Technikzentrale', $service->detail($submitted['id'], $office)['workLocation']);
             $this->assertThrows(OrderValidationException::class, fn () => $service->delete($submitted['id'], $submitted['version'], $office));
 
             // Rapporte sind auch zu Angebotsaufträgen möglich; mehrere je Auftrag.
@@ -217,7 +223,9 @@ final class WorkReportTest extends TestCase
             $this->assertSame($customer, $standalone['customerId']);
             $this->assertSame('Matzko-Mack', $standalone['customerName']);
             $this->assertTrue(!$standalone['canAssignOrder'], 'Monteure ordnen keine Aufträge zu.');
+            $this->assertSame('', $standalone['workLocation'], 'Ohne Angabe bleibt der Einsatzort leer.');
             $standalone = $this->saveProof($service, $standalone, [
+                'workLocation' => 'Werk 2, Produktionshalle 4',
                 'description' => 'Spontane Reparatur Außenbeleuchtung',
                 'labor' => [['employeeId' => $anna, 'hours' => '1,5', 'laborItemId' => $laborItem]],
                 'materials' => [['quantity' => '2', 'unit' => 'Stk.', 'description' => 'Leuchtmittel']],
@@ -240,6 +248,7 @@ final class WorkReportTest extends TestCase
             $this->assertSame(2, $service->page(['customer' => $customer], $office)['total']);
             $this->assertSame(0, $service->page(['customer' => $other], $office)['total']);
             $this->assertSame(1, $service->page(['q' => 'außenbeleuchtung'], $office)['total'], 'Suche funktioniert ohne Auftragsbezug.');
+            $this->assertSame(1, $service->page(['q' => 'produktionshalle'], $office)['total'], 'Suche nach Einsatzort.');
             $this->assertSame(2, $service->page(['q' => 'K1'], $office)['total'], 'Suche nach Kundennummer.');
             $this->assertSame(1, $service->page(['q' => (string) $submitted['reportNumber']], $office)['total']);
 
@@ -261,6 +270,7 @@ final class WorkReportTest extends TestCase
             $this->assertSame($regie['id'], $assigned['orderId']);
             $this->assertTrue($assigned['orderAssignedAt'] !== null && $assigned['orderAssignedByName'] === 'Office');
             $this->assertSame($hash, $assigned['submittedSha256'], 'Die Prüfsumme des Leistungsnachweises bleibt unverändert.');
+            $this->assertSame('Werk 2, Produktionshalle 4', $assigned['workLocation'], 'Die Auftragszuordnung überschreibt den Einsatzort nicht.');
             $this->assertSame('confirmed', $assigned['confirmationStatus']);
             $this->assertSame('127.50', $assigned['netTotal']);
             $this->assertSame(1, count($assigned['billing']), 'Abrechnungspositionen bleiben erhalten, nichts wird doppelt übernommen.');
@@ -277,7 +287,30 @@ final class WorkReportTest extends TestCase
             $correction = $service->create(['correctionOf' => $assigned['id']], $technician);
             $this->assertSame($customer, $correction['customerId']);
             $this->assertSame($regie['id'], $correction['orderId']);
+            $this->assertSame('Werk 2, Produktionshalle 4', $correction['workLocation'], 'Korrekturen übernehmen den Einsatzort.');
             $this->assertSame($hash, $service->detail($assigned['id'], $office)['submittedSha256']);
+        });
+    }
+
+    public function testReportsWithoutLocationKeepTheirChecksum(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['pdo' => $pdo, 'service' => $service, 'technician' => $technician, 'customer' => $customer, 'anna' => $anna] = $env;
+            $draft = $service->create(['customerId' => $customer, 'workDate' => '2026-11-12'], $technician);
+            $draft = $this->saveProof($service, $draft, ['description' => 'Bestand', 'labor' => [['employeeId' => $anna, 'hours' => '1']]], $technician);
+            $submitted = $service->submit($draft['id'], ['version' => $draft['version']], $technician);
+            $this->assertSame('', $submitted['workLocation']);
+
+            // Ohne Einsatzort entspricht die Prüfsumme exakt der bisherigen Bildung (ohne das neue Feld).
+            $row = $pdo->query("SELECT * FROM work_reports WHERE id = " . $pdo->quote($submitted['id']))->fetch();
+            $labor = $pdo->query("SELECT * FROM work_report_labor WHERE report_id = " . $pdo->quote($submitted['id']) . ' ORDER BY sort_order, id')->fetchAll();
+            $legacy = [
+                'customerId' => $row['customer_id'], 'orderId' => $row['order_id'], 'workDate' => $row['work_date'], 'workDateTo' => $row['work_date_to'],
+                'contactPerson' => $row['contact_person'], 'description' => $row['description'], 'notes' => $row['notes'],
+                'labor' => array_map(static fn (array $item): array => [$item['employee_id'], $item['worker_name'], $item['hours'], $item['labor_item_id'], $item['labor_item_name'], $item['activity']], $labor),
+                'materials' => [],
+            ];
+            $this->assertSame(hash('sha256', json_encode($legacy, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)), $submitted['submittedSha256']);
         });
     }
 

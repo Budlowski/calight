@@ -10,6 +10,9 @@ $date = static fn (?string $value): string => $value ? (new DateTimeImmutable($v
         <span class="sign-company"><?= $escape($companyName !== '' ? $companyName : 'Leistungsnachweis') ?></span>
         <h1>Leistungsnachweis <?= $escape((string) $report['reportNumber']) ?></h1>
         <p class="muted"><?= $escape((string) $report['customerName']) ?> · <?= $escape($date($report['workDate'])) ?><?= $report['workDateTo'] ? ' – ' . $escape($date($report['workDateTo'])) : '' ?></p>
+        <?php if (trim((string) ($report['workLocation'] ?? '')) !== ''): ?>
+            <p class="sign-location"><span>Einsatzort / Objekt:</span> <strong><?= $escape((string) $report['workLocation']) ?></strong></p>
+        <?php endif; ?>
     </header>
 
     <section class="sign-section">
@@ -49,11 +52,12 @@ $date = static fn (?string $value): string => $value ? (new DateTimeImmutable($v
 
     <form class="sign-section sign-form" data-sign-form novalidate>
         <h2>Bestätigung</h2>
-        <p class="sign-statement">Hiermit bestätige ich, dass die oben beschriebenen Arbeiten ausgeführt und die aufgeführten Stunden sowie Materialien und sonstigen Leistungen erbracht wurden. Die Bestätigung bezieht sich ausschließlich auf diesen Leistungsnachweis; Preise sind nicht Gegenstand der Bestätigung.</p>
+        <p class="sign-statement"><?= $escape(implode(' ', \App\Application\WorkReportPdfService::confirmationStatement($report['reportNumber'] ? (string) $report['reportNumber'] : null))) ?></p>
         <label><span class="field-label">Name der unterschreibenden Person <span aria-hidden="true">*</span></span>
             <input name="signerName" maxlength="200" required autocomplete="name" value="<?= $escape((string) ($report['contactPerson'] ?? '')) ?>"></label>
         <div class="field-label">Unterschrift <span aria-hidden="true">*</span></div>
         <div class="signature-pad">
+            <span class="signature-baseline" aria-hidden="true"></span>
             <canvas data-signature-canvas aria-label="Unterschriftenfeld: mit Finger, Stift oder Maus unterschreiben" role="img"></canvas>
             <span class="signature-hint" data-signature-hint>Hier unterschreiben</span>
         </div>

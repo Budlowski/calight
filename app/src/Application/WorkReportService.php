@@ -143,6 +143,7 @@ final readonly class WorkReportService
                 'work_date' => $original['work_date'] ?? $date,
                 'work_date_to' => $original['work_date_to'] ?? null,
                 'contact_person' => $original['contact_person'] ?? '',
+                'work_location' => $original['work_location'] ?? '',
                 'description' => $original['description'] ?? '',
                 'notes' => $original['notes'] ?? '',
                 'correction_of_id' => $original['id'] ?? null,
@@ -173,6 +174,7 @@ final readonly class WorkReportService
         $result = $this->summary($row, $actor);
         $result += [
             'contactPerson' => $row['contact_person'],
+            'workLocation' => (string) ($row['work_location'] ?? ''),
             'description' => $row['description'],
             'notes' => $row['notes'],
             'workDateTo' => $row['work_date_to'],
@@ -218,7 +220,7 @@ final readonly class WorkReportService
     /**
      * Speichert Kopfdaten, Stunden und Material eines Entwurfs.
      *
-     * @param array<string,mixed> $input version, workDate, workDateTo, contactPerson, description, notes, labor[], materials[]
+     * @param array<string,mixed> $input version, workDate, workDateTo, contactPerson, workLocation, description, notes, labor[], materials[]
      * @param array<string,mixed> $actor
      * @return array<string,mixed>
      */
@@ -608,12 +610,13 @@ final readonly class WorkReportService
     // Validierung
     // -------------------------------------------------------------------------
 
-    /** @param array<string,mixed> $input @return array{work_date:string,work_date_to:?string,contact_person:string,description:string,notes:string} */
+    /** @param array<string,mixed> $input @return array{work_date:string,work_date_to:?string,contact_person:string,work_location:string,description:string,notes:string} */
     private function validateHeader(array $input): array
     {
         $date = trim((string) ($input['workDate'] ?? ''));
         $dateTo = trim((string) ($input['workDateTo'] ?? ''));
         $contact = trim((string) ($input['contactPerson'] ?? ''));
+        $location = trim((string) ($input['workLocation'] ?? ''));
         $description = trim((string) ($input['description'] ?? ''));
         $notes = trim((string) ($input['notes'] ?? ''));
         $errors = [];
@@ -633,13 +636,16 @@ final readonly class WorkReportService
         if (mb_strlen($contact) > 200) {
             $errors[] = 'Der Ansprechpartner vor Ort darf höchstens 200 Zeichen lang sein.';
         }
+        if (mb_strlen($location) > 200) {
+            $errors[] = 'Der Einsatzort darf höchstens 200 Zeichen lang sein.';
+        }
         if (mb_strlen($description) > 5000 || mb_strlen($notes) > 5000) {
             $errors[] = 'Beschreibung und Bemerkungen dürfen jeweils höchstens 5.000 Zeichen lang sein.';
         }
         if ($errors !== []) {
             throw new OrderValidationException($errors);
         }
-        return ['work_date' => $date, 'work_date_to' => $dateTo !== '' && $dateTo !== $date ? $dateTo : null, 'contact_person' => $contact, 'description' => $description, 'notes' => $notes];
+        return ['work_date' => $date, 'work_date_to' => $dateTo !== '' && $dateTo !== $date ? $dateTo : null, 'contact_person' => $contact, 'work_location' => $location, 'description' => $description, 'notes' => $notes];
     }
 
     /** @return list<array<string,mixed>> */
@@ -808,6 +814,10 @@ final readonly class WorkReportService
             ], $labor),
             'materials' => array_map(static fn (array $row): array => [$row['quantity'], $row['unit'], $row['description']], $materials),
         ];
+        // Einsatzort nur bei Angabe aufnehmen: Rapporte ohne Einsatzort behalten die bisherige Prüfsummenbildung.
+        if (trim((string) ($report['work_location'] ?? '')) !== '') {
+            $proof['workLocation'] = $report['work_location'];
+        }
         return hash('sha256', json_encode($proof, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
     }
 
