@@ -21,11 +21,11 @@
             <label><span class="field-label">Bemerkungen (optional)</span><textarea name="notes" rows="3" maxlength="10000"></textarea></label>
         </section>
         <section class="report-form-section report-time-section">
-            <div class="step-section-heading"><span class="step-section-number">4</span><div><h2>Arbeitszeiten</h2><small data-time-summary>0,000 Stunden erfasst</small></div><div class="step-section-actions"><button class="button button-light button-small" type="button" data-add-entry data-icon="plus">Zeit hinzufügen</button></div></div>
+            <div class="step-section-heading"><span class="step-section-number">4</span><div><h2>Arbeitszeiten</h2><small data-time-summary>0,000 Stunden erfasst</small></div><div class="step-section-actions"><button class="button button-light button-small" type="button" data-add-entry data-icon="plus">Stunden hinzufügen</button></div></div>
             <div data-entries></div>
         </section>
         <p class="field-error" data-error hidden></p>
-        <div class="form-actions"><button class="button" type="submit" data-save data-icon="save">Bericht speichern</button><a class="button button-light" href="/daily-reports">Abbrechen</a><button class="button button-danger-light" type="button" data-delete data-icon="trash">Bericht löschen</button></div>
+        <div class="form-actions"><button class="button" type="submit" data-save data-icon="save">Speichern</button><a class="button button-light" href="/daily-reports">Abbrechen</a><button class="button button-danger-light" type="button" data-delete data-icon="trash">Bericht löschen</button></div>
     </form>
 
     <section class="card report-extra-section" aria-labelledby="report-attachments-heading">

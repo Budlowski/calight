@@ -8,6 +8,12 @@
   const preview=document.querySelector('#logo-preview');
   const booleanNames=['showEmptyTitles','showHeader','showFooter','showProjectInfo','showTitleSummary'];
   let logoData=null;
+  // Ungespeicherte Änderungen wie auf den anderen Bearbeitungsseiten schützen; doppeltes Absenden verhindern.
+  let dirty=false,saving=false;
+  const saveButtons=[...document.querySelectorAll('button[form="settings-form"], #settings-form button[type="submit"]')];
+  form.addEventListener('input',()=>{dirty=true;});
+  form.addEventListener('change',()=>{dirty=true;});
+  addEventListener('beforeunload',event=>{if(!dirty)return;event.preventDefault();event.returnValue='';});
   const tabs=[...root.querySelectorAll('[data-settings-tab]')],panels=[...root.querySelectorAll('[data-settings-panel]')];
   const selectTab=name=>{
     if(!tabs.some(tab=>tab.dataset.settingsTab===name))name='company';
@@ -41,18 +47,23 @@
       if(!field||key==='logoData')return;
       if(field.type==='checkbox')field.checked=Boolean(value);else field.value=value??'';
     });
-    logoData=result.settings.logoData;showLogo();updateConditionalFields();
+    logoData=result.settings.logoData;showLogo();updateConditionalFields();dirty=false;
   }).catch(error=>notify(error.message,'error'));
   file.onchange=()=>{
     const selected=file.files[0];if(!selected)return;
     if(!['image/png','image/jpeg'].includes(selected.type)||selected.size>1_000_000){notify('Das Logo muss eine PNG- oder JPEG-Datei mit höchstens 1 MB sein.','error');file.value='';return;}
     const reader=new FileReader();
-    reader.onload=()=>{const image=new Image();image.onload=()=>{const scale=Math.min(1,1000/image.width,400/image.height),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.width*scale));canvas.height=Math.max(1,Math.round(image.height*scale));const context=canvas.getContext('2d');context.fillStyle='#fff';context.fillRect(0,0,canvas.width,canvas.height);context.drawImage(image,0,0,canvas.width,canvas.height);logoData=canvas.toDataURL('image/jpeg',.9);showLogo();};image.src=reader.result;};
+    reader.onload=()=>{const image=new Image();image.onload=()=>{const scale=Math.min(1,1000/image.width,400/image.height),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.width*scale));canvas.height=Math.max(1,Math.round(image.height*scale));const context=canvas.getContext('2d');context.fillStyle='#fff';context.fillRect(0,0,canvas.width,canvas.height);context.drawImage(image,0,0,canvas.width,canvas.height);logoData=canvas.toDataURL('image/jpeg',.9);dirty=true;showLogo();};image.src=reader.result;};
     reader.readAsDataURL(selected);
   };
   form.onsubmit=async event=>{
-    event.preventDefault();const data=Object.fromEntries(new FormData(form));booleanNames.forEach(name=>data[name]=form.elements[name].checked);data.validityDays=form.elements.validityDays.value;data.validityDate=form.elements.validityDate.value;data.vatRate=form.elements.vatRate.value;data.logoData=logoData;
-    const response=await fetch('/api/settings',{method:'PUT',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':root.dataset.csrf},body:JSON.stringify(data)}),result=await response.json();
-    if(!response.ok)return notify(result.error||'Speichern fehlgeschlagen.','error');notify('Einstellungen gespeichert.');
+    event.preventDefault();if(saving)return;const data=Object.fromEntries(new FormData(form));booleanNames.forEach(name=>data[name]=form.elements[name].checked);data.validityDays=form.elements.validityDays.value;data.validityDate=form.elements.validityDate.value;data.vatRate=form.elements.vatRate.value;data.logoData=logoData;
+    saving=true;saveButtons.forEach(button=>button.disabled=true);
+    try{
+      const response=await fetch('/api/settings',{method:'PUT',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':root.dataset.csrf},body:JSON.stringify(data)}),result=await response.json();
+      if(!response.ok)return notify(result.error||'Speichern fehlgeschlagen.','error');
+      dirty=false;notify('Einstellungen gespeichert.');
+    }catch{notify('Speichern fehlgeschlagen.','error');}
+    finally{saving=false;saveButtons.forEach(button=>button.disabled=false);}
   };
 })();

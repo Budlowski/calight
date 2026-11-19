@@ -145,5 +145,105 @@
     return { showError: (text) => { error.textContent = text; error.hidden = false; } };
   }
 
-  globalThis.Calight = Object.freeze({ esc, api, format, exact, collator, normalize, matches, notify, bindProjectToCustomer, createDialog });
+
+  // Gemeinsame Stammdatensuche mit Vorschlagsliste (z. B. Artikel/Lohnkostengruppen).
+  // Die Daten liefert immer der Server (Berechtigungen bleiben dort); die Komponente
+  // regelt nur Darstellung und Bedienung: Pfeiltasten, Enter, Escape, Leeren-Knopf.
+  let suggestCount = 0;
+  function suggest({ input, list, clear = null, load, render, choose, minLength = 2, empty = "Keine Treffer.", onError = null }) {
+    const id = `suggest-${++suggestCount}`;
+    let items = [];
+    let active = -1;
+    let timer = null;
+    let request = 0;
+    list.id ||= id;
+    list.classList.add("suggest-list");
+    list.setAttribute("role", "listbox");
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-autocomplete", "list");
+    input.setAttribute("aria-controls", list.id);
+    input.setAttribute("aria-expanded", "false");
+
+    const options = () => [...list.querySelectorAll("[data-suggest-index]")];
+    const open = (value) => {
+      list.hidden = !value;
+      input.setAttribute("aria-expanded", String(value));
+      if (!value) {
+        active = -1;
+        input.removeAttribute("aria-activedescendant");
+      }
+    };
+    const highlight = (index) => {
+      const all = options();
+      if (!all.length) return;
+      active = (index + all.length) % all.length;
+      all.forEach((option, position) => option.setAttribute("aria-selected", String(position === active)));
+      input.setAttribute("aria-activedescendant", all[active].id);
+      all[active].scrollIntoView({ block: "nearest" });
+    };
+    const reset = () => {
+      clearTimeout(timer);
+      request++;
+      input.value = "";
+      if (clear) clear.hidden = true;
+      open(false);
+    };
+    const pick = (index) => {
+      const item = items[index];
+      if (!item) return;
+      reset();
+      choose(item);
+    };
+
+    input.addEventListener("input", () => {
+      if (clear) clear.hidden = input.value === "";
+      clearTimeout(timer);
+      const query = input.value.trim();
+      if (query.length < minLength) {
+        open(false);
+        return;
+      }
+      timer = setTimeout(async () => {
+        const current = ++request;
+        try {
+          const result = await load(query);
+          if (current !== request) return; // veraltete Antwort verwerfen
+          items = result;
+          list.innerHTML = items.length
+            ? items.map((item, index) => `<button type="button" role="option" id="${list.id}-${index}" aria-selected="false" tabindex="-1" data-suggest-index="${index}">${render(item)}</button>`).join("")
+            : `<p class="muted">${esc(empty)}</p>`;
+          open(true);
+          active = -1;
+        } catch (exception) {
+          if (onError) onError(exception);
+        }
+      }, 250);
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        if (list.hidden) return;
+        event.preventDefault();
+        highlight(active + (event.key === "ArrowDown" ? 1 : -1));
+      } else if (event.key === "Enter" && !list.hidden && active >= 0) {
+        event.preventDefault();
+        pick(active);
+      } else if (event.key === "Escape" && !list.hidden) {
+        event.stopPropagation();
+        open(false);
+      }
+    });
+    list.addEventListener("mousedown", (event) => event.preventDefault()); // Fokus bleibt im Suchfeld
+    list.addEventListener("click", (event) => {
+      const option = event.target.closest("[data-suggest-index]");
+      if (option) pick(Number(option.dataset.suggestIndex));
+    });
+    input.addEventListener("blur", () => setTimeout(() => open(false), 150));
+    clear?.addEventListener("click", () => {
+      reset();
+      input.focus();
+    });
+    return { reset };
+  }
+
+  globalThis.Calight = Object.freeze({ esc, api, format, exact, collator, normalize, matches, notify, bindProjectToCustomer, createDialog, suggest });
 })();

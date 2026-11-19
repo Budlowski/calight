@@ -95,7 +95,7 @@
     Calight.bindProjectToCustomer(form);
 
     const dialog = Calight.createDialog({
-      title: "Neues Angebot",
+      title: "Angebot anlegen",
       form,
       submitLabel: "Entwurf anlegen",
       discardMessage: "Den begonnenen Angebotsentwurf verwerfen?",

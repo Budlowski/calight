@@ -56,7 +56,7 @@
     const button=event.currentTarget;
     const form=document.createElement('form');
     form.innerHTML='<label>Bezeichnung des Nachtrags<input name="title" maxlength="200" required placeholder="z. B. Zusätzliche Leitungswege"></label><p class="notice">Der neue Nachtrag wird als bearbeitbarer Entwurf mit eigener Nachtragsnummer und Revisionshistorie angelegt.</p>';
-    const confirmed=await CalightModal.open({title:'Nachtrag erstellen',content:form,actions:[{label:'Abbrechen',value:false},{label:'Nachtrag erstellen',value:true,primary:true,validate:true}],initialFocus:'[name="title"]'});
+    const confirmed=await CalightModal.open({title:'Nachtrag anlegen',content:form,actions:[{label:'Abbrechen',value:false},{label:'Nachtrag erstellen',value:true,primary:true,validate:true}],initialFocus:'[name="title"]'});
     if(!confirmed)return;
     button.disabled=true;
     try{

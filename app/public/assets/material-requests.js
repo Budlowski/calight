@@ -33,7 +33,7 @@
     Calight.createDialog({
       title: request ? "Materialanforderung bearbeiten" : "Material anfordern",
       form,
-      submitLabel: request ? "Änderungen speichern" : "Anforderung senden",
+      submitLabel: request ? "Speichern" : "Anforderung senden",
       discardMessage: "Die begonnene Materialanforderung verwerfen?",
       initialFocus: '[name="description"]',
       submit: async () => {

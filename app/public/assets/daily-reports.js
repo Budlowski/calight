@@ -116,7 +116,7 @@
       .join("");
     list.start();
     if (root.dataset.initialOrder) {
-      // Der Einstieg „Bericht erstellen“ öffnet den Dialog nur einmal, nicht erneut über die History.
+      // Der Einstieg „Bericht anlegen“ öffnet den Dialog nur einmal, nicht erneut über die History.
       const url = new URL(location.href);
       url.searchParams.delete("create_for");
       history.replaceState(null, "", url.pathname + url.search);

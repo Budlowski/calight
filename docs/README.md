@@ -166,7 +166,7 @@ docker compose exec calight php bin/console migrate
 docker compose exec calight php bin/console user:create admin "Administrator"
 ```
 
-Die Anwendung ist anschließend standardmäßig unter `http://localhost:8085` erreichbar. Anwendungsdaten liegen im benannten Docker-Volume `calight-data`. Vor Updates sollte dieses Volume gesichert werden. Wer stattdessen ein Host-Verzeichnis einbindet, muss es **außerhalb des Projektordners** anlegen; Aufbau, Prüfung (`php bin/console storage:check`) und Umzug beschreibt [storage.md](storage.md).
+Die Anwendung ist anschließend standardmäßig unter `http://localhost:8085` erreichbar. Anwendungsdaten liegen im benannten Docker-Volume `calight-data`. Vor Updates sollte dieses Volume gesichert werden. Wer stattdessen ein Host-Verzeichnis einbindet, muss es **außerhalb des Projektordners** anlegen; Aufbau, Prüfung (`php bin/console storage:check`) und Umzug beschreibt [storage.md](storage.md). Regeln für eine einheitliche Oberfläche stehen in [ui-guidelines.md](ui-guidelines.md).
 
 Für den Betrieb hinter HTTPS muss `APP_SECURE_COOKIES=1` in der lokalen, von Git ignorierten `.env` gesetzt werden. Dort kann bei Bedarf auch der Host-Port über `CALIGHT_PORT` geändert werden. Zugangsdaten gehören nicht in Compose-Dateien oder das Git-Repository.
 

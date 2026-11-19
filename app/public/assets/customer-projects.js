@@ -179,7 +179,7 @@
     });
 
     Calight.createDialog({
-      title: "Neuer Kunde",
+      title: "Kunde anlegen",
       form,
       submitLabel: "Kunde anlegen",
       discardMessage: "Den begonnenen Kunden verwerfen?",
@@ -231,7 +231,7 @@
     });
 
     Calight.createDialog({
-      title: "Neues Projekt",
+      title: "Projekt anlegen",
       form,
       submitLabel: "Projekt anlegen",
       discardMessage: "Das begonnene Projekt verwerfen?",

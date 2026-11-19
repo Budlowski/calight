@@ -359,6 +359,8 @@ Vor jeder Migration sind Upgrade-Pfad, Datenübernahme, Downtime/Locking, eindeu
 
 Vor einer neuen UI-Komponente vorhandene Helfer und CSS-Klassen durchsuchen und wiederverwenden.
 
+Verbindliche Regeln für Buttons, Menüs, Suchfelder, Formulare, Status, Dialoge und responsive Darstellung stehen in [`docs/ui-guidelines.md`](docs/ui-guidelines.md). Stammdatensuche mit Vorschlägen nutzt `Calight.suggest`.
+
 ### Übersichts- und Detailseiten
 
 Der aktuelle Standard aus Phase 3.2.1.2 gilt für Kunden, Projekte, Angebote, Aufträge und Bautagesberichte:

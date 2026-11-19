@@ -2,7 +2,7 @@
 <div id="settings-app" data-csrf="<?= $escape($csrfToken) ?>">
     <div class="page-heading settings-heading">
         <div><h1>Einstellungen</h1><p class="muted">Firmendaten und Darstellung der Angebotsdokumente zentral verwalten.</p></div>
-        <button class="button" type="submit" form="settings-form" data-icon="save">Einstellungen speichern</button>
+        <button class="button" type="submit" form="settings-form" data-icon="save">Speichern</button>
     </div>
     <div id="settings-message" class="notice" role="status" hidden></div>
 

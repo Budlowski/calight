@@ -36,8 +36,6 @@
   let proofDirty = false;
   let billingDirty = false;
   let busy = false;
-  let catalogTimer = null;
-  let catalogItems = [];
 
   const editableProof = () => report?.status === "draft" && report.canEdit;
   const editableBilling = () => report?.canProcess && report.status === "submitted";
@@ -285,46 +283,20 @@
   });
 
   // Stammartikel suchen und als Position übernehmen (nur Verkaufspreise).
-  const catalogClear = root.querySelector("[data-catalog-clear]");
-  function resetCatalog() {
-    clearTimeout(catalogTimer);
-    catalogSearch.value = "";
-    catalogResults.hidden = true;
-    catalogClear.hidden = true;
-  }
-  catalogClear.addEventListener("click", () => {
-    resetCatalog();
-    catalogSearch.focus();
-  });
-  catalogSearch.addEventListener("input", () => {
-    catalogClear.hidden = catalogSearch.value === "";
-    clearTimeout(catalogTimer);
-    catalogTimer = setTimeout(async () => {
-      const query = catalogSearch.value.trim();
-      if (query.length < 2) {
-        catalogResults.hidden = true;
-        return;
-      }
-      try {
-        catalogItems = await api(`/api/work-reports/catalog?q=${encodeURIComponent(query)}`);
-        catalogResults.innerHTML = catalogItems.length
-          ? catalogItems.map((item, index) => `<button type="button" role="option" data-catalog-index="${index}"><span>${esc(item.name)}${item.articleNumber ? ` <small class="muted">${esc(item.articleNumber)}</small>` : ""}</span><span class="work-report-catalog-price">${format.money(item.salesPrice)} / ${esc(item.unit)}</span></button>`).join("")
-          : '<p class="muted">Keine Treffer.</p>';
-        catalogResults.hidden = false;
-      } catch (exception) {
-        notifyBilling(exception.message);
-      }
-    }, 250);
-  });
-  catalogResults.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-catalog-index]");
-    if (!button) return;
-    const item = catalogItems[Number(button.dataset.catalogIndex)];
-    billing.push({ type: item.type, description: item.name, quantity: "1", unit: item.unit, unitPrice: item.salesPrice, costItemId: item.id });
-    resetCatalog();
-    setDirty("billing", true);
-    renderBilling();
-    billingBox.querySelector(".work-report-billing-row:last-child [data-billing-field='quantity']")?.focus();
+  // Gemeinsame Stammdatensuche (Calight.suggest): Pfeiltasten, Enter, Escape, Leeren.
+  Calight.suggest({
+    input: catalogSearch,
+    list: catalogResults,
+    clear: root.querySelector("[data-catalog-clear]"),
+    load: (query) => api(`/api/work-reports/catalog?q=${encodeURIComponent(query)}`),
+    render: (item) => `<span>${esc(item.name)}${item.articleNumber ? ` <small class="muted">${esc(item.articleNumber)}</small>` : ""}</span><span class="work-report-catalog-price">${format.money(item.salesPrice)} / ${esc(item.unit)}</span>`,
+    onError: (exception) => notifyBilling(exception.message),
+    choose: (item) => {
+      billing.push({ type: item.type, description: item.name, quantity: "1", unit: item.unit, unitPrice: item.salesPrice, costItemId: item.id });
+      setDirty("billing", true);
+      renderBilling();
+      billingBox.querySelector(".work-report-billing-row:last-child [data-billing-field='quantity']")?.focus();
+    },
   });
 
   const billingPayload = () => ({

@@ -1513,7 +1513,7 @@
     }
   }
   async function createOrder(){
-    if(!(await CalightModal.confirm({title:"Auftrag erstellen",content:"Aus genau dieser angenommenen Angebotsrevision wird eine unveränderliche Auftragsgrundlage erstellt.",confirmLabel:"Auftrag erstellen"})))return;
+    if(!(await CalightModal.confirm({title:"Auftrag anlegen",content:"Aus genau dieser angenommenen Angebotsrevision wird eine unveränderliche Auftragsgrundlage erstellt.",confirmLabel:"Auftrag erstellen"})))return;
     const response=await fetch(`/api/offers/${encodeURIComponent(root.dataset.offerId)}/order`,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":root.dataset.csrf},body:"{}"}),result=await responsePayload(response);
     if(!response.ok){status.textContent=(result.details||[]).join(" ")||result.error||"Auftrag konnte nicht erstellt werden.";return;}
     location.assign(`/orders/${encodeURIComponent((result.data??result).id)}`);

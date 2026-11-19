@@ -82,8 +82,48 @@
     document.addEventListener('click', event => document.querySelectorAll('details.context-menu[open]').forEach(menu => {
         if (!menu.contains(event.target) || event.target.closest('.context-menu-panel a, .context-menu-panel button')) menu.removeAttribute('open');
     }));
+    // Menüs bleiben im Bildschirm: Panel bei Platzmangel linksbündig statt rechtsbündig,
+    // bei zu wenig Höhe scrollbar. Zustand wird für Screenreader über aria-expanded gemeldet.
+    const menuItems = menu => [...menu.querySelectorAll('.context-menu-panel > a, .context-menu-panel > button:not(:disabled)')];
+    document.addEventListener('toggle', event => {
+        const menu = event.target;
+        if (!(menu instanceof HTMLDetailsElement) || !menu.classList.contains('context-menu')) return;
+        menu.querySelector(':scope > summary')?.setAttribute('aria-expanded', String(menu.open));
+        const panel = menu.querySelector('.context-menu-panel');
+        if (!menu.open || !panel) return;
+        // Ausrichtung nach Lage des Menüknopfs: linke Bildschirmhälfte → linksbündig öffnen.
+        const summaryRect = menu.querySelector(':scope > summary')?.getBoundingClientRect();
+        panel.classList.toggle('context-menu-panel-start', !!summaryRect && summaryRect.left + summaryRect.width / 2 < innerWidth / 2);
+        panel.style.maxHeight = '';
+        const rect = panel.getBoundingClientRect();
+        const available = innerHeight - rect.top - 8;
+        if (rect.height > available && available > 120) panel.style.maxHeight = `${Math.floor(available)}px`;
+    }, true);
+    document.querySelectorAll('details.context-menu > summary').forEach(summary => summary.setAttribute('aria-expanded', 'false'));
+    new MutationObserver(() => document.querySelectorAll('details.context-menu > summary:not([aria-expanded])').forEach(summary => summary.setAttribute('aria-expanded', 'false')))
+        .observe(document.body, {childList: true, subtree: true});
+
+    // Tastatur: Pfeiltasten bewegen sich durch die Einträge, Escape schließt und
+    // setzt den Fokus zurück auf den Menüknopf, Tab verlässt das Menü.
     document.addEventListener('keydown', event => {
-        if (event.key === 'Escape') document.querySelectorAll('details.context-menu[open]').forEach(menu => menu.removeAttribute('open'));
+        const menu = event.target instanceof Element ? event.target.closest('details.context-menu') : null;
+        if (event.key === 'Escape') {
+            const open = [...document.querySelectorAll('details.context-menu[open]')];
+            open.forEach(item => item.removeAttribute('open'));
+            if (menu && open.includes(menu)) menu.querySelector(':scope > summary')?.focus();
+            return;
+        }
+        if (!menu) return;
+        const items = menuItems(menu);
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            if (!menu.open) menu.open = true;
+            const index = items.indexOf(document.activeElement);
+            const next = event.key === 'ArrowDown' ? (index + 1) % items.length : (index <= 0 ? items.length - 1 : index - 1);
+            items[next]?.focus();
+        } else if (event.key === 'Tab' && menu.open && items.includes(document.activeElement)) {
+            menu.removeAttribute('open');
+        }
     });
 
     // Alle destruktiven Aktionen laufen zentral durch dieselbe Sicherheitsabfrage.

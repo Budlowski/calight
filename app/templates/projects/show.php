@@ -46,7 +46,7 @@ $projectUrl = '/projects/' . rawurlencode($project['id']);
     <section class="card">
         <div class="section-heading">
             <div><h2>Angebote</h2><span class="muted"><?= count($offers) ?> Einträge</span></div>
-            <?php if ($canWriteOffers && $project['customer_id']): ?><button class="button" type="button" data-new-offer data-icon="plus">Neues Angebot</button><?php endif; ?>
+            <?php if ($canWriteOffers && $project['customer_id']): ?><button class="button" type="button" data-new-offer data-icon="plus">Angebot anlegen</button><?php endif; ?>
         </div>
         <?php if ($canWriteOffers && !$project['customer_id']): ?>
             <p class="notice">Für Angebote muss dem Projekt zuerst ein Kunde zugeordnet werden.<?php if ($canWriteProject): ?> <a href="<?= $escape($projectUrl) ?>/edit">Projekt bearbeiten</a><?php endif; ?></p>

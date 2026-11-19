@@ -9,7 +9,7 @@
   root.querySelector("[data-new-offer]")?.addEventListener("click", () => {
     const form = template.content.firstElementChild.cloneNode(true);
     Calight.createDialog({
-      title: "Neues Angebot",
+      title: "Angebot anlegen",
       form,
       submitLabel: "Entwurf anlegen",
       discardMessage: "Den begonnenen Angebotsentwurf verwerfen?",

@@ -23,6 +23,14 @@
     --indent: 14px;
     --tree-line: #a9bbc8;
     --sidebar-width: 218px;
+    --focus-ring: #78afd4;
+    /* Statusfarben: wenige, wiederkehrende Bedeutungen (siehe docs/ui-guidelines.md). */
+    --status-neutral-bg: #edf1f4; --status-neutral-fg: #52616b;
+    --status-info-bg: #e2edf7;    --status-info-fg: #22577c;
+    --status-warning-bg: #fff1c7; --status-warning-fg: #6b5000;
+    --status-success-bg: #e2f2e6; --status-success-fg: #1e5b31;
+    --status-special-bg: #f3ecfa; --status-special-fg: #5b3a7a;
+    --status-muted-bg: #eceeef;   --status-muted-fg: #5d646a;
 }
 
 * { box-sizing: border-box; }
@@ -1128,7 +1136,6 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 @media (max-width: 800px) {
     #work-report-detail .order-heading-main { flex:0 0 auto; }
     .work-report-header-actions .order-detail-actions, .work-report-billing-bar { justify-content:flex-start; }
-    #work-report-detail .context-menu-panel { left:0; right:auto; max-width:calc(100vw - 32px); }
     .work-report-billing .step-section-heading { flex-wrap:wrap; }
     .work-report-billing .step-section-heading > [data-billing-tools] { width:100%; justify-content:flex-start; flex-wrap:wrap; margin-left:0; }
 }
@@ -1201,4 +1208,57 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 @media (max-width: 480px) {
     .signature-pad { height: 180px; }
     .sign-actions .button { width: 100%; justify-content: center; }
+}
+
+
+/* ==========================================================================
+   Gemeinsame UI-Muster (projektweit, siehe docs/ui-guidelines.md)
+   Steht bewusst am Dateiende und vereinheitlicht ältere Einzelregeln.
+   ========================================================================== */
+
+/* Buttons: Beschriftungen brechen nie um; bei Platzmangel bricht die Leiste. */
+.button, .table-action, .mini-button { white-space: nowrap; }
+.button { flex-shrink: 0; justify-content: center; }
+.form-actions, .order-detail-actions, .step-section-actions, .master-exchange-actions, .inline-toolbar { flex-wrap: wrap; }
+
+/* Einheitliche, sichtbare Tastaturmarkierung. */
+.button:focus-visible, a:focus-visible, summary:focus-visible, .context-menu-panel > a:focus-visible, .context-menu-panel > button:focus-visible {
+    outline: 2px solid var(--focus-ring); outline-offset: 2px;
+}
+.context-menu-panel > a:focus-visible, .context-menu-panel > button:focus-visible { outline-offset: -2px; background: #edf4f8; }
+
+/* Deaktivierte und schreibgeschützte Felder sehen überall gleich aus. */
+input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[readonly] {
+    border-color: #d3d9de; background: #f4f6f8; color: #3c4750; cursor: default; opacity: 1;
+}
+
+/* Aktionsmenüs: nie über den Bildschirmrand hinaus. */
+.context-menu-panel { max-width: calc(100vw - 24px); overflow-y: auto; }
+.context-menu-panel.context-menu-panel-start { right: auto; left: 0; }
+.context-menu > summary { cursor: pointer; }
+
+/* Status-Badges: gemeinsame Farbpalette. */
+.status-draft, .status-open, .status-measurement-draft, .status-work-draft, .work-status-open { background: var(--status-neutral-bg); color: var(--status-neutral-fg); }
+.status-completed, .status-submitted, .status-work-submitted { background: var(--status-info-bg); color: var(--status-info-fg); }
+.status-in_progress, .status-material-open, .work-status-in_progress { background: var(--status-warning-bg); color: var(--status-warning-fg); }
+.status-active, .status-commissioned, .status-material-done, .status-measurement-completed, .status-work-processed, .work-status-done { background: var(--status-success-bg); color: var(--status-success-fg); }
+.status-work-confirmed { background: var(--status-special-bg); color: var(--status-special-fg); }
+.status-archived, .status-rejected { background: var(--status-muted-bg); color: var(--status-muted-fg); }
+
+/* Suchvorschläge (gemeinsam für Stammdatensuche, z. B. Rapport-Artikelsuche). */
+.suggest-list [aria-selected="true"] { background: #e6f1f8; box-shadow: inset 3px 0 0 var(--primary); }
+
+/* Touch: größere Bedienziele auf Tablet und Smartphone. */
+@media (max-width: 1024px) {
+    .button { min-height: 40px; }
+    .button-small { min-height: 34px; }
+    .icon-button { width: 36px; height: 36px; flex-basis: 36px; }
+    .context-menu-panel > a, .context-menu-panel > button { min-height: 42px; }
+    input, select { min-height: 40px; }
+}
+@media (max-width: 800px) {
+    input, select, textarea { font-size: 16px; } /* verhindert Zoom bei Fokus auf iOS */
+    /* Listenfilter: Suche über die volle Breite, Filter zweispaltig statt endlos untereinander. */
+    .overview-toolbar > select, .overview-toolbar > input[type="date"] { min-width: 0; flex: 1 1 calc(50% - var(--space-2)); }
+    .master-exchange-actions { justify-content: flex-start; }
 }
