@@ -38,83 +38,70 @@
   }
 
   /**
-   * Lieferantenauswahl mit Schnellanlage im selben Dialog: Die Suche bleibt erhalten; „Neuen
-   * Lieferanten anlegen“ öffnet einen kleinen Bereich (Name Pflicht, Rest optional). Nach dem
+   * Lieferantenauswahl mit Schnellanlage: Die Suche bleibt erhalten; „Neuen Lieferanten anlegen“
+   * öffnet einen kleinen Dialog über dem aktuellen (Name Pflicht, Rest optional). Nach dem
    * Speichern wird der neue Lieferant ausgewählt. Vorhandene Lieferanten werden nie geändert.
    */
   function supplierPicker(select, suppliers, { onCreated = null } = {}) {
     const picker = Calight.searchableSelect(select, { placeholder: "Lieferantennummer oder Name eingeben …" });
     const label = select.closest("label");
-    const panel = document.createElement("div");
-    panel.className = "purchase-supplier-create";
-    panel.innerHTML = `
-      <button class="button button-light button-small" type="button" data-supplier-toggle data-icon="plus" aria-expanded="false">Neuen Lieferanten anlegen</button>
-      <fieldset class="purchase-supplier-fields" data-supplier-fields hidden>
-        <legend>Neuer Lieferant</legend>
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "button button-light button-small purchase-supplier-create";
+    toggle.dataset.icon = "plus";
+    toggle.textContent = "Neuen Lieferanten anlegen";
+    // Im Label unter dem Suchfeld, damit das Formularraster unverändert bleibt.
+    if (label) label.append(toggle);
+    else select.after(toggle);
+    toggle.addEventListener("click", () => {
+      const form = document.createElement("form");
+      form.className = "form-stack";
+      form.noValidate = true;
+      const typed = label?.querySelector(".suggest-select input")?.value.trim() || "";
+      form.innerHTML = `
         <div class="dialog-form-grid">
-          <label class="span-all"><span class="field-label">Name <span aria-hidden="true">*</span></span><input data-supplier-field="name" maxlength="200" autocomplete="off"></label>
-          <label><span class="field-label">Straße</span><input data-supplier-field="street" maxlength="200" autocomplete="off"></label>
-          <label><span class="field-label">Hausnummer</span><input data-supplier-field="houseNumber" maxlength="30" autocomplete="off"></label>
-          <label><span class="field-label">PLZ</span><input data-supplier-field="postalCode" maxlength="20" autocomplete="off"></label>
-          <label><span class="field-label">Ort</span><input data-supplier-field="city" maxlength="120" autocomplete="off"></label>
-          <label><span class="field-label">Land</span><input data-supplier-field="country" maxlength="100" autocomplete="off"></label>
-          <label><span class="field-label">Unsere Kundennummer</span><input data-supplier-field="customerNumber" maxlength="100" autocomplete="off"></label>
-          <label class="span-all"><span class="field-label">Kontakt (optional)</span><input data-supplier-field="contact" maxlength="2000" autocomplete="off" placeholder="Telefon, E-Mail, Ansprechpartner"></label>
+          <label class="span-all"><span class="field-label">Name <span aria-hidden="true">*</span></span><input name="name" maxlength="200" required autocomplete="off" value="${esc(select.value ? "" : typed)}"></label>
+          <label><span class="field-label">Straße</span><input name="street" maxlength="200" autocomplete="off"></label>
+          <label><span class="field-label">Hausnummer</span><input name="houseNumber" maxlength="30" autocomplete="off"></label>
+          <label><span class="field-label">PLZ</span><input name="postalCode" maxlength="20" autocomplete="off"></label>
+          <label><span class="field-label">Ort</span><input name="city" maxlength="120" autocomplete="off"></label>
+          <label><span class="field-label">Land</span><input name="country" maxlength="100" autocomplete="off"></label>
+          <label><span class="field-label">Unsere Kundennummer</span><input name="customerNumber" maxlength="100" autocomplete="off"></label>
+          <label class="span-all"><span class="field-label">Kontakt (optional)</span><input name="contact" maxlength="2000" autocomplete="off" placeholder="Telefon, E-Mail, Ansprechpartner"></label>
         </div>
-        <p class="field-error" data-supplier-error hidden></p>
-        <div class="form-actions">
-          <button class="button button-light button-small" type="button" data-supplier-cancel>Abbrechen</button>
-          <button class="button button-small" type="button" data-supplier-save data-icon="save">Lieferant speichern</button>
-        </div>
-      </fieldset>`;
-    (label || select).after(panel);
-    const fields = panel.querySelector("[data-supplier-fields]");
-    const toggle = panel.querySelector("[data-supplier-toggle]");
-    const error = panel.querySelector("[data-supplier-error]");
-    const show = (open) => {
-      fields.hidden = !open;
-      toggle.hidden = open;
-      toggle.setAttribute("aria-expanded", String(open));
-      error.hidden = true;
-      if (open) {
-        // Bereits getippten Suchtext als Namen vorschlagen.
-        const typed = label?.querySelector(".suggest-select input")?.value.trim() || "";
-        const name = panel.querySelector('[data-supplier-field="name"]');
-        if (!name.value && !select.value) name.value = typed;
-        name.focus();
-      } else {
-        toggle.focus();
-      }
-    };
-    toggle.addEventListener("click", () => show(true));
-    panel.querySelector("[data-supplier-cancel]").addEventListener("click", () => show(false));
-    panel.querySelector("[data-supplier-save]").addEventListener("click", async (event) => {
-      const button = event.currentTarget;
-      const body = Object.fromEntries([...panel.querySelectorAll("[data-supplier-field]")].map((input) => [input.dataset.supplierField, input.value.trim()]));
-      if (!body.name) {
-        error.textContent = "Bitte einen Namen angeben.";
-        error.hidden = false;
-        panel.querySelector('[data-supplier-field="name"]').focus();
-        return;
-      }
-      button.disabled = true;
-      try {
-        const supplier = await api("/api/purchase-orders/suppliers", { method: "POST", body });
-        const entry = { id: supplier.id, number: supplier.supplierNumber, name: supplier.name };
-        suppliers.push(entry);
-        select.add(new Option(supplierLabel(entry), entry.id));
-        select.value = entry.id;
-        select.dispatchEvent(new Event("change", { bubbles: true }));
-        picker?.refresh();
-        for (const input of panel.querySelectorAll("[data-supplier-field]")) input.value = "";
-        show(false);
-        onCreated?.(entry);
-      } catch (exception) {
-        error.textContent = exception.message;
-        error.hidden = false;
-      } finally {
-        button.disabled = false;
-      }
+        <p class="field-error" data-supplier-error hidden></p>`;
+      const error = form.querySelector("[data-supplier-error]");
+      CalightModal.openOver({
+        title: "Lieferant anlegen",
+        content: form,
+        initialFocus: '[name="name"]',
+        actions: [
+          { label: "Abbrechen", value: null },
+          {
+            label: "Anlegen",
+            primary: true,
+            validate: true,
+            onClick: async () => {
+              const body = Object.fromEntries([...new FormData(form).entries()].map(([key, value]) => [key, String(value).trim()]));
+              try {
+                const supplier = await api("/api/purchase-orders/suppliers", { method: "POST", body });
+                const entry = { id: supplier.id, number: supplier.supplierNumber, name: supplier.name };
+                suppliers.push(entry);
+                select.add(new Option(supplierLabel(entry), entry.id));
+                select.value = entry.id;
+                select.dispatchEvent(new Event("change", { bubbles: true }));
+                picker?.refresh();
+                onCreated?.(entry);
+                return true;
+              } catch (exception) {
+                error.textContent = exception.message;
+                error.hidden = false;
+                return false;
+              }
+            },
+          },
+        ],
+      });
     });
     return picker;
   }

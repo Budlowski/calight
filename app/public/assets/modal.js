@@ -186,5 +186,65 @@
     }
   });
 
-  globalThis.CalightModal = Object.freeze({ open, confirm, close });
+  /**
+   * Kleiner Dialog über einem bereits offenen Dialog (z. B. „Lieferant anlegen“ aus dem
+   * Bestelldialog). Eigenes <dialog>-Element im Top-Layer; der darunterliegende Dialog bleibt
+   * mit allen Eingaben erhalten. Aufbau und Bedienung wie open(): Escape/× schließt,
+   * Aktionen mit onClick bleiben bei Rückgabe false offen.
+   */
+  function openOver({ title: heading, content: body, actions = [{ label: "Schließen", value: null }], initialFocus = null }) {
+    const layer = document.createElement("dialog");
+    layer.className = "global-modal global-modal-stacked";
+    layer.innerHTML = `<section class="global-modal-panel" role="document"><header><h2></h2><button class="icon-button" type="button" aria-label="Schließen">×</button></header><div class="global-modal-content"></div><footer></footer></section>`;
+    layer.querySelector("h2").textContent = heading;
+    layer.querySelector(".global-modal-content").append(body);
+    const returnFocus = document.activeElement;
+    document.body.append(layer);
+    return new Promise((resolve) => {
+      const finish = (value) => {
+        if (!layer.open) return;
+        layer.close();
+        layer.remove();
+        returnFocus?.focus?.();
+        resolve(value);
+      };
+      layer.querySelector("header button").addEventListener("click", () => finish(null));
+      layer.addEventListener("cancel", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        finish(null);
+      });
+      layer.addEventListener("submit", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        layer.querySelector("[data-modal-primary]")?.click();
+      });
+      const footer = layer.querySelector("footer");
+      for (const action of actions) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = action.primary ? "button" : "button button-light";
+        if (action.primary) button.dataset.modalPrimary = "";
+        button.textContent = action.label;
+        button.addEventListener("click", async () => {
+          const form = layer.querySelector("form");
+          if (action.validate && form && !form.reportValidity()) return;
+          if (action.onClick) {
+            button.disabled = true;
+            try {
+              if ((await action.onClick({ dialog: layer, form, close: finish })) === false) return;
+            } finally {
+              button.disabled = false;
+            }
+          }
+          finish(action.value ?? null);
+        });
+        footer.append(button);
+      }
+      layer.showModal();
+      requestAnimationFrame(() => (typeof initialFocus === "string" ? layer.querySelector(initialFocus) : initialFocus)?.focus());
+    });
+  }
+
+  globalThis.CalightModal = Object.freeze({ open, confirm, close, openOver });
 })();

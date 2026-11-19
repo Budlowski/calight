@@ -89,6 +89,8 @@ Nur `CalightModal` bzw. `Calight.createDialog`. Aufbau:
 - Fußzeile rechts: „Abbrechen“ links von der Primäraktion.
 - Escape schließt. Bei ungespeicherten Eingaben wird nachgefragt.
 - Kritische Aktionen nutzen `CalightModal.confirm` mit eindeutigem Text.
+- Ein kleiner Dialog über einem offenen Dialog (z. B. „Lieferant anlegen“ im Bestelldialog) nutzt `CalightModal.openOver`; der untere Dialog behält seine Eingaben.
+- Aktionsmenüs in scrollenden Tabellen öffnen am Bildschirm ausgerichtet (`ui.js`), damit der Tabellencontainer sie nicht abschneidet; beim Scrollen schließen sie.
 
 ## Navigation
 

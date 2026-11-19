@@ -95,6 +95,23 @@
         const summaryRect = menu.querySelector(':scope > summary')?.getBoundingClientRect();
         panel.classList.toggle('context-menu-panel-start', !!summaryRect && summaryRect.left + summaryRect.width / 2 < innerWidth / 2);
         panel.style.maxHeight = '';
+        // In scrollenden Tabellen würde der Container das Menü abschneiden: dann am Bildschirm
+        // ausrichten (position: fixed) und beim Scrollen schließen.
+        const clipped = !!summaryRect && !!menu.closest('.overview-table-wrap, .table-wrap, .measurement-table-wrap');
+        panel.classList.toggle('context-menu-panel-fixed', clipped);
+        if (clipped) {
+            panel.style.top = `${Math.round(summaryRect.bottom + 4)}px`;
+            panel.style.left = panel.classList.contains('context-menu-panel-start') ? `${Math.round(summaryRect.left)}px` : '';
+            panel.style.right = panel.classList.contains('context-menu-panel-start') ? '' : `${Math.round(innerWidth - summaryRect.right)}px`;
+            // Unten zu wenig Platz: oberhalb des Knopfs öffnen.
+            const height = panel.getBoundingClientRect().height;
+            if (summaryRect.bottom + 4 + height > innerHeight - 8 && summaryRect.top - 4 - height > 8) panel.style.top = `${Math.round(summaryRect.top - 4 - height)}px`;
+            const close = () => { menu.removeAttribute('open'); removeEventListener('scroll', close, true); removeEventListener('resize', close); };
+            addEventListener('scroll', close, { capture: true, once: true });
+            addEventListener('resize', close, { once: true });
+        } else {
+            panel.style.top = panel.style.left = panel.style.right = '';
+        }
         const rect = panel.getBoundingClientRect();
         const available = innerHeight - rect.top - 8;
         if (rect.height > available && available > 120) panel.style.maxHeight = `${Math.floor(available)}px`;

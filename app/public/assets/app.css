@@ -1235,10 +1235,8 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .purchase-request-links { margin: 0; padding-top: var(--space-2); border-top: 1px solid var(--border); }
 .purchase-final-mode { display: grid; gap: 6px; margin: 0; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); }
 .purchase-final-mode .check-inline { font-weight: 400; }
-/* Lieferanten-Schnellanlage im Bestelldialog. */
-.purchase-supplier-create { display: grid; justify-items: start; gap: var(--space-2); margin-top: calc(var(--space-2) * -1); }
-.purchase-supplier-fields { display: grid; gap: var(--space-2); justify-self: stretch; margin: 0; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); background: #f6f8fa; }
-.purchase-supplier-fields legend { padding: 0 4px; font-weight: 700; }
+/* Lieferanten-Schnellanlage: Knopf unter der Lieferantenauswahl, Dialog darüber. */
+.purchase-supplier-create { justify-self: start; align-self: start; width: auto; margin-top: var(--space-1); }
 /* Übersicht: drei Status kompakt, stornierte Bestellungen deutlich gekennzeichnet. */
 .purchase-status-stack { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .purchase-confirmed-value { display: block; color: var(--muted); font-size: var(--font-small); white-space: nowrap; }
@@ -1286,6 +1284,7 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 /* Aktionsmenüs: nie über den Bildschirmrand hinaus. */
 .context-menu-panel { max-width: calc(100vw - 24px); overflow-y: auto; }
 .context-menu-panel.context-menu-panel-start { right: auto; left: 0; }
+.context-menu-panel.context-menu-panel-fixed { position: fixed; z-index: 60; }
 .context-menu > summary { cursor: pointer; }
 
 /* Status-Badges: gemeinsame Farbpalette. */
