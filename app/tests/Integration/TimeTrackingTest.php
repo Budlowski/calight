@@ -244,6 +244,106 @@ final class TimeTrackingTest extends TestCase
         });
     }
 
+    public function testCalendarSplitIsIdenticalInAllViewsReportAndOrderHours(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['service' => $service, 'tech' => $tech, 'office' => $office, 'employee' => $employee, 'order' => $order, 'pdo' => $pdo, 'customer' => $customer] = $env;
+            // Monatswechsel: 30.11. 22:00 – 01.12. 02:00, 60 min Reise → je 120 min, Reise 30/30.
+            $service->createEntry(['date' => '2026-11-30', 'start' => '22:00', 'end' => '02:00', 'travelMinutes' => '60', 'activity' => 'work', 'orderId' => $order], $tech);
+            $service->createEntry(['date' => '2026-12-01', 'start' => '08:00', 'end' => '12:00', 'activity' => 'work', 'orderId' => $order], $tech);
+            // Jahreswechsel: 31.12. 22:00 – 01.01. 02:30, 30 min Pause, 60 min Reise → 107/133.
+            $service->createEntry(['date' => '2026-12-31', 'start' => '22:00', 'end' => '02:30', 'breakMinutes' => '30', 'travelMinutes' => '60', 'activity' => 'work', 'orderId' => $order], $tech);
+            $total = 240 + 240 + 240;
+
+            $days = array_sum(array_map(fn (string $date): int => $service->day($employee, $date, $office)['totals']['netMinutes'], ['2026-11-30', '2026-12-01', '2026-12-31', '2027-01-01']));
+            $months = [['2026-11-01', '2026-11-30', 120], ['2026-12-01', '2026-12-31', 467], ['2027-01-01', '2027-01-31', 133]];
+            $monthSum = 0;
+            $reportSum = 0;
+            $orderSum = 0;
+            foreach ($months as [$from, $to, $expected]) {
+                $month = $service->range($employee, $from, $to, $office)['totals']['netMinutes'];
+                $report = $service->report($from, $to, $employee, null, $office);
+                $actual = $service->actualHoursForOrder($order, $office, $from, $to);
+                $this->assertSame($expected, $month, "Monat $from");
+                $this->assertSame($expected, $report['totals']['netMinutes'], "Büroauswertung $from nach Kalendertag");
+                $this->assertSame($expected, $report['byOrder'][0]['netMinutes']);
+                $this->assertSame($expected, $actual['totals']['netMinutes'], "Ist-Stunden $from nach Kalendertag");
+                $monthSum += $month;
+                $reportSum += $report['totals']['netMinutes'];
+                $orderSum += $actual['totals']['netMinutes'];
+            }
+            $weekSum = 0;
+            for ($monday = new \DateTimeImmutable('2026-11-30'); $monday->format('Y-m-d') <= '2026-12-28'; $monday = $monday->modify('+7 days')) {
+                $weekSum += $service->range($employee, $monday->format('Y-m-d'), $monday->modify('+6 days')->format('Y-m-d'), $office)['totals']['netMinutes'];
+            }
+            $this->assertSame([$total, $total, $total, $total, $total], [$days, $weekSum, $monthSum, $reportSum, $orderSum], 'Tag, Woche, Monat, Auswertung und Auftrag summieren gleich.');
+
+            $actual = $service->actualHoursForOrder($order, $office);
+            $this->assertSame($total, $actual['totals']['netMinutes'], 'Auftragssumme unabhängig von der Aufteilung.');
+            $this->assertSame(30 + 30 + 27 + 33, $actual['totals']['travelMinutes']);
+            $this->assertSame($total - 120, $actual['totals']['workMinutes']);
+            $this->assertSame('complete', $actual['status']);
+            $this->assertSame(['2026-11-30', '2026-12-01'], array_column(array_filter($actual['items'], static fn (array $item): bool => $item['sourceDate'] === '2026-11-30'), 'date'));
+            $this->assertSame('42.0000', $actual['items'][0]['hourlyCostRate'], 'Kostensatz-Snapshot mit costs.read.');
+            $this->assertSame($total, $actual['byEmployee'][0]['netMinutes']);
+            $december = $service->report('2026-12-01', '2026-12-31', null, null, $office);
+            $carried = array_values(array_filter($december['rows'], static fn (array $row): bool => $row['date'] === '2026-11-30'))[0];
+            $this->assertSame([240, 120], [$carried['netMinutes'], $carried['periodNetMinutes']], 'Zeile zeigt Block und Anteil im Zeitraum.');
+
+            // Bautagesbericht am 01.12. → ungeklärter Konflikt.
+            $dailyReport = Uuid::v4();
+            $pdo->prepare("INSERT INTO daily_reports (id, order_id, report_date, activities, created_by_user_id, created_at, updated_at) VALUES (:id, :order, '2026-12-01', 'Montage', :user, :now, :now)")
+                ->execute(['id' => $dailyReport, 'order' => $order, 'user' => $tech['id'], 'now' => '2026-12-02T08:00:00Z']);
+            $pdo->prepare("INSERT INTO daily_report_time_entries (id, report_id, employee_id, work_date, duration_hours, target_kind, hourly_cost_rate_snapshot, labor_cost, created_at, updated_at)
+                VALUES (:id, :report, :employee, '2026-12-01', '5.000', 'order', '40.0000', '0.00', :now, :now)")
+                ->execute(['id' => Uuid::v4(), 'report' => $dailyReport, 'employee' => $employee, 'now' => '2026-12-02T08:00:00Z']);
+            // Rapport ist nur Referenz.
+            $workReport = Uuid::v4();
+            $pdo->prepare("INSERT INTO work_reports (id, customer_id, order_id, work_date, description, created_by_user_id, created_at, updated_at) VALUES (:id, :customer, :order, '2026-12-01', 'Regie', :user, :now, :now)")
+                ->execute(['id' => $workReport, 'customer' => $customer, 'order' => $order, 'user' => $tech['id'], 'now' => '2026-12-01T18:00:00Z']);
+            $pdo->prepare("INSERT INTO work_report_labor (id, report_id, employee_id, worker_name, hours, sort_order) VALUES (:id, :report, :employee, 'Monteur', '8.000', 1)")
+                ->execute(['id' => Uuid::v4(), 'report' => $workReport, 'employee' => $employee]);
+
+            $actual = $service->actualHoursForOrder($order, $office);
+            $this->assertSame(['incomplete', false], [$actual['status'], $actual['complete']], 'Ungeklärter Konflikt → unvollständig.');
+            $this->assertSame($total - 240, $actual['totals']['netMinutes'], 'Konfliktstunden nicht in der Summe; Rapport zählt nie.');
+            $this->assertSame(['trackingMinutes' => 240, 'reportMinutes' => 300], $actual['unresolved']);
+            $this->assertSame('2026-12-01', $actual['conflicts'][0]['date']);
+            $this->assertSame([], $service->actualHoursForOrder($order, $office, '2027-01-01', '2027-01-31')['conflicts'], 'Konflikt außerhalb des Zeitraums.');
+            $december = $service->report('2026-12-01', '2026-12-31', null, null, $office);
+            $this->assertSame(467, $december['totals']['netMinutes'], 'Auswertung zeigt Zeiterfassung vollständig …');
+            $this->assertSame(240, $december['totals']['unresolvedMinutes'], '… und markiert den ungeklärten Anteil.');
+            $this->assertSame([false, false, 1], [$december['complete'], $december['byOrder'][0]['complete'], count($december['conflicts'])]);
+            $this->assertSame(300, $december['conflicts'][0]['reportMinutes']);
+            $this->assertSame('conflict', $service->day($employee, '2026-12-01', $office)['dailyReportTimes'][0]['status']);
+
+            // Quellenwahl setzen, wechseln, aufheben – jeweils nachvollziehbar.
+            $choose = fn (string $source): array => $service->chooseSource(['employeeId' => $employee, 'date' => '2026-12-01', 'orderId' => $order, 'source' => $source], $office);
+            $choose('time_tracking');
+            $this->assertSame([$total, 'complete'], [$service->actualHoursForOrder($order, $office)['totals']['netMinutes'], $service->actualHoursForOrder($order, $office)['status']]);
+            $choose('time_tracking'); // unverändert → kein weiteres Ereignis
+            $day = $choose('daily_report');
+            $actual = $service->actualHoursForOrder($order, $office);
+            $this->assertSame($total - 240 + 300, $actual['totals']['netMinutes'], 'Bautagesbericht ersetzt die Zeitblöcke, keine Addition.');
+            $reportItem = array_values(array_filter($actual['items'], static fn (array $item): bool => $item['source'] === 'daily_report'))[0];
+            $this->assertSame(['40.0000', true, 0], [$reportItem['hourlyCostRate'], $reportItem['chosen'], $reportItem['travelMinutes']]);
+            $this->assertTrue($reportItem['chosenByName'] !== null && $reportItem['chosenAt'] !== null);
+            $this->assertSame(240, $service->report('2026-12-01', '2026-12-31', null, null, $office)['totals']['dailyReportChosenMinutes']);
+            $this->assertSame('chosen_daily_report', $day['dailyReportTimes'][0]['status']);
+            $day = $choose('');
+            $this->assertSame('incomplete', $service->actualHoursForOrder($order, $office)['status'], 'Aufgehobene Wahl → wieder Konflikt.');
+            $this->assertSame([[null, 'time_tracking'], ['time_tracking', 'daily_report'], ['daily_report', null]],
+                array_map(static fn (array $event): array => [$event['previousSource'], $event['source']], $day['dailyReportTimes'][0]['history']), 'Verlauf der Quellenwahl.');
+            $this->assertSame(3, (int) $pdo->query('SELECT COUNT(*) FROM time_source_choice_events')->fetchColumn());
+
+            // Berechtigungen und Zeitraum.
+            $this->assertThrows(AccessDeniedException::class, fn () => $service->actualHoursForOrder($order, $tech));
+            $this->assertThrows(AccessDeniedException::class, fn () => $service->report('2026-12-01', '2026-12-31', null, null, $tech));
+            $this->assertThrows(DocumentValidationException::class, fn () => $service->actualHoursForOrder($order, $office, '2026-12-31', '2026-12-01'));
+            $this->assertTrue(!array_key_exists('expenses', $actual) && !array_key_exists('kilometers', $actual), 'Spesen und km werden nicht verrechnet.');
+        });
+    }
+
     public function testLegacyTravelEntriesAndDayAssignmentAreMigrated(): void
     {
         $tmp = sys_get_temp_dir() . '/calight-time-legacy-' . bin2hex(random_bytes(6));

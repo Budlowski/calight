@@ -158,92 +158,264 @@ final readonly class TimeTrackingService
         ];
     }
 
-    /** Büroauswertung: Zeitblöcke nach Zeitraum, Mitarbeiter und Auftrag (je Block am Beginntag). @param array<string,mixed> $actor @return array<string,mixed> */
+    /**
+     * Büroauswertung nach Zeitraum, Mitarbeiter und Auftrag.
+     *
+     * Summen nach Kalendertag wie Tag/Woche/Monat (split): Ein Block über Mitternacht zählt nur
+     * mit seinem Anteil im Zeitraum. Zeilen zeigen den vollständigen Block und den Anteil im
+     * Zeitraum. Stehen Zeitblöcke und Bautagesbericht für Mitarbeiter + Beginntag + Auftrag ohne
+     * Quellenwahl nebeneinander, bleiben die Minuten in der Zeiterfassungssumme, werden aber als
+     * „ungeklärt“ ausgewiesen (unresolvedMinutes, conflicts).
+     *
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
     public function report(string $from, string $to, ?string $employeeId, ?string $orderId, array $actor): array
     {
         $this->require($actor, 'timesheet.manage');
         [$from, $to] = $this->period($from, $to, 370);
-        $rows = $this->times->report($from, $to, $employeeId ?: null, $orderId ?: null);
+        $employeeId = $employeeId ?: null;
+        $orderId = $orderId ?: null;
+        $entries = $this->times->report($from, $to, $employeeId, $orderId);
+        $status = $this->rangeSourceStatus($entries, $from, $to, $employeeId, $orderId);
+
+        $rows = [];
         $byOrder = [];
-        foreach ($rows as $row) {
-            $key = (string) ($row['order_id'] ?? '');
-            $byOrder[$key] ??= ['orderId' => $row['order_id'], 'orderNumber' => $row['order_number'], 'orderTitle' => $row['order_title'], 'netMinutes' => 0, 'travelMinutes' => 0, 'workMinutes' => 0];
-            $byOrder[$key]['netMinutes'] += (int) $row['net_minutes'];
-            $byOrder[$key]['travelMinutes'] += (int) $row['travel_minutes'];
-            $byOrder[$key]['workMinutes'] += (int) $row['net_minutes'] - (int) $row['travel_minutes'];
+        $totals = ['netMinutes' => 0, 'travelMinutes' => 0, 'workMinutes' => 0, 'unresolvedMinutes' => 0, 'dailyReportChosenMinutes' => 0];
+        foreach ($entries as $entry) {
+            [$net, $travel] = $this->shareInPeriod($entry, $from, $to);
+            if ($net === 0 && ((string) $entry['work_date'] < $from)) {
+                continue; // Vortagsblock ohne Anteil im Zeitraum
+            }
+            $key = $entry['order_id'] !== null ? $entry['employee_id'] . '|' . $entry['work_date'] . '|' . $entry['order_id'] : null;
+            $sourceStatus = $key !== null ? ($status['byKey'][$key] ?? null) : null;
+            $orderKey = (string) ($entry['order_id'] ?? '');
+            $byOrder[$orderKey] ??= ['orderId' => $entry['order_id'], 'orderNumber' => $entry['order_number'], 'orderTitle' => $entry['order_title'],
+                'netMinutes' => 0, 'travelMinutes' => 0, 'workMinutes' => 0, 'unresolvedMinutes' => 0, 'dailyReportChosenMinutes' => 0];
+            self::addShare($byOrder[$orderKey], $net, $travel, $sourceStatus);
+            self::addShare($totals, $net, $travel, $sourceStatus);
+            $rows[] = [
+                'id' => $entry['id'], 'date' => $entry['work_date'], 'employeeName' => $entry['employee_name'], 'start' => $entry['start_time'], 'end' => $entry['end_time'],
+                'endsNextDay' => (bool) $entry['ends_next_day'], 'breakMinutes' => (int) $entry['break_minutes'], 'netMinutes' => (int) $entry['net_minutes'],
+                'travelMinutes' => (int) $entry['travel_minutes'], 'periodNetMinutes' => $net, 'periodTravelMinutes' => $travel,
+                'activity' => $entry['activity'], 'activityLabel' => self::ACTIVITIES[$entry['activity']] ?? $entry['activity'],
+                'assignmentKind' => $entry['assignment_kind'], 'assignmentLabel' => $entry['assignment_kind'] !== null ? self::ASSIGNMENTS[$entry['assignment_kind']] ?? '' : '',
+                'orderNumber' => $entry['order_number'], 'notes' => $entry['notes'], 'sourceStatus' => $sourceStatus,
+            ];
         }
-        return [
-            'from' => $from, 'to' => $to,
-            'rows' => array_map(static fn (array $row): array => [
-                'id' => $row['id'], 'date' => $row['work_date'], 'employeeName' => $row['employee_name'], 'start' => $row['start_time'], 'end' => $row['end_time'],
-                'endsNextDay' => (bool) $row['ends_next_day'], 'breakMinutes' => (int) $row['break_minutes'], 'netMinutes' => (int) $row['net_minutes'],
-                'travelMinutes' => (int) $row['travel_minutes'], 'activity' => $row['activity'], 'activityLabel' => self::ACTIVITIES[$row['activity']] ?? $row['activity'],
-                'assignmentKind' => $row['assignment_kind'], 'assignmentLabel' => $row['assignment_kind'] !== null ? self::ASSIGNMENTS[$row['assignment_kind']] ?? '' : '',
-                'orderNumber' => $row['order_number'], 'notes' => $row['notes'],
-            ], $rows),
-            'byOrder' => array_values($byOrder),
-            'totals' => $this->totals($rows),
-        ];
+        $byOrder = array_values($byOrder);
+        foreach ($byOrder as &$order) {
+            $order['complete'] = $order['unresolvedMinutes'] === 0;
+        }
+        unset($order);
+        return ['from' => $from, 'to' => $to, 'rows' => $rows, 'byOrder' => $byOrder, 'totals' => $totals,
+            'conflicts' => $status['conflicts'], 'complete' => $status['conflicts'] === []];
+    }
+
+    /** @param array<string,mixed> $sum */
+    private static function addShare(array &$sum, int $net, int $travel, ?string $sourceStatus): void
+    {
+        $sum['netMinutes'] += $net;
+        $sum['travelMinutes'] += $travel;
+        $sum['workMinutes'] += $net - $travel;
+        $sum['unresolvedMinutes'] += $sourceStatus === 'conflict' ? $net : 0;
+        $sum['dailyReportChosenMinutes'] += $sourceStatus === 'chosen_daily_report' ? $net : 0;
+    }
+
+    /**
+     * Anteil eines Blocks (Netto, Reise) im Zeitraum nach der Kalendertag-Aufteilung.
+     *
+     * @param array<string,mixed> $entry
+     * @return array{0:int,1:int}
+     */
+    private function shareInPeriod(array $entry, ?string $from, ?string $to): array
+    {
+        $net = 0;
+        $travel = 0;
+        foreach (self::segments($entry) as [$date, $share]) {
+            if (($from === null || $date >= $from) && ($to === null || $date <= $to)) {
+                $net += $share['net'];
+                $travel += $share['travel'];
+            }
+        }
+        return [$net, $travel];
+    }
+
+    /**
+     * Kalendertag-Anteile eines Blocks; der Folgetag nur mit Anteil > 0.
+     *
+     * @param array<string,mixed> $entry
+     * @return list<array{0:string,1:array{net:int,travel:int}}>
+     */
+    private static function segments(array $entry): array
+    {
+        [$first, $second] = self::split($entry);
+        $segments = [[(string) $entry['work_date'], $first]];
+        if ($second['net'] > 0) {
+            $segments[] = [(new DateTimeImmutable((string) $entry['work_date']))->modify('+1 day')->format('Y-m-d'), $second];
+        }
+        return $segments;
+    }
+
+    /**
+     * Quellenstatus je Mitarbeiter + Beginntag + Auftrag für die Büroauswertung.
+     *
+     * @param list<array<string,mixed>> $entries
+     * @return array{byKey:array<string,string>,conflicts:list<array<string,mixed>>}
+     */
+    private function rangeSourceStatus(array $entries, string $from, string $to, ?string $employeeId, ?string $orderId): array
+    {
+        $tracked = [];
+        foreach ($entries as $entry) {
+            if ($entry['order_id'] === null || (string) $entry['work_date'] < $from) {
+                continue;
+            }
+            $key = $entry['employee_id'] . '|' . $entry['work_date'] . '|' . $entry['order_id'];
+            $tracked[$key] ??= ['employeeId' => $entry['employee_id'], 'employeeName' => $entry['employee_name'], 'date' => $entry['work_date'],
+                'orderId' => $entry['order_id'], 'orderNumber' => $entry['order_number'], 'trackingMinutes' => 0, 'reportMinutes' => 0];
+            $tracked[$key]['trackingMinutes'] += (int) $entry['net_minutes'];
+        }
+        $reported = [];
+        foreach ($this->times->dailyReportTimesInRange($from, $to, $employeeId, $orderId) as $row) {
+            $key = $row['employee_id'] . '|' . $row['work_date'] . '|' . $row['order_id'];
+            $reported[$key] = ($reported[$key] ?? 0) + self::hoursToMinutes((string) $row['duration_hours']);
+        }
+        $choices = [];
+        foreach ($this->times->choicesInRange($from, $to) as $choice) {
+            $choices[$choice['employee_id'] . '|' . $choice['work_date'] . '|' . $choice['order_id']] = $choice['source'];
+        }
+        $byKey = [];
+        $conflicts = [];
+        foreach ($tracked as $key => $group) {
+            if (!isset($reported[$key])) {
+                continue;
+            }
+            if (isset($choices[$key])) {
+                $byKey[$key] = 'chosen_' . $choices[$key];
+                continue;
+            }
+            $byKey[$key] = 'conflict';
+            $conflicts[] = ['reportMinutes' => $reported[$key]] + $group;
+        }
+        return ['byKey' => $byKey, 'conflicts' => $conflicts];
     }
 
     /**
      * Ist-Stunden eines Auftrags für die spätere Nachkalkulation (Phase 3.5).
      *
-     * Je Mitarbeiter und Tag gilt:
+     * Quellenregel je Mitarbeiter + Beginntag (wie Tagesansicht und Quellenwahl):
      * - nur Zeitblöcke oder nur Bautagesbericht → diese Quelle;
      * - beide vorhanden → die ausdrücklich gewählte Quelle (time_source_choices);
-     * - beide vorhanden und keine Auswahl → Konflikt: nicht in den Summen, sondern in conflicts.
-     * Rapportstunden zählen nie. Es wird nichts addiert und nichts still verworfen.
+     * - beide vorhanden und keine Auswahl → Konflikt: nicht in den Summen, sondern in conflicts;
+     *   status = 'incomplete', complete = false.
+     * Rapportstunden zählen nie. Es wird nichts addiert und nichts still verworfen. Spesen und
+     * Kilometer sind nicht enthalten.
+     *
+     * Zeitblöcke werden wie in Tag/Woche/Monat nach Kalendertag aufgeteilt (split); items sind
+     * Anteile je Kalendertag mit Beginntag (sourceDate). Der optionale Zeitraum filtert nach
+     * Kalendertag. Kostensatz-Snapshots (hourlyCostRate) nur mit costs.read – sie werden hier
+     * nicht verrechnet.
      *
      * @param array<string,mixed> $actor
-     * @return array{items:list<array<string,mixed>>,conflicts:list<array<string,mixed>>,totalMinutes:int,travelMinutes:int}
+     * @return array<string,mixed>
      */
-    public function actualHoursForOrder(string $orderId, array $actor): array
+    public function actualHoursForOrder(string $orderId, array $actor, ?string $from = null, ?string $to = null): array
     {
         $this->require($actor, 'timesheet.manage');
+        $from = $from !== null && $from !== '' ? $this->date($from) : null;
+        $to = $to !== null && $to !== '' ? $this->date($to) : null;
+        if ($from !== null && $to !== null && $from > $to) {
+            throw new DocumentValidationException(['Ungültiger Zeitraum.']);
+        }
+        $costs = $this->can($actor, 'costs.read');
+        $inRange = static fn (string $date): bool => ($from === null || $date >= $from) && ($to === null || $date <= $to);
         $sources = $this->times->orderTimes($orderId);
         $groups = [];
         foreach ($sources['entries'] as $entry) {
             $key = $entry['employee_id'] . '|' . $entry['work_date'];
-            $groups[$key] ??= ['employeeId' => $entry['employee_id'], 'employeeName' => $entry['employee_name'], 'date' => $entry['work_date'], 'tracking' => null, 'report' => null];
-            $groups[$key]['tracking'] ??= ['netMinutes' => 0, 'travelMinutes' => 0];
-            $groups[$key]['tracking']['netMinutes'] += (int) $entry['net_minutes'];
-            $groups[$key]['tracking']['travelMinutes'] += (int) $entry['travel_minutes'];
+            $groups[$key] ??= ['employeeId' => $entry['employee_id'], 'employeeName' => $entry['employee_name'], 'date' => $entry['work_date'], 'tracking' => [], 'report' => []];
+            $groups[$key]['tracking'][] = $entry;
         }
         foreach ($sources['reports'] as $report) {
             $key = $report['employee_id'] . '|' . $report['work_date'];
-            $groups[$key] ??= ['employeeId' => $report['employee_id'], 'employeeName' => $report['employee_name'], 'date' => $report['work_date'], 'tracking' => null, 'report' => null];
-            $groups[$key]['report'] ??= ['netMinutes' => 0, 'travelMinutes' => 0];
-            $groups[$key]['report']['netMinutes'] += self::hoursToMinutes((string) $report['duration_hours']);
+            $groups[$key] ??= ['employeeId' => $report['employee_id'], 'employeeName' => $report['employee_name'], 'date' => $report['work_date'], 'tracking' => [], 'report' => []];
+            $groups[$key]['report'][] = $report;
         }
         $choices = [];
         foreach ($sources['choices'] as $choice) {
-            $choices[$choice['employee_id'] . '|' . $choice['work_date']] = $choice['source'];
+            $choices[$choice['employee_id'] . '|' . $choice['work_date']] = $choice;
         }
         ksort($groups);
         $items = [];
         $conflicts = [];
         foreach ($groups as $key => $group) {
+            $both = $group['tracking'] !== [] && $group['report'] !== [];
+            $choice = $both ? ($choices[$key] ?? null) : null;
             $source = match (true) {
-                $group['report'] === null => 'time_tracking',
-                $group['tracking'] === null => 'daily_report',
-                default => $choices[$key] ?? null,
+                $group['report'] === [] => 'time_tracking',
+                $group['tracking'] === [] => 'daily_report',
+                default => $choice['source'] ?? null,
             };
+            $base = ['employeeId' => $group['employeeId'], 'employeeName' => $group['employeeName'], 'sourceDate' => $group['date']];
             if ($source === null) {
-                $conflicts[] = ['employeeId' => $group['employeeId'], 'employeeName' => $group['employeeName'], 'date' => $group['date'],
-                    'trackingMinutes' => $group['tracking']['netMinutes'], 'reportMinutes' => $group['report']['netMinutes']];
+                $segmentDates = [];
+                $trackingMinutes = 0;
+                $trackingTravel = 0;
+                foreach ($group['tracking'] as $entry) {
+                    $trackingMinutes += (int) $entry['net_minutes'];
+                    $trackingTravel += (int) $entry['travel_minutes'];
+                    foreach (self::segments($entry) as [$date]) {
+                        $segmentDates[$date] = true;
+                    }
+                }
+                if (!$inRange($group['date']) && array_filter(array_keys($segmentDates), $inRange) === []) {
+                    continue;
+                }
+                $conflicts[] = $base + ['date' => $group['date'], 'trackingMinutes' => $trackingMinutes, 'trackingTravelMinutes' => $trackingTravel,
+                    'reportMinutes' => array_sum(array_map(static fn (array $row): int => self::hoursToMinutes((string) $row['duration_hours']), $group['report']))];
                 continue;
             }
-            $values = $source === 'time_tracking' ? $group['tracking'] : $group['report'];
-            $items[] = ['employeeId' => $group['employeeId'], 'employeeName' => $group['employeeName'], 'date' => $group['date'], 'source' => $source,
-                'chosen' => isset($choices[$key]) && $group['report'] !== null && $group['tracking'] !== null,
-                'netMinutes' => $values['netMinutes'], 'travelMinutes' => $values['travelMinutes'], 'workMinutes' => $values['netMinutes'] - $values['travelMinutes']];
+            $base += ['source' => $source, 'chosen' => $choice !== null, 'chosenByName' => $choice['chosen_by_name'] ?? null, 'chosenAt' => $choice['chosen_at'] ?? null];
+            if ($source === 'time_tracking') {
+                foreach ($group['tracking'] as $entry) {
+                    foreach (self::segments($entry) as [$date, $share]) {
+                        if ($inRange($date)) {
+                            $items[] = $base + ['date' => $date, 'entryId' => $entry['id'], 'netMinutes' => $share['net'], 'travelMinutes' => $share['travel'],
+                                'workMinutes' => $share['net'] - $share['travel']] + ($costs ? ['hourlyCostRate' => $entry['hourly_cost_rate_snapshot']] : []);
+                        }
+                    }
+                }
+                continue;
+            }
+            foreach ($group['report'] as $row) {
+                if ($inRange((string) $row['work_date'])) {
+                    $minutes = self::hoursToMinutes((string) $row['duration_hours']);
+                    $items[] = $base + ['date' => $row['work_date'], 'reportEntryId' => $row['id'], 'netMinutes' => $minutes, 'travelMinutes' => 0, 'workMinutes' => $minutes]
+                        + ($costs ? ['hourlyCostRate' => $row['hourly_cost_rate_snapshot']] : []);
+                }
+            }
         }
+        usort($items, static fn (array $a, array $b): int => [$a['date'], $a['employeeName']] <=> [$b['date'], $b['employeeName']]);
+        $byEmployee = [];
+        foreach ($items as $item) {
+            $byEmployee[$item['employeeId']] ??= ['employeeId' => $item['employeeId'], 'employeeName' => $item['employeeName'], 'netMinutes' => 0, 'travelMinutes' => 0, 'workMinutes' => 0];
+            $byEmployee[$item['employeeId']]['netMinutes'] += $item['netMinutes'];
+            $byEmployee[$item['employeeId']]['travelMinutes'] += $item['travelMinutes'];
+            $byEmployee[$item['employeeId']]['workMinutes'] += $item['workMinutes'];
+        }
+        $net = array_sum(array_column($items, 'netMinutes'));
+        $travel = array_sum(array_column($items, 'travelMinutes'));
         return [
+            'orderId' => $orderId, 'from' => $from, 'to' => $to,
+            'status' => $conflicts === [] ? 'complete' : 'incomplete',
+            'complete' => $conflicts === [],
             'items' => $items,
+            'byEmployee' => array_values($byEmployee),
             'conflicts' => $conflicts,
-            'totalMinutes' => array_sum(array_column($items, 'netMinutes')),
-            'travelMinutes' => array_sum(array_column($items, 'travelMinutes')),
+            'totals' => ['netMinutes' => $net, 'travelMinutes' => $travel, 'workMinutes' => $net - $travel],
+            'unresolved' => ['trackingMinutes' => array_sum(array_column($conflicts, 'trackingMinutes')), 'reportMinutes' => array_sum(array_column($conflicts, 'reportMinutes'))],
+            'totalMinutes' => $net,
+            'travelMinutes' => $travel,
         ];
     }
 
@@ -283,13 +455,16 @@ final readonly class TimeTrackingService
             }
         }
         $choices = array_column($this->times->choices($employeeId, $date, $date), null, 'order_id');
-        return array_map(static function (array $row) use ($tracked, $choices): array {
+        $times = $this->times;
+        return array_map(static function (array $row) use ($tracked, $choices, $times, $employeeId, $date): array {
             $choice = $choices[$row['order_id']] ?? null;
             $status = !isset($tracked[$row['order_id']]) ? 'report_only' : ($choice === null ? 'conflict' : 'chosen_' . $choice['source']);
             return [
                 'reportId' => $row['report_id'], 'orderId' => $row['order_id'], 'orderNumber' => $row['order_number'], 'orderTitle' => $row['order_title'],
                 'hours' => $row['duration_hours'], 'description' => $row['description'], 'status' => $status,
-                'trackedMinutes' => $tracked[$row['order_id']] ?? 0, 'chosenByName' => $choice['chosen_by_name'] ?? null,
+                'trackedMinutes' => $tracked[$row['order_id']] ?? 0, 'chosenByName' => $choice['chosen_by_name'] ?? null, 'chosenAt' => $choice['chosen_at'] ?? null,
+                'history' => $status === 'report_only' ? [] : array_map(static fn (array $event): array => ['previousSource' => $event['previous_source'], 'source' => $event['source'],
+                    'changedByName' => $event['changed_by_name'], 'changedAt' => $event['changed_at']], $times->choiceEvents($employeeId, $date, (string) $row['order_id'])),
             ];
         }, $this->times->dailyReportTimes($employeeId, $date, $date));
     }
@@ -332,16 +507,14 @@ final readonly class TimeTrackingService
             $days[$day->format('Y-m-d')] = ['netMinutes' => 0, 'travelMinutes' => 0, 'workMinutes' => 0, 'entryCount' => 0];
         }
         foreach ($entries as $entry) {
-            [$first, $second] = self::split($entry);
-            $next = (new DateTimeImmutable((string) $entry['work_date']))->modify('+1 day')->format('Y-m-d');
-            foreach ([[(string) $entry['work_date'], $first, true], [$next, $second, false]] as [$key, $share, $own]) {
-                if (!isset($days[$key]) || ($share['net'] === 0 && !$own)) {
+            foreach (self::segments($entry) as $index => [$key, $share]) {
+                if (!isset($days[$key])) {
                     continue;
                 }
                 $days[$key]['netMinutes'] += $share['net'];
                 $days[$key]['travelMinutes'] += $share['travel'];
                 $days[$key]['workMinutes'] += $share['net'] - $share['travel'];
-                $days[$key]['entryCount'] += $own ? 1 : 0;
+                $days[$key]['entryCount'] += $index === 0 ? 1 : 0;
             }
         }
         return $days;
@@ -614,19 +787,6 @@ final readonly class TimeTrackingService
             }
         }
         return $warnings;
-    }
-
-    /** @param list<array<string,mixed>> $entries @return array{netMinutes:int,workMinutes:int,travelMinutes:int} */
-    private function totals(array $entries): array
-    {
-        $travel = 0;
-        $net = 0;
-        foreach ($entries as $entry) {
-            $net += (int) $entry['net_minutes'];
-            // Reisezeit ist Teil der Nettozeit (Bestandsblöcke „travel“ seit 0033 vollständig).
-            $travel += (int) $entry['travel_minutes'];
-        }
-        return ['netMinutes' => $net, 'workMinutes' => $net - $travel, 'travelMinutes' => $travel];
     }
 
     /** @param array<string,mixed> $entry @param array<string,mixed> $employee @return array<string,mixed> */

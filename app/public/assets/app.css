@@ -1444,3 +1444,7 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
     .time-cal-travel { font-size: 10px; }
     .time-calendar.is-week .time-cal-date { font-size: 12px; }
 }
+.time-source-history { font-size: .85rem; }
+.time-source-history summary { cursor: pointer; color: var(--muted, #667); }
+.time-source-history ul { margin: 4px 0 0; padding-left: 18px; }
+.time-report-conflicts { margin-bottom: 16px; }

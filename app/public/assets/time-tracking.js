@@ -209,6 +209,8 @@
     chosen_daily_report: "maßgeblich: Bautagesbericht",
   };
 
+  const SOURCE_LABEL = { time_tracking: "Zeiterfassung", daily_report: "Bautagesbericht" };
+
   function renderReferences(day) {
     if (!day.dailyReportTimes.length && !day.workReportTimes.length) return "";
     return `<section class="card form-stack time-references">
@@ -216,7 +218,8 @@
       <ul class="time-reference-list">
         ${day.dailyReportTimes.map((row) => `<li class="${row.status === "conflict" ? "is-conflict" : ""}"><a href="/daily-reports/${encodeURIComponent(row.reportId)}">Bautagesbericht · ${esc(row.orderNumber)}</a>
           <span>${format.number(row.hours, 2)} h${row.trackedMinutes ? ` · Zeiterfassung ${hours(row.trackedMinutes)}` : ""}</span>
-          <small class="${row.status === "conflict" ? "time-conflict-text" : "muted"}">${SOURCE_TEXT[row.status]}${row.chosenByName ? ` (gewählt von ${esc(row.chosenByName)})` : ""}</small>
+          <small class="${row.status === "conflict" ? "time-conflict-text" : "muted"}">${SOURCE_TEXT[row.status]}${row.chosenByName ? ` (gewählt von ${esc(row.chosenByName)}${row.chosenAt ? ` am ${format.dateTime(row.chosenAt)}` : ""})` : ""}</small>
+          ${row.history && row.history.length ? `<details class="time-source-history"><summary>Verlauf der Quellenwahl (${row.history.length})</summary><ul>${row.history.map((event) => `<li>${format.dateTime(event.changedAt)} · ${esc(event.changedByName)}: ${SOURCE_LABEL[event.previousSource] || "keine Wahl"} → ${SOURCE_LABEL[event.source] || "Wahl aufgehoben"}</li>`).join("")}</ul></details>` : ""}
           ${day.canChooseSource && row.status !== "report_only" ? `<span class="time-source-actions">
             <button class="button button-light button-small" type="button" data-source="time_tracking" data-order="${esc(row.orderId)}"${row.status === "chosen_time_tracking" ? " disabled" : ""}>Zeiterfassung maßgeblich</button>
             <button class="button button-light button-small" type="button" data-source="daily_report" data-order="${esc(row.orderId)}"${row.status === "chosen_daily_report" ? " disabled" : ""}>Bautagesbericht maßgeblich</button></span>` : ""}</li>`).join("")}
@@ -422,6 +425,18 @@
   // ---------------------------------------------------------------------------
   // Auswertung (Büro)
   // ---------------------------------------------------------------------------
+  /** Anteil im Zeitraum; bei Blöcken über die Zeitraumgrenze zusätzlich der ganze Block. */
+  function periodHours(period, total) {
+    return period === total ? hours(total) : `${hours(period)} <small class="muted" title="Block über Mitternacht an der Zeitraumgrenze">von ${hours(total)}</small>`;
+  }
+
+  function orderSourceNote(row) {
+    const notes = [];
+    if (row.unresolvedMinutes) notes.push(`<span class="time-conflict-text">${hours(row.unresolvedMinutes)} ungeklärt</span>`);
+    if (row.dailyReportChosenMinutes) notes.push(`<span class="muted">${hours(row.dailyReportChosenMinutes)} durch Bautagesbericht ersetzt</span>`);
+    return notes.join("<br>") || '<span class="muted">eindeutig</span>';
+  }
+
   async function renderReport() {
     const [defaultFrom, defaultTo] = monthRange(state.date);
     root.querySelector("[data-period-label]").textContent = new Intl.DateTimeFormat("de-DE", { month: "long", year: "numeric", timeZone: "UTC" }).format(parse(defaultFrom));
@@ -434,13 +449,18 @@
         <select data-report-order aria-label="Auftrag"><option value="">Alle Aufträge</option>${reference.orders.map((item) => `<option value="${esc(item.id)}"${item.id === order ? " selected" : ""}>${esc(item.orderNumber)} · ${esc(item.title)}</option>`).join("")}</select>
       </div>
       ${summaryTiles(data.totals)}
+      ${data.conflicts.length ? `<section class="card form-stack time-report-conflicts">
+        <div class="step-section-heading"><div><h2>Ungeklärte Quellen (${data.conflicts.length})</h2><small>Zeitblöcke und Bautagesbericht für denselben Mitarbeiter, Tag und Auftrag ohne Auswahl der maßgeblichen Quelle. Die Zeiterfassung ist unten enthalten, aber als ungeklärt markiert; in die Ist-Stunden je Auftrag fließt der Tag erst nach der Auswahl ein.</small></div></div>
+        <ul class="time-reference-list">${data.conflicts.map((row) => `<li class="is-conflict"><a href="/time-tracking?view=day&date=${encodeURIComponent(row.date)}&employee=${encodeURIComponent(row.employeeId)}">${format.date(row.date)} · ${esc(row.employeeName)} · ${esc(row.orderNumber)}</a>
+          <span>Zeiterfassung ${hours(row.trackingMinutes)} · Bautagesbericht ${hours(row.reportMinutes)}</span><small class="time-conflict-text">Quelle in der Tagesansicht wählen</small></li>`).join("")}</ul></section>` : ""}
       <h3 class="purchase-subheading">Nach Auftrag</h3>
-      <div class="overview-table-wrap"><table class="overview-table"><thead><tr><th class="cell-title">Auftrag</th><th class="cell-money">Nettozeit</th><th class="cell-money">Davon Reise</th><th class="cell-money">Übrige Arbeit</th></tr></thead>
-        <tbody>${data.byOrder.map((row) => `<tr><td class="cell-title">${row.orderId ? `${esc(row.orderNumber)} · ${esc(row.orderTitle)}` : '<span class="muted">Ohne Auftrag</span>'}</td><td class="cell-money">${hours(row.netMinutes)}</td><td class="cell-money">${hours(row.travelMinutes)}</td><td class="cell-money">${hours(row.workMinutes)}</td></tr>`).join("") || '<tr><td colspan="4" class="muted">Keine Einträge.</td></tr>'}</tbody></table></div>
+      <div class="overview-table-wrap"><table class="overview-table"><thead><tr><th class="cell-title">Auftrag</th><th class="cell-money">Nettozeit</th><th class="cell-money">Davon Reise</th><th class="cell-money">Übrige Arbeit</th><th class="cell-status">Quelle</th></tr></thead>
+        <tbody>${data.byOrder.map((row) => `<tr><td class="cell-title">${row.orderId ? `${esc(row.orderNumber)} · ${esc(row.orderTitle)}` : '<span class="muted">Ohne Auftrag</span>'}</td><td class="cell-money">${hours(row.netMinutes)}</td><td class="cell-money">${hours(row.travelMinutes)}</td><td class="cell-money">${hours(row.workMinutes)}</td>
+          <td class="cell-status">${orderSourceNote(row)}</td></tr>`).join("") || '<tr><td colspan="5" class="muted">Keine Einträge.</td></tr>'}</tbody></table></div>
       <h3 class="purchase-subheading">Zeitblöcke</h3>
       <div class="overview-table-wrap"><table class="overview-table"><thead><tr><th class="cell-date">Datum</th><th class="cell-text">Mitarbeiter</th><th class="cell-text">Zeit</th><th class="cell-type">Tätigkeit</th><th class="cell-type">Einsatz</th><th class="cell-number">Auftrag</th><th class="cell-money">Netto</th><th class="cell-money">Reise</th></tr></thead>
         <tbody>${data.rows.map((row) => `<tr><td class="cell-date">${format.date(row.date)}</td><td class="cell-text">${esc(row.employeeName)}</td><td class="cell-text">${esc(row.start)}–${esc(row.end)}${row.endsNextDay ? " (+1)" : ""}</td>
-          <td class="cell-type"><span class="${activityClass(row.activity)}">${esc(row.activityLabel)}</span></td><td class="cell-type" title="${esc(row.assignmentLabel)}">${row.assignmentKind === "external" ? "Auswärts" : row.assignmentKind === "regular" ? "Erste T." : "–"}</td><td class="cell-number">${esc(row.orderNumber || "–")}</td><td class="cell-money">${hours(row.netMinutes)}</td><td class="cell-money">${row.travelMinutes ? hours(row.travelMinutes) : "–"}</td></tr>`).join("") || '<tr><td colspan="8" class="muted">Keine Einträge.</td></tr>'}</tbody></table></div>`;
+          <td class="cell-type"><span class="${activityClass(row.activity)}">${esc(row.activityLabel)}</span></td><td class="cell-type" title="${esc(row.assignmentLabel)}">${row.assignmentKind === "external" ? "Auswärts" : row.assignmentKind === "regular" ? "Erste T." : "–"}</td><td class="cell-number">${esc(row.orderNumber || "–")}</td><td class="cell-money">${periodHours(row.periodNetMinutes, row.netMinutes)}${row.sourceStatus === "conflict" ? ' <span class="time-conflict-text" title="Quelle ungeklärt">!</span>' : ""}</td><td class="cell-money">${row.travelMinutes ? periodHours(row.periodTravelMinutes, row.travelMinutes) : "–"}</td></tr>`).join("") || '<tr><td colspan="8" class="muted">Keine Einträge.</td></tr>'}</tbody></table></div>`;
     content.querySelector("[data-report-employee]").addEventListener("change", (event) => {
       state.employee = event.target.value;
       render();

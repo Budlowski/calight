@@ -137,18 +137,66 @@ final readonly class TimeTrackingRepository
         return $statement->fetchAll();
     }
 
-    /** Ist-Stunden-Quellen eines Auftrags. @return array{entries:list<array<string,mixed>>,reports:list<array<string,mixed>>} */
+    /**
+     * Ist-Stunden-Quellen eines Auftrags (Zeitblöcke mit Uhrzeiten für die Kalendertag-Aufteilung).
+     *
+     * @return array{entries:list<array<string,mixed>>,reports:list<array<string,mixed>>,choices:list<array<string,mixed>>}
+     */
     public function orderTimes(string $orderId): array
     {
-        $entries = $this->pdo->prepare('SELECT t.employee_id, t.work_date, t.activity, t.net_minutes, t.travel_minutes, t.hourly_cost_rate_snapshot, e.display_name AS employee_name
-            FROM time_entries t JOIN employees e ON e.id = t.employee_id WHERE t.order_id = :order ORDER BY t.work_date');
+        $entries = $this->pdo->prepare('SELECT t.id, t.employee_id, t.work_date, t.start_time, t.end_time, t.ends_next_day, t.break_minutes, t.activity, t.net_minutes, t.travel_minutes,
+                t.hourly_cost_rate_snapshot, e.display_name AS employee_name
+            FROM time_entries t JOIN employees e ON e.id = t.employee_id WHERE t.order_id = :order ORDER BY t.work_date, t.start_time');
         $entries->execute(['order' => $orderId]);
-        $reports = $this->pdo->prepare('SELECT e.employee_id, e.work_date, e.duration_hours, e.hourly_cost_rate_snapshot, m.display_name AS employee_name
+        $reports = $this->pdo->prepare('SELECT e.id, e.report_id, e.employee_id, e.work_date, e.duration_hours, e.hourly_cost_rate_snapshot, m.display_name AS employee_name
             FROM daily_report_time_entries e JOIN daily_reports r ON r.id = e.report_id JOIN employees m ON m.id = e.employee_id WHERE r.order_id = :order ORDER BY e.work_date');
         $reports->execute(['order' => $orderId]);
-        $choices = $this->pdo->prepare('SELECT employee_id, work_date, source FROM time_source_choices WHERE order_id = :order');
+        $choices = $this->pdo->prepare('SELECT c.employee_id, c.work_date, c.order_id, c.source, c.chosen_at, u.display_name AS chosen_by_name
+            FROM time_source_choices c JOIN users u ON u.id = c.chosen_by_user_id WHERE c.order_id = :order');
         $choices->execute(['order' => $orderId]);
         return ['entries' => $entries->fetchAll(), 'reports' => $reports->fetchAll(), 'choices' => $choices->fetchAll()];
+    }
+
+    /**
+     * Bautagesbericht-Zeiten im Zeitraum (Büroauswertung, Konfliktprüfung).
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function dailyReportTimesInRange(string $from, string $to, ?string $employeeId, ?string $orderId): array
+    {
+        $sql = 'SELECT e.employee_id, e.work_date, e.duration_hours, r.order_id, o.order_number, m.display_name AS employee_name
+            FROM daily_report_time_entries e JOIN daily_reports r ON r.id = e.report_id JOIN orders o ON o.id = r.order_id JOIN employees m ON m.id = e.employee_id
+            WHERE e.work_date BETWEEN :from AND :to';
+        $parameters = ['from' => $from, 'to' => $to];
+        if ($employeeId !== null) {
+            $sql .= ' AND e.employee_id = :employee';
+            $parameters['employee'] = $employeeId;
+        }
+        if ($orderId !== null) {
+            $sql .= ' AND r.order_id = :order';
+            $parameters['order'] = $orderId;
+        }
+        $statement = $this->pdo->prepare($sql . ' ORDER BY e.work_date');
+        $statement->execute($parameters);
+        return $statement->fetchAll();
+    }
+
+    /** Alle Quellenwahlen im Zeitraum. @return list<array<string,mixed>> */
+    public function choicesInRange(string $from, string $to): array
+    {
+        $statement = $this->pdo->prepare('SELECT c.*, u.display_name AS chosen_by_name FROM time_source_choices c JOIN users u ON u.id = c.chosen_by_user_id
+            WHERE c.work_date BETWEEN :from AND :to');
+        $statement->execute(['from' => $from, 'to' => $to]);
+        return $statement->fetchAll();
+    }
+
+    /** Protokoll der Quellenwahl (älteste zuerst). @return list<array<string,mixed>> */
+    public function choiceEvents(string $employeeId, string $date, string $orderId): array
+    {
+        $statement = $this->pdo->prepare('SELECT ev.previous_source, ev.source, ev.changed_at, u.display_name AS changed_by_name FROM time_source_choice_events ev
+            JOIN users u ON u.id = ev.changed_by_user_id WHERE ev.employee_id = :employee AND ev.work_date = :date AND ev.order_id = :order ORDER BY ev.id');
+        $statement->execute(['employee' => $employeeId, 'date' => $date, 'order' => $orderId]);
+        return $statement->fetchAll();
     }
 
     /** Maßgebliche Quellen eines Mitarbeiters im Zeitraum. @return list<array<string,mixed>> */
@@ -160,23 +208,47 @@ final readonly class TimeTrackingRepository
         return $statement->fetchAll();
     }
 
+    /** Wahl setzen oder aufheben; jede tatsächliche Änderung wird protokolliert. */
     public function saveChoice(string $employeeId, string $date, string $orderId, ?string $source, string $userId, string $now): void
     {
-        if ($source === null) {
-            $this->pdo->prepare('DELETE FROM time_source_choices WHERE employee_id = :employee AND work_date = :date AND order_id = :order')
-                ->execute(['employee' => $employeeId, 'date' => $date, 'order' => $orderId]);
-            return;
+        $key = ['employee' => $employeeId, 'date' => $date, 'order' => $orderId];
+        $own = !$this->pdo->inTransaction();
+        if ($own) {
+            $this->pdo->beginTransaction();
         }
-        $this->pdo->prepare('INSERT INTO time_source_choices (employee_id, work_date, order_id, source, chosen_by_user_id, chosen_at) VALUES (:employee, :date, :order, :source, :user, :now)
-            ON CONFLICT(employee_id, work_date, order_id) DO UPDATE SET source = excluded.source, chosen_by_user_id = excluded.chosen_by_user_id, chosen_at = excluded.chosen_at')
-            ->execute(['employee' => $employeeId, 'date' => $date, 'order' => $orderId, 'source' => $source, 'user' => $userId, 'now' => $now]);
+        try {
+            $current = $this->pdo->prepare('SELECT source FROM time_source_choices WHERE employee_id = :employee AND work_date = :date AND order_id = :order');
+            $current->execute($key);
+            $previous = $current->fetchColumn();
+            $previous = $previous === false ? null : (string) $previous;
+            if ($source === null) {
+                $this->pdo->prepare('DELETE FROM time_source_choices WHERE employee_id = :employee AND work_date = :date AND order_id = :order')->execute($key);
+            } else {
+                $this->pdo->prepare('INSERT INTO time_source_choices (employee_id, work_date, order_id, source, chosen_by_user_id, chosen_at) VALUES (:employee, :date, :order, :source, :user, :now)
+                    ON CONFLICT(employee_id, work_date, order_id) DO UPDATE SET source = excluded.source, chosen_by_user_id = excluded.chosen_by_user_id, chosen_at = excluded.chosen_at')
+                    ->execute($key + ['source' => $source, 'user' => $userId, 'now' => $now]);
+            }
+            if ($previous !== $source) {
+                $this->pdo->prepare('INSERT INTO time_source_choice_events (employee_id, work_date, order_id, previous_source, source, changed_by_user_id, changed_at)
+                    VALUES (:employee, :date, :order, :previous, :source, :user, :now)')
+                    ->execute($key + ['previous' => $previous, 'source' => $source, 'user' => $userId, 'now' => $now]);
+            }
+            if ($own) {
+                $this->pdo->commit();
+            }
+        } catch (\Throwable $exception) {
+            if ($own) {
+                $this->pdo->rollBack();
+            }
+            throw $exception;
+        }
     }
 
-    /** Auswertung für das Büro. @return list<array<string,mixed>> */
+    /** Auswertung für das Büro: Blöcke ab dem Vortag (Anteil nach Mitternacht). @return list<array<string,mixed>> */
     public function report(string $from, string $to, ?string $employeeId, ?string $orderId): array
     {
-        $sql = 'SELECT t.*, e.display_name AS employee_name, o.order_number, o.title AS order_title FROM time_entries t
-            JOIN employees e ON e.id = t.employee_id LEFT JOIN orders o ON o.id = t.order_id WHERE t.work_date BETWEEN :from AND :to';
+        $sql = "SELECT t.*, e.display_name AS employee_name, o.order_number, o.title AS order_title FROM time_entries t
+            JOIN employees e ON e.id = t.employee_id LEFT JOIN orders o ON o.id = t.order_id WHERE t.work_date BETWEEN date(:from, '-1 day') AND :to";
         $parameters = ['from' => $from, 'to' => $to];
         if ($employeeId !== null) {
             $sql .= ' AND t.employee_id = :employee';
