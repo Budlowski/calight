@@ -102,14 +102,25 @@ final readonly class MeasurementRepository
      *
      * @return list<array{source_type:string,source_id:string,node_id:string,quantity:string}>
      */
-    public function completedQuantities(string $orderId, ?string $excludeId = null, ?string $completedBefore = null): array
+    /**
+     * @param array{at:string,number:string}|null $completedBefore Abschlusszeitpunkt und Nummer des betrachteten Aufmaßes
+     */
+    public function completedQuantities(string $orderId, ?string $excludeId = null, ?array $completedBefore = null): array
     {
         // Für ein abgeschlossenes Aufmaß zählen nur die vorher abgeschlossenen als „bereits aufgemessen“.
-        $statement = $this->pdo->prepare("SELECT i.source_type, i.source_id, i.node_id, i.quantity
+        // Bei gleichem Zeitstempel (Sekundenauflösung) entscheidet die fortlaufend vergebene Aufmaßnummer.
+        $sql = "SELECT i.source_type, i.source_id, i.node_id, i.quantity
             FROM measurement_items i JOIN measurements m ON m.id = i.measurement_id
-            WHERE m.order_id = :order AND m.status = 'completed' AND m.id <> :exclude
-              AND (:before IS NULL OR m.completed_at < :before_value)");
-        $statement->execute(['order' => $orderId, 'exclude' => $excludeId ?? '', 'before' => $completedBefore, 'before_value' => $completedBefore ?? '']);
+            WHERE m.order_id = :order AND m.status = 'completed' AND m.id <> :exclude";
+        $params = ['order' => $orderId, 'exclude' => $excludeId ?? ''];
+        if ($completedBefore !== null) {
+            $sql .= " AND (m.completed_at < :at1 OR (m.completed_at = :at2 AND (length(m.measurement_number) < length(:num1)
+                OR (length(m.measurement_number) = length(:num2) AND m.measurement_number < :num3))))";
+            $params += ['at1' => $completedBefore['at'], 'at2' => $completedBefore['at'],
+                'num1' => $completedBefore['number'], 'num2' => $completedBefore['number'], 'num3' => $completedBefore['number']];
+        }
+        $statement = $this->pdo->prepare($sql);
+        $statement->execute($params);
         return $statement->fetchAll();
     }
 

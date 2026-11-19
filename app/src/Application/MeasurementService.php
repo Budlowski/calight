@@ -160,7 +160,7 @@ final readonly class MeasurementService
         $previous = $this->sumByKey($this->measurements->completedQuantities(
             (string) $measurement['order_id'],
             $id,
-            $completed ? (string) $measurement['completed_at'] : null,
+            $completed ? ['at' => (string) $measurement['completed_at'], 'number' => (string) $measurement['measurement_number']] : null,
         ));
 
         $resultSources = [];
