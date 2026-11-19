@@ -158,12 +158,15 @@
     // Alle Aktionen sitzen gemeinsam oben: Speichern sichert den Entwurf (weiter bearbeitbar),
     // Abschließen macht das Aufmaß nach Bestätigung verbindlich und unveränderlich.
     const actions = [];
+    const more = [];
     if (editable()) actions.push('<button class="button button-light" type="button" data-save data-shortcut-save data-icon="save" title="Entwurf speichern, weiter bearbeitbar (Strg+S)">Entwurf speichern</button>');
     if (measurement.canComplete) actions.push('<button class="button" type="button" data-complete data-icon="clipboard-check" title="Aufmaß verbindlich abschließen">Abschließen …</button>');
-    if (measurement.canEdit) actions.push('<button class="button button-danger-light" type="button" data-delete data-icon="trash">Entwurf löschen</button>');
-    if (measurement.canCorrect) actions.push('<button class="button button-light" type="button" data-correct data-icon="square-pen">Korrekturaufmaß anlegen</button>');
     // PDF: abgeschlossene Aufmaße archiviert, Entwürfe nur als Vorschau mit Wasserzeichen.
-    actions.push(`<a class="button button-light" href="/api/measurements/${encodeURIComponent(measurement.id)}/pdf" data-icon="file-down">${measurement.status === "completed" ? "PDF herunterladen" : "PDF-Vorschau"}</a>`);
+    actions.push(`<a class="button button-light" href="/api/measurements/${encodeURIComponent(measurement.id)}/pdf" data-icon="file-down">${measurement.status === "completed" ? "PDF" : "PDF-Vorschau"}</a>`);
+    // Seltene und destruktive Aktionen wie beim Rapport unter „Weitere Aktionen“.
+    if (measurement.canCorrect) more.push('<button type="button" data-correct data-icon="copy">Korrekturaufmaß anlegen</button>');
+    if (measurement.canEdit) more.push('<button type="button" data-delete data-icon="trash">Entwurf löschen</button>');
+    if (more.length) actions.push(`<details class="context-menu"><summary class="button button-light" data-icon="menu">Weitere Aktionen</summary><div class="context-menu-panel">${more.join("")}</div></details>`);
     root.querySelector("[data-actions]").innerHTML = actions.join("");
 
     for (const name of ["title", "measurementDate", "notes"]) {

@@ -85,12 +85,13 @@
     const now = new Date();
     form.elements.reportDate.value = new Date(now - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
+    Calight.searchableSelect(form.elements.orderId, { placeholder: "Auftragsnummer, Bezeichnung oder Kunde …" });
     Calight.createDialog({
       title: "Bautagesbericht anlegen",
       form,
-      submitLabel: "Bericht anlegen",
+      submitLabel: "Anlegen",
       discardMessage: "Den begonnenen Bautagesbericht verwerfen?",
-      initialFocus: preselected ? '[name="reportDate"]' : '[name="orderId"]',
+      initialFocus: preselected ? '[name="reportDate"]' : ".suggest-select input",
       submit: async () => {
         const report = await api("/api/daily-reports", {
           method: "POST",

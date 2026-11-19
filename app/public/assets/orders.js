@@ -76,12 +76,13 @@
   function newOrder() {
     const form = root.querySelector("[data-order-template]").content.firstElementChild.cloneNode(true);
     Calight.bindProjectToCustomer(form);
+    Calight.searchableSelect(form.elements.customerId, { placeholder: "Kundennummer oder Name eingeben …" });
     Calight.createDialog({
       title: "Regieauftrag anlegen",
       form,
-      submitLabel: "Auftrag anlegen",
+      submitLabel: "Anlegen",
       discardMessage: "Den begonnenen Regieauftrag verwerfen?",
-      initialFocus: '[name="customerId"]',
+      initialFocus: ".suggest-select input",
       submit: async () => {
         const order = await api("/api/orders", { method: "POST", body: Object.fromEntries(new FormData(form)) });
         location.assign(href(order));

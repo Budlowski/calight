@@ -106,12 +106,13 @@
           .join("")}</select></label>
       <p class="muted">Aufgemessen werden die Positionen der angenommenen Angebotsrevision und angenommener Nachträge.</p>
       <p class="field-error" data-dialog-error hidden></p>`;
+    Calight.searchableSelect(form.elements.orderId, { placeholder: "Auftragsnummer oder Bezeichnung …" });
     Calight.createDialog({
       title: "Aufmaß anlegen",
       form,
-      submitLabel: "Aufmaß anlegen",
+      submitLabel: "Anlegen",
       discardMessage: "Das Anlegen abbrechen?",
-      initialFocus: '[name="orderId"]',
+      initialFocus: ".suggest-select input",
       submit: () => createForOrder(form.elements.orderId.value),
     });
   }

@@ -245,5 +245,72 @@
     return { reset };
   }
 
-  globalThis.Calight = Object.freeze({ esc, api, format, exact, collator, normalize, matches, notify, bindProjectToCustomer, createDialog, suggest });
+  // Auswahlfeld mit Suche: erweitert ein vorhandenes <select> um eine Eingabe mit
+  // Vorschlägen (Calight.suggest). Durchsucht werden nur die bereits vom Server
+  // gelieferten, berechtigungsgeprüften Optionen; der Wert bleibt im <select>
+  // (Formulardaten, change-Ereignisse und bestehende Logik unverändert).
+  function searchableSelect(select, { placeholder = "Nummer oder Name eingeben …" } = {}) {
+    if (select.dataset.searchable) return;
+    select.dataset.searchable = "1";
+    const box = document.createElement("div");
+    box.className = "suggest-select";
+    box.innerHTML = `<input type="search" autocomplete="off" placeholder="${esc(placeholder)}"><button class="suggest-clear" type="button" aria-label="Auswahl leeren" title="Auswahl leeren" hidden>×</button><div class="suggest-results" hidden></div>`;
+    const input = box.querySelector("input");
+    const clear = box.querySelector("button");
+    const required = select.required;
+    select.required = false;
+    input.required = required;
+    select.classList.add("visually-hidden");
+    select.tabIndex = -1;
+    select.setAttribute("aria-hidden", "true");
+    select.after(box);
+    const label = select.closest("label");
+    if (label) {
+      // Die Beschriftung gilt jetzt für das Suchfeld (nicht für das ausgeblendete <select>).
+      input.id = `searchable-${++suggestCount}`;
+      label.htmlFor = input.id;
+    }
+    const options = () => [...select.options].filter((option) => option.value !== "");
+    const show = () => {
+      const selected = select.selectedOptions[0];
+      input.value = selected && selected.value ? selected.textContent : "";
+      clear.hidden = input.value === "";
+      input.setCustomValidity("");
+    };
+    const validate = () => input.setCustomValidity(input.value !== "" && !select.value ? "Bitte einen Eintrag aus der Liste wählen." : "");
+    suggest({
+      input,
+      list: box.querySelector(".suggest-results"),
+      minLength: 1,
+      load: async (query) => {
+        const needle = normalize(query);
+        return options().filter((option) => normalize(option.textContent).includes(needle)).slice(0, 50);
+      },
+      render: (option) => `<span>${esc(option.textContent)}</span>`,
+      choose: (option) => {
+        select.value = option.value;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        show();
+      },
+    });
+    input.addEventListener("input", () => {
+      clear.hidden = input.value === "";
+      if (select.value && input.value !== select.selectedOptions[0]?.textContent) {
+        select.value = "";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      validate();
+    });
+    clear.addEventListener("click", () => {
+      if (select.value) {
+        select.value = "";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      show();
+    });
+    show();
+    return { refresh: show };
+  }
+
+  globalThis.Calight = Object.freeze({ esc, api, format, exact, collator, normalize, matches, notify, bindProjectToCustomer, createDialog, suggest, searchableSelect });
 })();

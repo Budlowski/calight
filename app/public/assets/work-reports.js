@@ -138,12 +138,13 @@
     };
     form.elements.customerId.addEventListener("change", syncOrders);
     syncOrders();
+    Calight.searchableSelect(form.elements.customerId, { placeholder: "Kundennummer oder Name eingeben …" });
     Calight.createDialog({
       title: "Rapport anlegen",
       form,
-      submitLabel: "Rapport anlegen",
+      submitLabel: "Anlegen",
       discardMessage: "Das Anlegen abbrechen?",
-      initialFocus: '[name="customerId"]',
+      initialFocus: ".suggest-select input",
       submit: () => create({ customerId: form.elements.customerId.value, orderId: form.elements.orderId.value }),
     });
   }

@@ -13,7 +13,7 @@ Technische Bausteine: `app.css` (Variablen und der Abschnitt „Gemeinsame UI-Mu
   - Neue Datensätze in Listen: „<Objekt> anlegen“ (z. B. „Kunde anlegen“, „Artikel anlegen“). Im Dialog „Anlegen“.
   - Formulare: „Speichern“. Bei Entwürfen „Entwurf speichern“, wo der Unterschied zum Einreichen wichtig ist.
   - Statuswechsel: „Einreichen …“, „Abschließen …“ (Auslassungspunkte, wenn ein Dialog folgt), „Bearbeiten“ zum Wiederöffnen.
-  - Dokumente: „PDF“ bzw. „PDF herunterladen“ (Icon `file-down`), „PDF-Vorschau“ (Icon `eye`).
+  - Dokumente im Seitenkopf: „PDF“ (Icon `file-down`), bei Entwürfen „PDF-Vorschau“.
 - **Umbruch:** Beschriftungen brechen nie um (`white-space: nowrap`). Bei Platzmangel bricht die Aktionsleiste als Ganzes um.
 
 ## Icons
@@ -42,7 +42,12 @@ Reine Icon-Buttons brauchen `aria-label` und `title`.
   - Daten liefert immer ein berechtigungsgeprüfter Serverendpunkt.
   - Bedienung: Pfeiltasten, Enter, Escape, Leeren-Knopf (×), ab 2 Zeichen, „Keine Treffer.“.
   - Veraltete Antworten werden verworfen.
-- Kurze, feste Auswahllisten bleiben `<select>`.
+- Auswahl aus vielen Stammdaten in Dialogen: `Calight.searchableSelect(select)`.
+  - Erweitert ein vorhandenes `<select>` um ein Suchfeld mit Vorschlägen. Durchsucht werden nur die bereits vom Server gelieferten, berechtigungsgeprüften Optionen.
+  - Der Wert bleibt im `<select>`, Formulardaten und `change`-Ereignisse sind unverändert.
+  - Freitext ohne Auswahl ist ungültig.
+  - Eingesetzt für die Kundenauswahl (Rapport, Regieauftrag, Angebot) und die Auftragsauswahl (Bautagesbericht, Aufmaß).
+- Kurze, feste Auswahllisten und Listenfilter bleiben `<select>`.
 
 ## Formulare
 
@@ -85,6 +90,13 @@ Nur `CalightModal` bzw. `Calight.createDialog`. Aufbau:
 - Escape schließt. Bei ungespeicherten Eingaben wird nachgefragt.
 - Kritische Aktionen nutzen `CalightModal.confirm` mit eindeutigem Text.
 
+## Navigation
+
+Die Sidebar ist nach Arbeitsbereichen gegliedert: **Allgemein**, **Ausführung**, **Verwaltung**.
+- Eine Gruppe erscheint nur, wenn der Benutzer mindestens einen Eintrag sehen darf.
+- Es gibt keine deaktivierten Platzhalter.
+- Die Gruppe **Kaufmännisch** (Bestellungen, Lieferscheine, Nachkalkulation, Abrechnung) und die Zeiterfassung unter „Ausführung“ kommen erst mit ihrer Implementierung hinzu (`templates/layout/app.php`).
+
 ## Responsive und Barrierearmut
 
 - Sichtprüfung bei etwa 1600, 1000 und 390 px.
@@ -101,6 +113,9 @@ Nur `CalightModal` bzw. `Calight.createDialog`. Aufbau:
 
 ## Bekannte offene Punkte
 
-- **Kunden- und Auftragsauswahl** in Anlegedialogen nutzt `<select>`. Bei sehr großen Kundenbeständen sollte sie auf `Calight.suggest` mit Serversuche umgestellt werden.
-- **Artikelauswahl** im Angebotseditor und in den Stammdaten-Bausteinen nutzt `<datalist>` mit clientseitig geladenen Stammdaten. Eine Umstellung auf `Calight.suggest` braucht eigene Suchendpunkte.
-- **Angebotseditor:** Er bleibt ein bewusstes Speziallayout mit eigenen Dichteregeln.
+- **Projektauswahl** (Angebot, Regieauftrag) bleibt ein `<select>`, weil ihre Optionen je nach Kunde dynamisch ein- und ausgeblendet werden. Das Zusammenspiel mit `searchableSelect` müsste dafür erweitert werden.
+- **Auftragsauswahl im Rapport-Dialog** bleibt ein `<select>`. Sie ist auf die Aufträge des gewählten Kunden beschränkt und daher kurz.
+- **Artikelauswahl** im Angebotseditor und in den Stammdaten-Bausteinen nutzt `<datalist>` mit clientseitig geladenen Stammdaten. Eine Umstellung auf `Calight.suggest` braucht eigene Suchendpunkte und war nicht Teil des UI-Durchgangs.
+- **Übersicht (Dashboard):** Sie zeigt noch den Platzhaltertext aus Phase 0. Ein fachlicher Inhalt (z. B. offene Rapporte und Materialanforderungen) ist eine eigene Aufgabe.
+- **Angebotseditor:** Er ist ein bewusstes Speziallayout. Die dichte Positionstabelle konnte ohne PHP-Laufzeit nicht mit echten Daten geprüft werden.
+- **Sichtprüfung:** Ohne PHP lief sie nur über statische Nachbauten der Vorlagen mit Testdaten. Serverseitig gerenderte Inhalte (Auftragsdetail, Dashboard, Angebotskopf) zeigen dabei alle Zweige zugleich bzw. keine echten Werte.

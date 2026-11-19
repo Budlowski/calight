@@ -45,19 +45,24 @@ if ($showShell): ?>
                 return '<a href="' . $escape($href) . '" data-icon="' . $escape($icon) . '"' . ($active ? ' aria-current="page"' : '') . '>' . $escape($label) . '</a>';
             };
 ?>
-            <?= $navLink('/dashboard', 'layout-dashboard', 'Übersicht', ['dashboard.read']) ?>
-            <?= $navLink('/customers', 'users', 'Kunden', ['customers.read']) ?>
-            <?= $navLink('/projects', 'folder-kanban', 'Projekte', ['projects.read']) ?>
-            <?= $navLink('/offers', 'file-text', 'Angebote', ['offers.read']) ?>
-            <?= $navLink('/orders', 'clipboard-list', 'Aufträge', ['orders.read']) ?>
-
-            <span class="sidebar-section-label">Ausführung &amp; Abrechnung</span>
-            <?= $navLink('/daily-reports', 'calendar-days', 'Bautagesberichte', ['reports.read']) ?>
-            <?= $navLink('/material-requests', 'package', 'Materialanforderungen', ['reports.read']) ?>
-            <?= $navLink('/measurements', 'ruler', 'Aufmaße', ['measurements.read']) ?>
-            <?= $navLink('/work-reports', 'clipboard-check', 'Rapporte', ['workreports.read']) ?>
-            <a href="#" aria-disabled="true" tabindex="-1" data-icon="shopping-cart">Bestellungen</a>
-            <a href="#" aria-disabled="true" tabindex="-1" data-icon="chart-no-axes-column-increasing">Nachkalkulation</a>
+            <?php
+            // Gruppen erscheinen nur mit mindestens einem sichtbaren Eintrag. Noch nicht
+            // implementierte Bereiche (Bestellungen, Lieferscheine, Nachkalkulation,
+            // Abrechnung, Zeiterfassung) werden erst mit ihrer Umsetzung aufgenommen –
+            // die Gruppe „Kaufmännisch“ entsteht dann hier.
+            $navGroup = static function (string $label, string $links) use ($escape): string {
+                return $links === '' ? '' : '<span class="sidebar-section-label">' . $escape($label) . '</span>' . $links;
+            };
+            ?>
+            <?= $navGroup('Allgemein', $navLink('/dashboard', 'layout-dashboard', 'Übersicht', ['dashboard.read'])
+                . $navLink('/customers', 'users', 'Kunden', ['customers.read'])
+                . $navLink('/projects', 'folder-kanban', 'Projekte', ['projects.read'])
+                . $navLink('/offers', 'file-text', 'Angebote', ['offers.read'])
+                . $navLink('/orders', 'clipboard-list', 'Aufträge', ['orders.read'])) ?>
+            <?= $navGroup('Ausführung', $navLink('/daily-reports', 'calendar-days', 'Bautagesberichte', ['reports.read'])
+                . $navLink('/work-reports', 'clipboard-check', 'Rapporte', ['workreports.read'])
+                . $navLink('/measurements', 'ruler', 'Aufmaße', ['measurements.read'])
+                . $navLink('/material-requests', 'package', 'Materialanforderungen', ['reports.read'])) ?>
 
             <?php $managementLinks = $navLink('/master-data', 'database', 'Stammdaten', ['master_data.read', 'costs.read']) . $navLink('/settings', 'settings', 'Einstellungen', ['settings.manage']); ?>
             <div class="sidebar-management"<?= $managementLinks === '' ? ' hidden' : '' ?>>

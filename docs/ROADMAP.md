@@ -36,7 +36,7 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 | 5.1–5.2 | Einsatzplanung und optionale CalDAV-Anbindung | Geplant |
 | 6.1–6.2 | Erweiterte Dokumentablage und optionales Kundenportal | Geplant |
 | 7.1–7.2 | Optionale Lexware-API und E-Mail-Versand | Geplant |
-| UX | Projektweite Vereinheitlichung von Layout, Navigation und Aktionen | Geplant |
+| UX | Projektweite Vereinheitlichung von Layout, Navigation und Aktionen | Umgesetzt (Regeln in `docs/ui-guidelines.md`); offene Einzelpunkte dort dokumentiert |
 
 ## Fachliche Grundregeln
 
@@ -515,7 +515,10 @@ Die bestehende gemeinsame PDF-Ausgabe und Archivierung aus Phase 3.2.3 bleibt Gr
 - Konfigurierbare, sicher gespeicherte SMTP-Zugangsdaten; Empfänger vor Versand prüfen und Versandstatus dokumentieren.
 - Bestehende archivierte PDF-Fassungen versenden, nicht unbemerkt neu erzeugen. Kein eigener Mailserver und keine umfangreiche E-Mail-Verwaltung.
 
-## Projektweite UX- und Navigationsvereinheitlichung (geplant)
+## Projektweite UX- und Navigationsvereinheitlichung (umgesetzt)
+
+Umgesetzt: einheitliche Aktionen, Menüs, Statusfarben, Formulare und Suchkomponenten (`Calight.suggest`, `Calight.searchableSelect`) sowie die Sidebar nach Arbeitsbereichen. Verbindliche Regeln und verbleibende Einzelpunkte stehen in [`ui-guidelines.md`](ui-guidelines.md).
+
 
 - Einheitliche Positionierung, Benennung, Reihenfolge und Darstellung von primären, sekundären und destruktiven Aktionen.
 - Gleiche Such- und Auswahlkomponenten für Kunden, Projekte, Artikel, Mitarbeiter, Lieferanten und andere Stammdaten, soweit fachlich sinnvoll.
@@ -541,7 +544,14 @@ Die bestehende gemeinsame PDF-Ausgabe und Archivierung aus Phase 3.2.3 bleibt Gr
 
 - Bestehende Angebots-JSONs, SQLite-Dateien und Archivdateien dürfen durch Migrationen, Tests oder Git-Operationen nicht beschädigt oder versehentlich eingecheckt werden.
 
-## Geplante Navigation
+## Navigation
+
+Aktuell umgesetzt:
+- **Allgemein:** Übersicht, Kunden, Projekte, Angebote, Aufträge
+- **Ausführung:** Bautagesberichte, Rapporte, Aufmaße, Materialanforderungen
+- **Verwaltung:** Stammdaten, Einstellungen
+
+Gruppen ohne sichtbaren Eintrag (fehlende Rechte) werden nicht angezeigt. Es gibt keine deaktivierten Platzhalter. Zielbild:
 
 - **Allgemein:** Übersicht · Kunden · Projekte · Angebote · Aufträge
 - **Ausführung:** Zeiterfassung · Bautagesberichte · Rapporte · Aufmaße · Materialanforderungen

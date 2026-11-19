@@ -181,7 +181,7 @@
     Calight.createDialog({
       title: "Kunde anlegen",
       form,
-      submitLabel: "Kunde anlegen",
+      submitLabel: "Anlegen",
       discardMessage: "Den begonnenen Kunden verwerfen?",
       initialFocus: '[name="companyName"]',
       submit: async () => {
@@ -233,7 +233,7 @@
     Calight.createDialog({
       title: "Projekt anlegen",
       form,
-      submitLabel: "Projekt anlegen",
+      submitLabel: "Anlegen",
       discardMessage: "Das begonnene Projekt verwerfen?",
       initialFocus: '[name="name"]',
       submit: async () => {

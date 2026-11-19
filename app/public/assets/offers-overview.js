@@ -93,13 +93,14 @@
     const file = form.querySelector("[data-import-file]");
     const basics = () => ({ projectId: form.elements.projectId.value, customerId: form.elements.customerId.value });
     Calight.bindProjectToCustomer(form);
+    Calight.searchableSelect(form.elements.customerId, { placeholder: "Kundennummer oder Name eingeben …" });
 
     const dialog = Calight.createDialog({
       title: "Angebot anlegen",
       form,
       submitLabel: "Entwurf anlegen",
       discardMessage: "Den begonnenen Angebotsentwurf verwerfen?",
-      initialFocus: '[name="customerId"]',
+      initialFocus: ".suggest-select input",
       submit: async () => {
         const result = await api("/api/offers", { method: "POST", body: { ...basics(), title: form.elements.title.value } });
         location.assign(result.url);
