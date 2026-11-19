@@ -2,7 +2,7 @@
 <div id="work-report-detail" class="record-detail-page" data-id="<?= $escape($reportId) ?>" data-csrf="<?= $escape($csrfToken) ?>">
     <nav class="breadcrumb" aria-label="Brotkrümelnavigation">
         <ol>
-            <li><a href="/orders">Aufträge</a></li>
+            <li data-orders-crumb><a href="/orders">Aufträge</a></li>
             <li data-order-crumb></li>
             <li><a href="/work-reports">Rapporte</a></li>
             <li aria-current="page" data-current-crumb>Rapport</li>

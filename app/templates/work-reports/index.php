@@ -9,7 +9,7 @@
     </div>
     <div class="notice" data-message role="status" hidden></div>
     <div class="overview-toolbar">
-        <input type="search" data-search placeholder="Nummer, Arbeiten, Auftrag, Kunde oder Ersteller durchsuchen">
+        <input type="search" data-search placeholder="Nummer, Arbeiten, Kunde, Auftrag oder Ersteller durchsuchen">
         <select data-status-filter aria-label="Status">
             <option value="">Alle Status</option>
             <option value="draft">Entwurf</option>
@@ -20,6 +20,12 @@
             <option value="">Alle Bestätigungen</option>
             <option value="confirmed">Vom Kunden bestätigt</option>
             <option value="none">Ohne Bestätigung</option>
+        </select>
+        <select data-customer-filter aria-label="Kunde"><option value="">Alle Kunden</option></select>
+        <select data-assignment-filter aria-label="Auftragszuordnung">
+            <option value="">Mit und ohne Auftrag</option>
+            <option value="with_order">Mit Auftrag</option>
+            <option value="without_order">Ohne Auftrag</option>
         </select>
         <select data-order-filter aria-label="Auftrag"><option value="">Alle Aufträge</option></select>
         <select data-sort aria-label="Sortierung"></select>

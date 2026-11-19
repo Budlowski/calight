@@ -190,6 +190,97 @@ final class WorkReportTest extends TestCase
     }
 
     /** @param array<string,mixed> $actor @return array<string,mixed> */
+    public function testStandaloneReportsNeedOnlyACustomerAndCanBeAssignedLater(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['pdo' => $pdo, 'service' => $service, 'office' => $office, 'technician' => $technician, 'colleague' => $colleague,
+                'regie' => $regie, 'offerOrder' => $offerOrder, 'orders' => $orders, 'labor' => $laborItem, 'anna' => $anna, 'customer' => $customer] = $env;
+            $now = '2026-11-12T08:00:00Z';
+            $other = Uuid::v4();
+            $pdo->prepare("INSERT INTO customers(id,customer_number,customer_type,company_name,created_at,updated_at) VALUES(:id,'K2','company','Fremdkunde',:now,:now)")
+                ->execute(['id' => $other, 'now' => $now]);
+            $archived = Uuid::v4();
+            $pdo->prepare("INSERT INTO customers(id,customer_number,customer_type,company_name,active,created_at,updated_at) VALUES(:id,'K3','company','Archiviert',0,:now,:now)")
+                ->execute(['id' => $archived, 'now' => $now]);
+
+            // Kunde ist Pflicht, Auftrag optional; ein Auftrag muss zum Kunden gehören.
+            $this->assertThrows(OrderValidationException::class, fn () => $service->create([], $technician));
+            $this->assertThrows(OrderValidationException::class, fn () => $service->create(['customerId' => $archived], $office));
+            $this->assertThrows(OrderValidationException::class, fn () => $service->create(['customerId' => $other, 'orderId' => $regie['id']], $office));
+            $reference = $service->referenceData($technician);
+            $this->assertSame(['id', 'customerNumber', 'name'], array_keys($reference['customers'][0]), 'Monteure erhalten nur Nummer und Name der Kunden.');
+            $this->assertSame(2, count($reference['customers']), 'Archivierte Kunden stehen nicht zur Auswahl.');
+
+            // Eigenständiger Rapport ohne Angebot, Projekt und Auftrag – auch wenn alle Aufträge noch offen sind.
+            $standalone = $service->create(['customerId' => $customer, 'workDate' => '2026-11-12'], $technician);
+            $this->assertSame(null, $standalone['orderId']);
+            $this->assertSame($customer, $standalone['customerId']);
+            $this->assertSame('Matzko-Mack', $standalone['customerName']);
+            $this->assertTrue(!$standalone['canAssignOrder'], 'Monteure ordnen keine Aufträge zu.');
+            $standalone = $this->saveProof($service, $standalone, [
+                'description' => 'Spontane Reparatur Außenbeleuchtung',
+                'labor' => [['employeeId' => $anna, 'hours' => '1,5', 'laborItemId' => $laborItem]],
+                'materials' => [['quantity' => '2', 'unit' => 'Stk.', 'description' => 'Leuchtmittel']],
+            ], $technician);
+            $submitted = $service->submit($standalone['id'], ['version' => $standalone['version']], $technician);
+            $this->assertTrue(str_starts_with((string) $submitted['reportNumber'], 'RP'));
+            $hash = $submitted['submittedSha256'];
+
+            // Mit Auftrag: Kunde wird aus dem Auftrag übernommen (projektfreier Regie- bzw. Angebotsauftrag).
+            $withOrder = $service->create(['orderId' => $offerOrder['id']], $office);
+            $this->assertSame($customer, $withOrder['customerId']);
+            $this->assertSame($offerOrder['id'], $withOrder['orderId']);
+
+            // Fremde eigenständige Rapporte bleiben für andere Monteure verborgen.
+            $this->assertThrows(AccessDeniedException::class, fn () => $service->detail($standalone['id'], $colleague));
+            $this->assertSame(0, $service->page([], $colleague)['total']);
+            $this->assertSame(1, $service->page([], $technician)['total']);
+            $this->assertSame(1, $service->page(['assignment' => 'without_order'], $office)['total']);
+            $this->assertSame(1, $service->page(['assignment' => 'with_order'], $office)['total']);
+            $this->assertSame(2, $service->page(['customer' => $customer], $office)['total']);
+            $this->assertSame(0, $service->page(['customer' => $other], $office)['total']);
+            $this->assertSame(1, $service->page(['q' => 'außenbeleuchtung'], $office)['total'], 'Suche funktioniert ohne Auftragsbezug.');
+            $this->assertSame(2, $service->page(['q' => 'K1'], $office)['total'], 'Suche nach Kundennummer.');
+            $this->assertSame(1, $service->page(['q' => (string) $submitted['reportNumber']], $office)['total']);
+
+            // Kaufmännische Bearbeitung und Bestätigung ohne Auftrag.
+            $billed = $service->saveBilling($submitted['id'], ['version' => $submitted['version'], 'items' => [
+                ['type' => 'labor', 'description' => 'Monteurstunden', 'quantity' => '1,5', 'unit' => 'h', 'unitPrice' => '85.00', 'costItemId' => $laborItem],
+            ]], $office);
+            $confirmed = $service->confirm($billed['id'], ['version' => $billed['version'], 'confirmedByName' => 'Frau Mack', 'method' => 'on_site'], $technician);
+            $processed = $service->process($confirmed['id'], ['version' => $confirmed['version']], $office);
+            $this->assertSame('processed', $processed['status']);
+            $this->assertSame('127.50', $processed['netTotal']);
+
+            // Nachträgliche Zuordnung: nur Büro, nur Aufträge desselben Kunden, Nachweis unverändert.
+            $this->assertThrows(AccessDeniedException::class, fn () => $service->assignOrder($processed['id'], ['version' => $processed['version'], 'orderId' => $regie['id']], $technician));
+            $foreignOrder = $orders->createRegie(['customerId' => $other, 'title' => 'Fremd', 'orderDate' => '2026-11-12']);
+            $this->assertThrows(OrderValidationException::class, fn () => $service->assignOrder($processed['id'], ['version' => $processed['version'], 'orderId' => $foreignOrder['id']], $office));
+            $this->assertThrows(OrderValidationException::class, fn () => $service->assignOrder($processed['id'], ['version' => $processed['version'] - 1, 'orderId' => $regie['id']], $office));
+            $assigned = $service->assignOrder($processed['id'], ['version' => $processed['version'], 'orderId' => $regie['id']], $office);
+            $this->assertSame($regie['id'], $assigned['orderId']);
+            $this->assertTrue($assigned['orderAssignedAt'] !== null && $assigned['orderAssignedByName'] === 'Office');
+            $this->assertSame($hash, $assigned['submittedSha256'], 'Die Prüfsumme des Leistungsnachweises bleibt unverändert.');
+            $this->assertSame('confirmed', $assigned['confirmationStatus']);
+            $this->assertSame('127.50', $assigned['netTotal']);
+            $this->assertSame(1, count($assigned['billing']), 'Abrechnungspositionen bleiben erhalten, nichts wird doppelt übernommen.');
+            $this->assertSame(1, count($service->forOrder($regie['id'], $office)));
+            $this->assertThrows(OrderValidationException::class, fn () => $service->assignOrder($assigned['id'], ['version' => $assigned['version'], 'orderId' => $regie['id']], $office));
+
+            // Der Ersteller sieht seinen Rapport weiterhin, auch wenn der zugeordnete Auftrag noch offen ist.
+            $this->assertSame($assigned['id'], $service->detail($assigned['id'], $technician)['id']);
+            $this->assertThrows(AccessDeniedException::class, fn () => $service->detail($assigned['id'], $colleague));
+            $orders->changeStatus($regie['id'], 'open', 'in_progress');
+            $this->assertSame($assigned['id'], $service->detail($assigned['id'], $colleague)['id'], 'Nach Freigabe des Auftrags wie jeder auftragsbezogene Rapport sichtbar.');
+
+            // Eine Korrektur übernimmt Kunde und (jetzt zugeordneten) Auftrag; das Original bleibt.
+            $correction = $service->create(['correctionOf' => $assigned['id']], $technician);
+            $this->assertSame($customer, $correction['customerId']);
+            $this->assertSame($regie['id'], $correction['orderId']);
+            $this->assertSame($hash, $service->detail($assigned['id'], $office)['submittedSha256']);
+        });
+    }
+
     private function submittedReport(WorkReportService $service, string $orderId, array $actor, string $employee, string $laborItem): array
     {
         $draft = $service->create(['orderId' => $orderId, 'workDate' => '2026-11-12'], $actor);
@@ -254,6 +345,7 @@ final class WorkReportTest extends TestCase
 
             $test([
                 'pdo' => $pdo,
+                'customer' => $customer,
                 'service' => new WorkReportService($pdo, new WorkReportRepository($pdo), new OrderRepository($pdo), $numbers),
                 'orders' => $orders,
                 'regie' => $orders->createRegie(['customerId' => $customer, 'title' => 'Störung Heizung', 'orderDate' => '2026-11-12']),

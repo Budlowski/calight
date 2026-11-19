@@ -11,16 +11,17 @@ final readonly class WorkReportRepository
 {
     /** Sortierbare Spalten der Übersicht mit natürlicher Richtung; "total" nur mit Preisrecht. */
     public const LIST_SORTS = ['updated' => 'desc', 'date' => 'desc', 'number' => 'asc', 'order' => 'asc', 'customer' => 'asc', 'status' => 'asc', 'total' => 'desc'];
-    public const LIST_FILTERS = ['status', 'confirmation', 'order'];
+    public const LIST_FILTERS = ['status', 'confirmation', 'order', 'customer', 'assignment'];
 
     private const CUSTOMER_NAME = "CASE WHEN c.customer_type='company' THEN c.company_name ELSE trim(c.first_name || ' ' || c.last_name) END";
     private const SELECT = 'w.*, o.order_number, o.title AS order_title, o.status AS order_status, o.order_type, c.customer_number, %s AS customer_name,
-        u.display_name AS creator_name, su.display_name AS submitted_by_name, pu.display_name AS processed_by_name,
+        u.display_name AS creator_name, su.display_name AS submitted_by_name, pu.display_name AS processed_by_name, au.display_name AS order_assigned_by_name,
         corrected.report_number AS corrected_number,
         (SELECT COUNT(*) FROM work_reports later WHERE later.correction_of_id = w.id) AS correction_count,
         (SELECT group_concat(l.hours, \'|\') FROM work_report_labor l WHERE l.report_id = w.id) AS hour_values';
-    private const FROM = 'work_reports w JOIN orders o ON o.id = w.order_id JOIN customers c ON c.id = o.customer_id
-        JOIN users u ON u.id = w.created_by_user_id LEFT JOIN users su ON su.id = w.submitted_by_user_id
+    // Kunde direkt am Rapport; der Auftrag ist optional (eigenständige Rapporte).
+    private const FROM = 'work_reports w JOIN customers c ON c.id = w.customer_id LEFT JOIN orders o ON o.id = w.order_id
+        JOIN users u ON u.id = w.created_by_user_id LEFT JOIN users su ON su.id = w.submitted_by_user_id LEFT JOIN users au ON au.id = w.order_assigned_by_user_id
         LEFT JOIN users pu ON pu.id = w.processed_by_user_id LEFT JOIN work_reports corrected ON corrected.id = w.correction_of_id';
 
     public function __construct(private PDO $pdo)
@@ -28,16 +29,24 @@ final readonly class WorkReportRepository
     }
 
     /**
-     * @param bool $releasedOnly Techniker sehen nur Rapporte freigegebener Aufträge.
+     * @param string|null $technicianId Gesetzt für Techniker: eigene Rapporte sowie fremde nur an freigegebenen Aufträgen.
      * @param bool $priceSort Sortierung nach Nettobetrag nur mit Preisrecht.
      * @return array{items:list<array<string,mixed>>,total:int,page:int,perPage:int,pageCount:int,sort:string,dir:string}
      */
-    public function page(ListQuery $query, bool $releasedOnly, bool $priceSort): array
+    public function page(ListQuery $query, ?string $technicianId, bool $priceSort): array
     {
         $page = (new Paginator($this->pdo))
-            ->search($query, ['w.report_number', 'w.description', 'w.contact_person', 'o.order_number', 'o.title', self::CUSTOMER_NAME, 'u.display_name']);
-        if ($releasedOnly) {
-            $page->where("o.status <> 'open'");
+            ->search($query, ['w.report_number', 'w.description', 'w.contact_person', 'o.order_number', 'o.title', self::CUSTOMER_NAME, 'c.customer_number', 'u.display_name']);
+        if ($technicianId !== null) {
+            $page->where("w.created_by_user_id = :work_technician OR (o.id IS NOT NULL AND o.status <> 'open')", ['work_technician' => $technicianId]);
+        }
+        if ($query->filter('customer') !== null) {
+            $page->where('w.customer_id = :work_customer', ['work_customer' => (string) $query->filter('customer')]);
+        }
+        if ($query->filter('assignment') === 'without_order') {
+            $page->where('w.order_id IS NULL');
+        } elseif ($query->filter('assignment') === 'with_order') {
+            $page->where('w.order_id IS NOT NULL');
         }
         if (in_array($query->filter('status'), ['draft', 'submitted', 'processed'], true)) {
             $page->where('w.status = :work_status', ['work_status' => (string) $query->filter('status')]);
@@ -107,9 +116,9 @@ final readonly class WorkReportRepository
     public function insert(array $data): void
     {
         $this->pdo->prepare('INSERT INTO work_reports
-            (id, order_id, work_date, work_date_to, contact_person, description, notes, status, correction_of_id, version,
+            (id, customer_id, order_id, work_date, work_date_to, contact_person, description, notes, status, correction_of_id, version,
              created_by_user_id, created_at, updated_at)
-            VALUES (:id, :order_id, :work_date, :work_date_to, :contact_person, :description, :notes, \'draft\', :correction_of_id, 1,
+            VALUES (:id, :customer_id, :order_id, :work_date, :work_date_to, :contact_person, :description, :notes, \'draft\', :correction_of_id, 1,
              :created_by_user_id, :created_at, :updated_at)')->execute($data);
     }
 
@@ -195,6 +204,38 @@ final readonly class WorkReportRepository
             WHERE id = :id AND version = :version AND status <> 'draft' AND confirmation_status = 'none'");
         $statement->execute(['method' => $method, 'name' => $name, 'at' => $at, 'user' => $userId, 'id' => $id, 'version' => $version]);
         return $statement->rowCount() === 1;
+    }
+
+    /**
+     * Ordnet einen eigenständigen Rapport nachträglich einem Auftrag zu. Leistungsnachweis,
+     * Prüfsumme und Abrechnungspositionen bleiben unverändert.
+     */
+    public function assignOrder(string $id, int $version, string $orderId, string $userId, string $at): bool
+    {
+        $statement = $this->pdo->prepare('UPDATE work_reports SET order_id = :order_id, order_assigned_at = :at, order_assigned_by_user_id = :user,
+            version = version + 1, updated_at = :at WHERE id = :id AND version = :version AND order_id IS NULL');
+        $statement->execute(['order_id' => $orderId, 'at' => $at, 'user' => $userId, 'id' => $id, 'version' => $version]);
+        return $statement->rowCount() === 1;
+    }
+
+    /** @return list<array{id:string,customer_number:?string,name:string}> aktive Kunden nur mit Nummer und Name */
+    public function activeCustomers(): array
+    {
+        return $this->pdo->query('SELECT id, customer_number, ' . str_replace('c.', '', self::CUSTOMER_NAME) . ' AS name
+            FROM customers WHERE active = 1 ORDER BY name COLLATE NOCASE, id')->fetchAll();
+    }
+
+    public function customerIsActive(string $id): bool
+    {
+        $statement = $this->pdo->prepare('SELECT EXISTS(SELECT 1 FROM customers WHERE id = :id AND active = 1)');
+        $statement->execute(['id' => $id]);
+        return (bool) $statement->fetchColumn();
+    }
+
+    /** @return list<array<string,mixed>> Aufträge mit Kundenbezug für Auswahllisten */
+    public function ordersForSelection(): array
+    {
+        return $this->pdo->query('SELECT id, order_number, title, status, customer_id FROM orders ORDER BY order_number COLLATE NOCASE DESC, id')->fetchAll();
     }
 
     public function deleteDraft(string $id, int $version): bool

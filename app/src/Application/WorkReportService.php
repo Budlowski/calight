@@ -25,6 +25,10 @@ use Throwable;
  * Rapporte (Regieberichte): Leistungsnachweis durch den Monteur und davon
  * getrennte kaufmännische Abrechnungspositionen durch das Büro.
  *
+ * Ein Rapport gehört zu einem Kunden (Pflicht); Auftrag und damit Projekt sind
+ * optional. Das Büro kann einen eigenständigen Rapport nachträglich einem
+ * Auftrag desselben Kunden zuordnen, ohne den Leistungsnachweis zu verändern.
+ *
  * Der Leistungsnachweis (Kopf, Stunden, Material) ist ab dem Einreichen
  * unveränderlich und per SHA-256 festgeschrieben. Preise und Beträge werden nur
  * mit workreports.process ausgeliefert. Rapporte erzeugen keine Ist-Kosten.
@@ -44,16 +48,18 @@ final readonly class WorkReportService
     }
 
     /**
-     * Auswahllisten für die Erfassung: Aufträge, Mitarbeiter und Lohnkostengruppen – ohne Preise oder Kostensätze.
+     * Auswahllisten für die Erfassung: Kunden (nur Nummer und Name), Aufträge mit Kundenbezug,
+     * Mitarbeiter und Lohnkostengruppen – ohne Preise, Kostensätze oder Kontaktdaten.
      *
      * @param array<string,mixed> $actor
      * @return array<string,list<array<string,mixed>>>
      */
     public function referenceData(array $actor): array
     {
-        $orders = array_values(array_filter($this->orders->all(), fn (array $order): bool => !$this->isTechnician($actor) || $order['status'] !== 'open'));
+        $orders = array_values(array_filter($this->reports->ordersForSelection(), fn (array $order): bool => !$this->isTechnician($actor) || $order['status'] !== 'open'));
         return [
-            'orders' => array_map(static fn (array $order): array => ['id' => $order['id'], 'orderNumber' => $order['order_number'], 'title' => $order['title'], 'customerName' => $order['customer_name']], $orders),
+            'customers' => array_map(static fn (array $row): array => ['id' => $row['id'], 'customerNumber' => $row['customer_number'], 'name' => $row['name']], $this->reports->activeCustomers()),
+            'orders' => array_map(static fn (array $order): array => ['id' => $order['id'], 'orderNumber' => $order['order_number'], 'title' => $order['title'], 'customerId' => $order['customer_id']], $orders),
             'employees' => array_map(static fn (array $row): array => ['id' => $row['id'], 'name' => $row['display_name']], $this->reports->activeEmployees()),
             'laborGroups' => array_map(static fn (array $row): array => ['id' => $row['id'], 'name' => $row['name'], 'unit' => $row['unit']], $this->reports->catalog('', 'labor', 200)),
         ];
@@ -67,7 +73,7 @@ final readonly class WorkReportService
     public function page(array $parameters, array $actor): array
     {
         $query = ListQuery::fromArray($parameters, WorkReportRepository::LIST_SORTS, 'updated', WorkReportRepository::LIST_FILTERS);
-        $page = $this->reports->page($query, $this->isTechnician($actor), $this->canProcess($actor));
+        $page = $this->reports->page($query, $this->isTechnician($actor) ? (string) $actor['id'] : null, $this->canProcess($actor));
         $page['items'] = array_map(fn (array $row): array => $this->summary($row, $actor), $page['items']);
         return $page;
     }
@@ -80,9 +86,10 @@ final readonly class WorkReportService
     }
 
     /**
-     * Legt einen Entwurf an – für einen Auftrag oder als Korrektur eines eingereichten Rapports.
+     * Legt einen Entwurf an – für einen Kunden mit optionalem Auftrag oder als Korrektur eines
+     * eingereichten Rapports. Es wird nie automatisch ein Auftrag angelegt.
      *
-     * @param array<string,mixed> $input orderId | correctionOf, workDate
+     * @param array<string,mixed> $input customerId und/oder orderId | correctionOf, workDate
      * @param array<string,mixed> $actor
      * @return array<string,mixed>
      */
@@ -99,11 +106,23 @@ final readonly class WorkReportService
             if (!$this->canProcess($actor) && (string) $original['created_by_user_id'] !== (string) $actor['id']) {
                 throw new AccessDeniedException('workreports.write.own');
             }
-            $orderId = (string) $original['order_id'];
+            $customerId = (string) $original['customer_id'];
+            $orderId = $original['order_id'] !== null ? (string) $original['order_id'] : '';
         } else {
+            $customerId = trim((string) ($input['customerId'] ?? ''));
             $orderId = trim((string) ($input['orderId'] ?? ''));
         }
-        $this->accessibleOrder($orderId, $actor);
+        if ($orderId !== '' && $original === null) {
+            // Ein gewählter Auftrag muss zugänglich sein und zum gewählten Kunden gehören.
+            $order = $this->accessibleOrder($orderId, $actor);
+            if ($customerId !== '' && $customerId !== (string) $order['customer_id']) {
+                throw new OrderValidationException(['Der Auftrag gehört nicht zum ausgewählten Kunden.']);
+            }
+            $customerId = (string) $order['customer_id'];
+        }
+        if ($original === null && !$this->customerIsActive($customerId)) {
+            throw new OrderValidationException(['Bitte einen aktiven Kunden auswählen.']);
+        }
         $date = trim((string) ($input['workDate'] ?? '')) ?: date('Y-m-d');
         $this->validDate($date, 'Leistungsdatum');
         $id = Uuid::v4();
@@ -113,7 +132,8 @@ final readonly class WorkReportService
         try {
             $this->reports->insert([
                 'id' => $id,
-                'order_id' => $orderId,
+                'customer_id' => $customerId,
+                'order_id' => $orderId !== '' ? $orderId : null,
                 'work_date' => $original['work_date'] ?? $date,
                 'work_date_to' => $original['work_date_to'] ?? null,
                 'contact_person' => $original['contact_person'] ?? '',
@@ -359,6 +379,34 @@ final readonly class WorkReportService
         return $this->detail($id, $actor);
     }
 
+    /**
+     * Ordnet einen eigenständigen Rapport nachträglich einem Auftrag desselben Kunden zu
+     * (nur Büro/Admin). Leistungsnachweis, Prüfsumme, Bestätigung und Abrechnung bleiben unverändert.
+     *
+     * @param array<string,mixed> $input version, orderId
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
+    public function assignOrder(string $id, array $input, array $actor): array
+    {
+        $this->requireProcess($actor);
+        $report = $this->accessibleReport($id, $actor);
+        if ($report['order_id'] !== null) {
+            throw new OrderValidationException(['Der Rapport ist bereits einem Auftrag zugeordnet.']);
+        }
+        $order = $this->orders->find(trim((string) ($input['orderId'] ?? '')));
+        if ($order === null) {
+            throw new OrderValidationException(['Auftrag wurde nicht gefunden.']);
+        }
+        if ((string) $order['customer_id'] !== (string) $report['customer_id']) {
+            throw new OrderValidationException(['Der Auftrag gehört nicht zum Kunden des Rapports.']);
+        }
+        if (!$this->reports->assignOrder($id, $this->version($input), (string) $order['id'], (string) $actor['id'], Clock::now())) {
+            throw new OrderValidationException(['Der Rapport wurde zwischenzeitlich geändert. Bitte neu laden.']);
+        }
+        return $this->detail($id, $actor);
+    }
+
     /** @param array<string,mixed> $actor */
     public function delete(string $id, int $version, array $actor): void
     {
@@ -584,7 +632,7 @@ final readonly class WorkReportService
     private function proofHash(array $report, array $labor, array $materials): string
     {
         $proof = [
-            'orderId' => $report['order_id'], 'workDate' => $report['work_date'], 'workDateTo' => $report['work_date_to'],
+            'customerId' => $report['customer_id'], 'orderId' => $report['order_id'], 'workDate' => $report['work_date'], 'workDateTo' => $report['work_date_to'],
             'contactPerson' => $report['contact_person'], 'description' => $report['description'], 'notes' => $report['notes'],
             'labor' => array_map(static fn (array $row): array => [
                 $row['employee_id'], $row['worker_name'], $row['hours'], $row['labor_item_id'], $row['labor_item_name'], $row['activity'],
@@ -619,6 +667,11 @@ final readonly class WorkReportService
         ]])['positionTotal'];
     }
 
+    private function customerIsActive(string $customerId): bool
+    {
+        return $customerId !== '' && $this->reports->customerIsActive($customerId);
+    }
+
     /** @param array<string,mixed> $actor @return array<string,mixed> */
     private function accessibleOrder(string $orderId, array $actor): array
     {
@@ -639,8 +692,10 @@ final readonly class WorkReportService
         if ($report === null) {
             throw new OrderValidationException(['Rapport wurde nicht gefunden.']);
         }
-        if ($this->isTechnician($actor) && $report['order_status'] === 'open') {
-            throw new AccessDeniedException('orders.released.read');
+        // Techniker: eigene Rapporte immer; fremde nur an freigegebenen Aufträgen, nie fremde eigenständige.
+        if ($this->isTechnician($actor) && (string) $report['created_by_user_id'] !== (string) ($actor['id'] ?? '')
+            && ($report['order_id'] === null || $report['order_status'] === 'open')) {
+            throw new AccessDeniedException('workreports.read.own');
         }
         return $report;
     }
@@ -710,6 +765,10 @@ final readonly class WorkReportService
             'orderNumber' => $row['order_number'],
             'orderTitle' => $row['order_title'],
             'orderType' => $row['order_type'],
+            'orderAssignedAt' => $row['order_assigned_at'],
+            'orderAssignedByName' => $row['order_assigned_by_name'],
+            'customerId' => $row['customer_id'],
+            'customerNumber' => $row['customer_number'],
             'customerName' => $row['customer_name'],
             'reportNumber' => $row['report_number'],
             'workDate' => $row['work_date'],
@@ -730,6 +789,7 @@ final readonly class WorkReportService
             'canProcess' => $this->canProcess($actor),
             'canConfirm' => $row['status'] !== 'draft' && $row['confirmation_status'] === 'none' && ($this->canProcess($actor) || $own),
             'canCorrect' => $row['status'] !== 'draft' && $this->can($actor, 'workreports.write') && ($this->canProcess($actor) || $own),
+            'canAssignOrder' => $row['order_id'] === null && $this->canProcess($actor),
         ];
         // Beträge ausschließlich mit Preisrecht.
         if ($this->canProcess($actor)) {

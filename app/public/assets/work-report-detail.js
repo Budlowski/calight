@@ -19,7 +19,7 @@
   const OTHER = "__other";
 
   let report = null;
-  let reference = { employees: [], laborGroups: [] };
+  let reference = { employees: [], laborGroups: [], orders: [] };
   let labor = [];
   let materials = [];
   let billing = [];
@@ -317,13 +317,20 @@
     root.querySelector("[data-number]").textContent = number;
     root.querySelector("[data-title]").textContent = `Rapport ${report.reportNumber || ""} · ${format.date(report.workDate)}`.replace("  ", " ");
     root.querySelector("[data-current-crumb]").textContent = number;
-    root.querySelector("[data-order-crumb]").innerHTML = `<a href="/orders/${encodeURIComponent(report.orderId)}">${esc(report.orderNumber)}</a>`;
-    root.querySelector("[data-order]").innerHTML = `<a href="/orders/${encodeURIComponent(report.orderId)}">${esc(report.orderNumber)} · ${esc(report.orderTitle)}</a>`;
+    // Eigenständige Rapporte haben keinen Auftrag; die Brotkrume führt dann über die Rapportübersicht.
+    const orderCrumb = root.querySelector("[data-order-crumb]");
+    orderCrumb.hidden = !report.orderId;
+    root.querySelector("[data-orders-crumb]").hidden = !report.orderId;
+    orderCrumb.innerHTML = report.orderId ? `<a href="/orders/${encodeURIComponent(report.orderId)}">${esc(report.orderNumber)}</a>` : "";
+    root.querySelector("[data-order]").innerHTML = report.orderId
+      ? `<a href="/orders/${encodeURIComponent(report.orderId)}">${esc(report.orderNumber)} · ${esc(report.orderTitle)}</a>${report.orderAssignedAt
+        ? `<small class="muted">nachträglich zugeordnet von ${esc(report.orderAssignedByName)} am ${format.dateTime(report.orderAssignedAt)}</small>` : ""}`
+      : '<span class="muted">Ohne Auftrag (eigenständiger Rapport)</span>';
     root.querySelector("[data-customer]").textContent = report.customerName;
     root.querySelector("[data-confirmation]").textContent = report.confirmationStatus === "confirmed"
       ? `Bestätigt von ${report.confirmedByName} (${METHOD_LABELS[report.confirmationMethod] || ""}) am ${format.dateTime(report.confirmedAt)}`
       : (report.status === "draft" ? "–" : "Noch nicht bestätigt");
-    document.title = `Rapport ${number} · ${report.orderNumber}`;
+    document.title = `Rapport ${number} · ${report.customerName}`;
     const details = [
       report.correctedNumber ? `Korrektur zu ${esc(report.correctedNumber)}` : "",
       report.correctionCount ? `${report.correctionCount} Korrektur${report.correctionCount === 1 ? "" : "en"} vorhanden` : "",
@@ -346,6 +353,7 @@
     if (report.canProcess && report.status === "processed") actions.push('<button class="button button-light" type="button" data-action="reopen" data-icon="refresh-cw">Bearbeitung wieder öffnen</button>');
     if (report.canConfirm) actions.push('<button class="button button-light" type="button" data-action="confirm" data-icon="square-pen">Kundenbestätigung erfassen</button>');
     if (report.canCorrect) actions.push('<button class="button button-light" type="button" data-action="correct" data-icon="copy">Korrektur anlegen</button>');
+    if (report.canAssignOrder) actions.push('<button class="button button-light" type="button" data-action="assign-order" data-icon="clipboard-list">Auftrag zuordnen …</button>');
     root.querySelector("[data-actions]").innerHTML = actions.join("");
   }
 
@@ -439,7 +447,7 @@
       if (!ok) return;
       await api(`/api/work-reports/${encodeURIComponent(report.id)}`, { method: "DELETE", body: { version: report.version } });
       setDirty("proof", false);
-      location.assign(`/orders/${encodeURIComponent(report.orderId)}`);
+      location.assign(report.orderId ? `/orders/${encodeURIComponent(report.orderId)}` : "/work-reports");
     },
     async process() {
       if (billingDirty && !(await saveBilling({ silent: true }))) return;
@@ -465,6 +473,25 @@
       if (!ok) return;
       adopt(await api(`/api/work-reports/${encodeURIComponent(report.id)}/confirm`, { method: "POST", body: { version: report.version, confirmedByName: form.elements.confirmedByName.value.trim(), method: form.elements.method.value } }));
       notify(message, "Kundenbestätigung wurde erfasst.", "success");
+    },
+    // Nachträgliche Zuordnung (Büro): nur Aufträge desselben Kunden; der Leistungsnachweis bleibt unverändert.
+    async "assign-order"() {
+      const candidates = reference.orders.filter((order) => order.customerId === report.customerId);
+      if (!candidates.length) {
+        notify(message, "Für diesen Kunden gibt es keinen Auftrag, dem der Rapport zugeordnet werden könnte.", "warning");
+        return;
+      }
+      const form = document.createElement("form");
+      form.className = "form-stack";
+      form.innerHTML = `
+        <p>Der eingereichte Leistungsnachweis, eine Kundenbestätigung und die Abrechnungspositionen bleiben unverändert. Die Zuordnung wird mit Benutzer und Zeitpunkt gespeichert und kann nicht automatisch geändert werden.</p>
+        <label><span class="field-label">Auftrag von ${esc(report.customerName)} <span aria-hidden="true">*</span></span>
+          <select name="orderId" required><option value="">Auftrag auswählen …</option>${candidates
+            .map((order) => `<option value="${esc(order.id)}">${esc(order.orderNumber)} · ${esc(order.title)}</option>`).join("")}</select></label>`;
+      const ok = await CalightModal.open({ title: "Auftrag zuordnen", content: form, actions: [{ label: "Abbrechen", value: false }, { label: "Zuordnen", value: true, primary: true, validate: true }], initialFocus: '[name="orderId"]' });
+      if (!ok) return;
+      adopt(await api(`/api/work-reports/${encodeURIComponent(report.id)}/assign-order`, { method: "POST", body: { version: report.version, orderId: form.elements.orderId.value } }));
+      notify(message, `Der Rapport wurde dem Auftrag ${report.orderNumber} zugeordnet.`, "success");
     },
     async correct() {
       const ok = await confirmDialog("Korrektur anlegen", "<p>Es wird ein neuer Rapportentwurf mit dem eingereichten Stand angelegt. Der ursprüngliche Rapport und eine eventuelle Kundenbestätigung bleiben unverändert erhalten.</p>", "Korrektur anlegen");

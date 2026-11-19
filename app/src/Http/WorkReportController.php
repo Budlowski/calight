@@ -40,6 +40,7 @@ final readonly class WorkReportController
         $router->add('POST', '/api/work-reports/{id}/confirm', fn (Request $request, array $parameters): Response => $this->mutate($request, fn (array $data) => $this->service->confirm($parameters['id'], $data, $this->actor())));
         $router->add('PUT', '/api/work-reports/{id}/billing', fn (Request $request, array $parameters): Response => $this->mutate($request, fn (array $data) => $this->service->saveBilling($parameters['id'], $data, $this->actor())));
         $router->add('POST', '/api/work-reports/{id}/process', fn (Request $request, array $parameters): Response => $this->mutate($request, fn (array $data) => $this->service->process($parameters['id'], $data, $this->actor())));
+        $router->add('POST', '/api/work-reports/{id}/assign-order', fn (Request $request, array $parameters): Response => $this->mutate($request, fn (array $data) => $this->service->assignOrder($parameters['id'], $data, $this->actor())));
         $router->add('POST', '/api/work-reports/{id}/reopen', fn (Request $request, array $parameters): Response => $this->mutate($request, fn (array $data) => $this->service->reopen($parameters['id'], $data, $this->actor())));
     }
 

@@ -20,7 +20,7 @@ final class AuthorizationPolicy
         if ($path === '/settings/employees' || str_starts_with($path, '/api/employees')) return ['employees.manage', 'costs.read'];
         if (str_starts_with($path, '/daily-reports') || str_starts_with($path, '/api/daily-reports')) return [$write ? 'reports.write' : 'reports.read'];
         // Rapporte: Leistungsnachweis erfassen (workreports.write); Preise, Abrechnung und Abschluss nur mit workreports.process.
-        if (preg_match('#^/api/work-reports/([^/]+/(billing|process|reopen)|catalog)$#', $path) === 1) return ['workreports.read', 'workreports.process'];
+        if (preg_match('#^/api/work-reports/([^/]+/(billing|process|reopen|assign-order)|catalog)$#', $path) === 1) return ['workreports.read', 'workreports.process'];
         if (str_starts_with($path, '/work-reports') || str_starts_with($path, '/api/work-reports')) return [$write ? 'workreports.write' : 'workreports.read'];
         // Aufmaße: Entwürfe erfassen (measurements.write), verbindlich abschließen nur mit measurements.complete.
         if (preg_match('#^/api/measurements/[^/]+/complete$#', $path) === 1) return ['measurements.read', 'measurements.complete'];
