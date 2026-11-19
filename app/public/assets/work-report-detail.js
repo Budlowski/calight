@@ -376,7 +376,7 @@
       billingActions.push('<button class="button button-light" type="button" data-action="save-billing" data-shortcut-save data-icon="save" title="Positionen speichern (Strg+S)">Positionen speichern</button>');
       billingActions.push('<button class="button" type="button" data-action="process" data-icon="clipboard-check">Bearbeitung abschließen …</button>');
     }
-    if (report.canProcess && report.status === "processed") billingActions.push('<button class="button button-light" type="button" data-action="reopen" data-icon="refresh-cw">Bearbeitung wieder öffnen</button>');
+    if (report.canProcess && report.status === "processed") billingActions.push('<button class="button button-light" type="button" data-action="reopen" data-icon="square-pen">Bearbeiten</button>');
     root.querySelector("[data-billing-actions]").innerHTML = billingActions.join("");
   }
 

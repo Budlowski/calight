@@ -72,7 +72,7 @@
             <div class="order-detail-actions" data-billing-actions></div>
         </div>
         <div class="work-report-catalog" data-catalog-box>
-            <input type="search" data-catalog-search placeholder="Artikel oder Lohnkostengruppe aus dem Stamm suchen …" aria-label="Stammartikel suchen" autocomplete="off">
+            <input type="search" data-catalog-search placeholder="Artikelstamm durchsuchen …" aria-label="Stammartikel suchen" autocomplete="off">
             <div class="work-report-catalog-results" data-catalog-results role="listbox" hidden></div>
         </div>
         <div data-billing></div>
