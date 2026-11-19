@@ -50,5 +50,4 @@
     </div>
     <div class="overview-results" data-list aria-live="polite"></div>
 </div>
-<script src="/assets/purchase-order-dialogs.js?v=<?= $escape((string) filemtime(dirname(__DIR__, 2) . '/public/assets/purchase-order-dialogs.js')) ?>" defer></script>
 <script src="/assets/purchase-orders.js?v=<?= $escape((string) filemtime(dirname(__DIR__, 2) . '/public/assets/purchase-orders.js')) ?>" defer></script>

@@ -13,6 +13,18 @@
     order.status === "draft" && !order.placed ? "" : badge("delivery", order.deliveryStatus, prefix ? `Lieferung: ${order.deliveryLabel}` : order.deliveryLabel),
     order.status === "draft" && !order.placed ? "" : badge("payment", order.paymentStatus, prefix ? `Zahlung: ${order.paymentLabel}` : order.paymentLabel),
   ].join("");
+  // Übersicht: Entwurf bzw. Storniert allein (keine scheinbar noch erwartete Lieferung);
+  // sonst Bestellt · Lieferung · Zahlung. Details mit allen drei Status auf der Detailseite.
+  const LIST_DELIVERY = { pending: "Lieferung ausstehend", partial: "Teilgeliefert", delivered: "Geliefert" };
+  const LIST_PAYMENT = { open: "Zahlung offen", partial: "Teilbezahlt", paid: "Bezahlt" };
+  const listStatus = (order) => {
+    if (order.status === "cancelled" || (order.status === "draft" && !order.placed)) return badge("status", order.status, order.statusLabel);
+    return [
+      badge("status", order.status, order.status === "draft" ? "Neue Fassung (Entwurf)" : order.statusLabel),
+      badge("delivery", order.deliveryStatus, LIST_DELIVERY[order.deliveryStatus] || order.deliveryLabel),
+      badge("payment", order.paymentStatus, LIST_PAYMENT[order.paymentStatus] || order.paymentLabel),
+    ].join("");
+  };
   const jobLabel = (order) => (order.orderId ? `${order.jobNumber} · ${order.jobTitle}` : "Ohne Auftrag");
   const money = (value) => (value === null || value === undefined || value === "" ? "–" : format.money(value));
   const today = () => {
@@ -114,7 +126,7 @@
     return picker;
   }
 
-  globalThis.CalightPurchaseOrders = Object.freeze({ href, badge, originBadge, statusBadges, jobLabel, money, today, supplierLabel, postForm, supplierPicker });
+  globalThis.CalightPurchaseOrders = Object.freeze({ href, badge, originBadge, statusBadges, listStatus, jobLabel, money, today, supplierLabel, postForm, supplierPicker });
 
   const root = document.querySelector("#purchase-orders-app");
   if (!root) return;
@@ -132,25 +144,11 @@
     return `${money(order.expectedNetTotal)}${confirmed}`;
   };
   const rowClass = (order) => (order.status === "cancelled" ? " purchase-cancelled" : "");
-  const canWrite = root.dataset.canWrite === "1";
   const titleLine = (order) => (order.title ? `<small class="purchase-row-title" title="${esc(order.title)}">${esc(order.title)}</small>` : "");
-
-  // Schnellerfassung je Bestellung, ohne die Bestellung zu öffnen (Rechte prüft der Server erneut).
-  const quickActions = (order) => {
-    if (!canWrite) return "";
-    const items = [];
-    if (order.placed) {
-      items.push(["confirmation", "AB erfassen"], ["delivery", "Lieferung erfassen"]);
-      if (canCosts) items.push(["invoice", "Rechnung erfassen"], ["credit", "Gutschrift erfassen"], ["payment", "Zahlung erfassen"]);
-    }
-    items.push(["document", "Dokument hochladen"]);
-    return `<details class="context-menu purchase-row-menu"><summary class="icon-button" data-icon="menu" title="Vorgang erfassen" aria-label="Vorgang zu ${esc(order.orderNumber)} erfassen"></summary>
-      <div class="context-menu-panel">${items.map(([dialog, label]) => `<button type="button" data-quick="${dialog}" data-order-id="${esc(order.id)}" data-icon="${dialog === "document" ? "file-up" : "plus"}">${label}</button>`).join("")}</div></details>`;
-  };
 
   const renderCard = (order) => `
     <article class="overview-card${rowClass(order)}" tabindex="0" data-href="${href(order)}">
-      <div class="management-card-head"><span class="service-number">${esc(order.orderNumber)}</span><span class="management-card-badges">${originBadge(order)}${quickActions(order)}</span></div>
+      <div class="management-card-head"><span class="service-number">${esc(order.orderNumber)}</span><span class="management-card-badges">${originBadge(order)}</span></div>
       <div class="overview-card-title" title="${esc(order.supplierName)}">${esc(order.supplierName)}</div>
       ${titleLine(order)}
       <div class="overview-card-meta">
@@ -159,7 +157,7 @@
         ${order.externalReference ? `<span>Ref. ${esc(order.externalReference)}</span>` : ""}
         ${canCosts ? `<span>Bestellt ${money(order.expectedNetTotal)}${order.confirmedNetTotal ? ` · bestätigt ${money(order.confirmedNetTotal)}` : ""} · Ist ${money(order.actualNetTotal)}</span>` : ""}
       </div>
-      <div class="management-card-badges">${statusBadges(order)}</div>
+      <div class="management-card-badges">${listStatus(order)}</div>
     </article>`;
 
   const renderTable = (items, header) => `
@@ -168,7 +166,6 @@
       ${header("order", "Auftrag", "cell-number")}
       <th class="cell-status">Status</th>
       ${canCosts ? `${header("expected", "Bestellwert netto", "cell-money")}${header("actual", "Ist netto", "cell-money")}` : ""}
-      ${canWrite ? '<th class="cell-actions"><span class="visually-hidden">Aktionen</span></th>' : ""}
     </tr></thead>
     <tbody>${items.map((order) => `
       <tr tabindex="0" data-href="${href(order)}" class="${rowClass(order).trim()}">
@@ -176,9 +173,8 @@
         <td class="cell-text" title="${esc(order.supplierName)}">${esc(order.supplierName)}${order.externalReference ? `<small class="muted"> · ${esc(order.externalReference)}</small>` : ""}${titleLine(order)}</td>
         <td class="cell-date">${order.orderDate ? format.date(order.orderDate) : '<span class="muted">–</span>'}</td>
         <td class="cell-number" title="${esc(jobLabel(order))}">${order.orderId ? esc(order.jobNumber) : '<span class="muted">–</span>'}</td>
-        <td class="cell-status"><span class="purchase-status-stack">${statusBadges(order)}</span></td>
+        <td class="cell-status"><span class="purchase-status-stack">${listStatus(order)}</span></td>
         ${canCosts ? `<td class="cell-money">${orderedValue(order)}</td><td class="cell-money">${money(order.actualNetTotal)}</td>` : ""}
-        ${canWrite ? `<td class="cell-actions">${quickActions(order)}</td>` : ""}
       </tr>`).join("")}</tbody>`;
 
   const sorts = {
@@ -282,34 +278,6 @@
       },
     });
   }
-
-  // Vorgangsdialoge der Detailseite wiederverwenden; danach Liste neu laden.
-  let quickOrder = null;
-  const quickDialogs = globalThis.CalightPurchaseDialogs?.create({
-    getOrder: () => quickOrder,
-    getReference: () => reference,
-    csrf: root.dataset.csrf,
-    onSaved: (next, text) => {
-      notify(message, `${next.orderNumber}: ${text}`, "success");
-      list.reload();
-    },
-  });
-  root.querySelector("[data-list]").addEventListener("click", async (event) => {
-    const button = event.target.closest("[data-quick]");
-    if (!button || !quickDialogs) return;
-    event.stopPropagation();
-    button.closest("details.context-menu")?.removeAttribute("open");
-    button.disabled = true;
-    try {
-      // Aktueller Stand (Version, Belege) für Konfliktschutz und Auswahllisten.
-      quickOrder = await api(`/api/purchase-orders/${encodeURIComponent(button.dataset.orderId)}`);
-      quickDialogs[button.dataset.quick]();
-    } catch (exception) {
-      notify(message, exception.message);
-    } finally {
-      button.disabled = false;
-    }
-  });
 
   async function init() {
     reference = await api("/api/purchase-orders/reference-data");

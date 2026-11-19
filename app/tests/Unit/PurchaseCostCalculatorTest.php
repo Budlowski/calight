@@ -90,6 +90,28 @@ final class PurchaseCostCalculatorTest extends TestCase
         $this->assertSame('30.00', $result['effects']['s']);
     }
 
+    public function testAcceptanceCasesAToC(): void
+    {
+        // A: Teilrechnung 200 € + Gesamt-Schlussrechnung 500 € = 500 €, nicht 700 €.
+        $this->assertSame('500.00', PurchaseCostCalculator::calculate([self::doc('t', 'partial', '200.00'), self::doc('s', 'final', '500.00', null, 'total')])['total']);
+        // B: Rechnung 500 € − Gutschrift 100 € = 400 €.
+        $this->assertSame('400.00', PurchaseCostCalculator::calculate([self::doc('r', 'invoice', '500.00'), self::doc('g', 'credit', '100.00')])['total']);
+        // C: Rechnung 500 € mit vollständigem Stornobeleg = 0 €.
+        $this->assertSame('0.00', PurchaseCostCalculator::calculate([self::doc('r', 'invoice', '500.00'), self::doc('s', 'reversal', '500.00', null, null, 'r')])['total']);
+    }
+
+    public function testReversedPartialUnderTotalFinalDoesNotChangeTheTotal(): void
+    {
+        // Gesamt-Schlussrechnung deckt alles ab: ein Teilstorno einer Teilrechnung ändert die Summe nicht.
+        $result = PurchaseCostCalculator::calculate([
+            self::doc('t', 'partial', '200.00'),
+            self::doc('s', 'final', '500.00', null, 'total'),
+            self::doc('x', 'reversal', '50.00', null, null, 't'),
+        ]);
+        $this->assertSame('500.00', $result['total']);
+        $this->assertSame('350.00', $result['effects']['s']);
+    }
+
     /** @return array{id:string,kind:string,final_mode:?string,related_invoice_id:?string,net_amount:string,gross_amount:?string} */
     private static function doc(string $id, string $kind, string $net, ?string $gross = null, ?string $mode = null, ?string $related = null): array
     {

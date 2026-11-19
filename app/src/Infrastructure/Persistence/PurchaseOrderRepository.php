@@ -287,21 +287,12 @@ final readonly class PurchaseOrderRepository
     {
         $statement = $this->pdo->prepare("SELECT p.id, p.order_number, p.order_id, p.actual_net_total, p.invoiced_net_total, p.status,
                 (SELECT a.amount FROM purchase_order_allocations a WHERE a.purchase_order_id = p.id AND a.order_id = :order_a) AS allocated_amount,
-                (SELECT COUNT(*) FROM purchase_order_allocations a WHERE a.purchase_order_id = p.id) AS allocation_count
+                (SELECT COUNT(*) FROM purchase_order_allocations a WHERE a.purchase_order_id = p.id) AS allocation_count,
+                (SELECT group_concat(a.amount, '|') FROM purchase_order_allocations a WHERE a.purchase_order_id = p.id) AS allocation_amounts
             FROM purchase_orders p
             WHERE (p.status <> 'draft' OR p.revision > 0) AND (p.order_id = :order_b OR EXISTS (SELECT 1 FROM purchase_order_allocations a WHERE a.purchase_order_id = p.id AND a.order_id = :order_c))
             ORDER BY p.order_number");
         $statement->execute(['order_a' => $orderId, 'order_b' => $orderId, 'order_c' => $orderId]);
-        return $statement->fetchAll();
-    }
-
-    /** @return list<array<string,mixed>> */
-    public function forOrder(string $orderId): array
-    {
-        $statement = $this->pdo->prepare('SELECT ' . self::SELECT . ' FROM ' . self::FROM . '
-            WHERE p.order_id = :order_a OR EXISTS (SELECT 1 FROM purchase_order_allocations a WHERE a.purchase_order_id = p.id AND a.order_id = :order_b)
-            ORDER BY p.created_at DESC');
-        $statement->execute(['order_a' => $orderId, 'order_b' => $orderId]);
         return $statement->fetchAll();
     }
 

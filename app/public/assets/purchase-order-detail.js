@@ -78,8 +78,13 @@
     ].join("");
 
     const externalRef = order.externalReference ? ` <small>Ref. ${esc(order.externalReference)}</small>` : "";
+    // Lieferantennummer und eigene Kundennummer (aus dem Snapshot der Bestellung).
+    const supplierNotes = [
+      order.supplierNumber ? `Nr. ${esc(order.supplierNumber)}` : "",
+      order.supplierSnapshot?.customerNumber ? `unsere Kd.-Nr. ${esc(order.supplierSnapshot.customerNumber)}` : "",
+    ].filter(Boolean).join(" · ");
     const facts = [
-      ["Lieferant", esc(order.supplierName) + (order.supplierNumber ? ` <small>Nr. ${esc(order.supplierNumber)}</small>` : "")],
+      ["Lieferant", esc(order.supplierName) + (supplierNotes ? ` <small>${supplierNotes}</small>` : "")],
       ["Art", (order.origin === "external" ? "Externe Bestellung" : "Interne Bestellung") + externalRef],
       ["Auftrag", order.orderId ? `<a href="/orders/${encodeURIComponent(order.orderId)}">${esc(order.jobNumber)}</a> <small>${esc(order.jobTitle)}</small>` : muted("Ohne Auftrag")],
       ["Bestelldatum", order.orderDate ? format.date(order.orderDate) : muted("Noch nicht bestellt")],
@@ -89,7 +94,7 @@
       facts.push(
         ["Bestellwert netto", money(order.expectedNetTotal) + " <small>ursprünglich bestellt</small>"],
         ["Bestätigt netto", order.confirmedNetTotal !== null ? `${money(order.confirmedNetTotal)} <small>aktuelle Auftragsbestätigung</small>` : muted("–")],
-        ["Ist-Kosten netto", order.actualNetTotal !== null ? `${money(order.actualNetTotal)} <small>${order.costSource === "direct" ? "direkt erfasst" : "aus Belegen"}</small>` : muted("noch keine")],
+        ["Ist-Kosten netto", order.actualNetTotal !== null ? `${money(order.actualNetTotal)} <small>${order.costSource === "direct" ? "direkt erfasst" : "aus Belegen"}${order.allocationExceeded ? " · Kostenverteilung prüfen" : ""}</small>` : muted("noch keine")],
       );
     }
     root.querySelector("[data-facts]").innerHTML = facts.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join("");
@@ -384,11 +389,9 @@
       if (more.length) actions.push(`<details class="context-menu"><summary class="button button-light button-small" data-icon="menu">Weitere Aktionen</summary><div class="context-menu-panel">${more.join("")}</div></details>`);
     }
     root.querySelector('[data-event-actions="invoices"]').innerHTML = actions.join("");
-    const summary = `<div class="order-value-summary purchase-cost-summary">
-        <div><span>Ursprünglicher Bestellwert</span><strong>${money(order.expectedNetTotal)}</strong></div>
-        <div><span>Aktuell bestätigt</span><strong>${money(order.confirmedNetTotal)}</strong></div>
-        <div class="total"><span>Tatsächliche Kosten netto${order.costSource === "direct" ? " (direkt erfasst)" : order.costSource === "invoices" ? " (aus Belegen)" : ""}</span><strong>${money(order.actualNetTotal)}</strong></div>
-      </div>`;
+    // Beträge stehen zentral im Kopf; hier nur Belege, Wirkung und Hinweise.
+    const exceeded = order.allocationExceeded
+      ? `<div class="notice notice-warning purchase-allocation-warning"><span>Die Kostenverteilung (${money(order.allocatedTotal)}) übersteigt die aktuellen Ist-Kosten (${money(order.actualNetTotal)}). Sie gilt bis zur Korrektur als ungültig.</span>${can("costs") ? '<button class="button button-light button-small" type="button" data-dialog="allocations" data-icon="square-pen">Verteilung korrigieren …</button>' : ""}</div>` : "";
     const rows = order.invoices.map((invoice) => {
       const remaining = invoice.remaining !== null ? Number(invoice.remaining) : null;
       const reversible = can("costs") && invoice.kind !== "reversal" && remaining !== null && remaining > 0;
@@ -415,11 +418,11 @@
     let allocations = "";
     if (order.allocations?.length) {
       allocations = `<div class="purchase-allocation-summary"><span class="field-label">Kostenverteilung</span><ul class="work-report-readonly">${order.allocations.map((allocation) => `<li>${esc(allocation.orderNumber)} · ${esc(allocation.orderTitle)}: <strong>${money(allocation.amount)}</strong></li>`).join("")}</ul>
-          <small class="muted">Nicht verteilt: ${money(order.unallocatedTotal)}</small></div>`;
+          <small class="muted">${order.allocationExceeded ? `Überverteilt: ${money(String(order.unallocatedTotal).replace("-", ""))}` : `Nicht verteilt: ${money(order.unallocatedTotal)}`}</small></div>`;
     } else if (order.actualNetTotal !== null) {
       allocations = `<p class="muted">Die Ist-Kosten gehen vollständig an ${order.orderId ? `Auftrag ${esc(order.jobNumber)}` : "keinen Auftrag (noch keine Zuordnung)"}.</p>`;
     }
-    root.querySelector('[data-event-list="invoices"]').innerHTML = summary + direct
+    root.querySelector('[data-event-list="invoices"]').innerHTML = exceeded + direct
       + eventList(rows, notPlaced() || "Noch keine Belege erfasst.") + totals + allocations;
   }
 

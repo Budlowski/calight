@@ -408,16 +408,57 @@ final class PurchaseOrderTest extends TestCase
             $credit = $service->addInvoice($split['id'], ['version' => $split['version'], 'kind' => 'credit', 'invoiceNumber' => 'G-1', 'invoiceDate' => '2026-11-20', 'netAmount' => '20.00'], null, $office);
             $this->assertSame('280.00', $credit['actualNetTotal']);
             $this->assertSame('0.00', $credit['unallocatedTotal']);
-            // Eine weitere Gutschrift würde die Verteilung ungültig machen: abgelehnt, nichts gespeichert.
-            $this->assertThrows(OrderValidationException::class, fn () => $service->addInvoice($credit['id'], ['version' => $credit['version'], 'kind' => 'credit', 'invoiceNumber' => 'G-2', 'invoiceDate' => '2026-11-21', 'netAmount' => '30.00'], null, $office));
-            $this->assertSame(2, count($service->detail($credit['id'], $office)['invoices']));
-            $reduced = $service->saveAllocations($credit['id'], ['version' => $credit['version'], 'allocations' => [
+            $this->assertTrue(!$credit['allocationExceeded']);
+
+            // Eine echte Gutschrift wird immer erfasst; die Verteilung wird dann sichtbar ungültig, nie still gekürzt.
+            $over = $service->addInvoice($credit['id'], ['version' => $credit['version'], 'kind' => 'credit', 'invoiceNumber' => 'G-2', 'invoiceDate' => '2026-11-21', 'netAmount' => '30.00'], null, $office);
+            $this->assertSame('250.00', $over['actualNetTotal']);
+            $this->assertTrue($over['allocationExceeded'], 'Überverteilung wird erkannt.');
+            $this->assertSame('-30.00', $over['unallocatedTotal']);
+            $this->assertSame('180.00', $over['allocations'][0]['amount'], 'Verteilung bleibt unverändert, bis sie korrigiert wird.');
+            $this->assertTrue(in_array('exceeded', array_column($over['history'], 'newValue'), true), 'Ungültige Verteilung wird protokolliert.');
+            $flagged = array_values(array_filter($service->costsByOrder($regie['id'], $office)['items'], static fn (array $item): bool => $item['source'] === 'allocation'));
+            $this->assertTrue($flagged[0]['allocationExceeded'], 'costsByOrder kennzeichnet die ungültige Verteilung.');
+
+            // Korrektur: Summe wieder höchstens Ist-Kosten.
+            $this->assertThrows(OrderValidationException::class, fn () => $service->saveAllocations($over['id'], ['version' => $over['version'], 'allocations' => [
+                ['orderId' => $regie['id'], 'amount' => '180.00'], ['orderId' => $secondOrder['id'], 'amount' => '100.00'],
+            ]], $office), 'Gespeicherte Verteilungen dürfen die Ist-Kosten nie übersteigen.');
+            $fixed = $service->saveAllocations($over['id'], ['version' => $over['version'], 'allocations' => [
                 ['orderId' => $regie['id'], 'amount' => '150.00'], ['orderId' => $secondOrder['id'], 'amount' => '100.00'],
             ]], $office);
-            $after = $service->addInvoice($reduced['id'], ['version' => $reduced['version'], 'kind' => 'credit', 'invoiceNumber' => 'G-2', 'invoiceDate' => '2026-11-21', 'netAmount' => '30.00'], null, $office);
-            $this->assertSame('250.00', $after['actualNetTotal']);
+            $this->assertTrue(!$fixed['allocationExceeded']);
             $this->assertSame('270.00', $service->costsByOrder($regie['id'], $office)['total'], '120 € + 150 € aus der Verteilung.');
-            $this->assertTrue(in_array('allocation', array_column($after['history'], 'field'), true), 'Verteilungsänderungen werden protokolliert.');
+        });
+    }
+
+    public function testCaseEAllocationBecomesInvalidAfterCreditAndCanBeCorrected(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['service' => $service, 'office' => $office, 'supplier' => $supplier, 'regie' => $regie] = $env;
+            $order = $service->createExternal(['supplierId' => $supplier], $office);
+            $order = $service->addInvoice($order['id'], ['version' => $order['version'], 'kind' => 'invoice', 'invoiceNumber' => 'R-1', 'invoiceDate' => '2026-11-20', 'netAmount' => '500.00'], null, $office);
+            $order = $service->saveAllocations($order['id'], ['version' => $order['version'], 'allocations' => [['orderId' => $regie['id'], 'amount' => '400.00']]], $office);
+            $order = $service->addInvoice($order['id'], ['version' => $order['version'], 'kind' => 'credit', 'invoiceNumber' => 'G-1', 'invoiceDate' => '2026-11-21', 'netAmount' => '200.00'], null, $office);
+            $this->assertSame('300.00', $order['actualNetTotal']);
+            $this->assertTrue($order['allocationExceeded']);
+            $order = $service->saveAllocations($order['id'], ['version' => $order['version'], 'allocations' => [['orderId' => $regie['id'], 'amount' => '300.00']]], $office);
+            $this->assertTrue(!$order['allocationExceeded']);
+            $this->assertSame('300.00', $service->costsByOrder($regie['id'], $office)['total']);
+        });
+    }
+
+    public function testCaseDCancelledOrderKeepsInvoicedCostsUntilCounterDocument(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['service' => $service, 'office' => $office, 'supplier' => $supplier, 'regie' => $regie] = $env;
+            $order = $service->createExternal(['supplierId' => $supplier, 'orderId' => $regie['id']], $office);
+            $order = $service->addInvoice($order['id'], ['version' => $order['version'], 'kind' => 'invoice', 'invoiceNumber' => 'R-1', 'invoiceDate' => '2026-11-20', 'netAmount' => '200.00'], null, $office);
+            $order = $service->cancel($order['id'], ['version' => $order['version']], $office);
+            $this->assertSame('200.00', $order['actualNetTotal']);
+            $order = $service->addInvoice($order['id'], ['version' => $order['version'], 'kind' => 'reversal', 'invoiceDate' => '2026-11-22', 'netAmount' => '200.00', 'relatedInvoiceId' => $order['invoices'][0]['id']], null, $office);
+            $this->assertSame('0.00', $order['actualNetTotal'], 'Erst der Gegenbeleg neutralisiert die Kosten.');
+            $this->assertSame('0.00', $service->costsByOrder($regie['id'], $office)['total']);
         });
     }
 

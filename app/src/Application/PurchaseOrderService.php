@@ -89,13 +89,6 @@ final readonly class PurchaseOrderService
         return $page;
     }
 
-    /** @param array<string,mixed> $actor @return list<array<string,mixed>> */
-    public function forOrder(string $orderId, array $actor): array
-    {
-        $this->require($actor, 'purchases.read');
-        return array_map(fn (array $row): array => $this->summary($row, $actor), $this->orders->forOrder($orderId));
-    }
-
     /** Auswahllisten für Filter, Anlegen und Vorgangsdialoge. @param array<string,mixed> $actor @return array<string,mixed> */
     public function referenceData(array $actor): array
     {
@@ -103,12 +96,10 @@ final readonly class PurchaseOrderService
         return [
             'suppliers' => array_map(static fn (array $row): array => ['id' => $row['id'], 'number' => $row['supplier_number'], 'name' => $row['name']], $this->orders->activeSuppliers()),
             'orders' => array_map(static fn (array $row): array => ['id' => $row['id'], 'orderNumber' => $row['order_number'], 'title' => $row['title']], $this->orders->orders()),
-            'statusLabels' => self::STATUS_LABELS,
             'deliveryLabels' => self::DELIVERY_LABELS,
             'paymentLabels' => self::PAYMENT_LABELS,
             'deliveryKinds' => self::DELIVERY_KINDS,
             'paymentKinds' => self::PAYMENT_KINDS,
-            'invoiceKinds' => self::INVOICE_KINDS,
             'finalModes' => self::FINAL_MODES,
             'documentKinds' => array_diff_key(self::DOCUMENT_KINDS, ['own_order' => true]),
             'canWrite' => $this->can($actor, 'purchases.write'),
@@ -247,6 +238,7 @@ final readonly class PurchaseOrderService
             $result['allocatedTotal'] = $result['allocations'] === [] ? null : $allocated;
             $actual = $this->actualCost($row);
             $result['unallocatedTotal'] = $result['allocations'] === [] || $actual === null ? null : Decimal::money(BigDecimal::of($actual)->minus($allocated));
+            $result['allocationExceeded'] = $this->allocationExceeded($actual, array_column($result['allocations'], 'amount'));
         }
         return $result;
     }
@@ -900,7 +892,7 @@ final readonly class PurchaseOrderService
             }
             $this->orders->addHistory($id, Uuid::v4(), 'invoice', null, $kind,
                 trim(($number !== '' ? 'Nr. ' . $number : '') . ($related !== null ? ' zu ' . $related['invoice_number'] : '')), (string) $actor['id'], $now);
-            $this->assertAllocationsCovered($id);
+            $this->flagAllocationIfExceeded($id, $actor, $now);
         }, $fields);
         return $this->detail($id, $actor);
     }
@@ -934,7 +926,7 @@ final readonly class PurchaseOrderService
             }
             $this->orders->addHistory($id, Uuid::v4(), 'cost', $row['actual_net_total'] !== null ? 'direct' : null, $amount !== null ? 'direct' : 'none',
                 $amount === null ? 'Direkt erfasste Ist-Kosten entfernt.' : ($row['actual_net_total'] === null ? 'Ist-Kosten direkt erfasst.' : 'Direkt erfasste Ist-Kosten geändert.'), (string) $actor['id'], $now);
-            $this->assertAllocationsCovered($id);
+            $this->flagAllocationIfExceeded($id, $actor, $now);
         });
         return $this->detail($id, $actor);
     }
@@ -996,7 +988,7 @@ final readonly class PurchaseOrderService
      * Bestellungen ohne bekannte Ist-Kosten erscheinen mit amount = null. Entwürfe zählen nicht.
      *
      * @param array<string,mixed> $actor
-     * @return array{items:list<array{purchaseOrderId:string,orderNumber:string,amount:?string,source:string}>,total:string}
+     * @return array{items:list<array{purchaseOrderId:string,orderNumber:string,amount:?string,source:string,allocationExceeded:bool}>,total:string}
      */
     public function costsByOrder(string $orderId, array $actor): array
     {
@@ -1008,10 +1000,12 @@ final readonly class PurchaseOrderService
                 if ($row['allocated_amount'] === null) {
                     continue; // Verteilung ohne diesen Auftrag: keine Kosten für ihn.
                 }
-                $items[] = ['purchaseOrderId' => (string) $row['id'], 'orderNumber' => (string) $row['order_number'], 'amount' => (string) $row['allocated_amount'], 'source' => 'allocation'];
+                // Ungültige Verteilung (Summe > Ist-Kosten) wird gekennzeichnet, nicht still gekürzt.
+                $items[] = ['purchaseOrderId' => (string) $row['id'], 'orderNumber' => (string) $row['order_number'], 'amount' => (string) $row['allocated_amount'], 'source' => 'allocation',
+                    'allocationExceeded' => $this->allocationExceeded($this->actualCost($row), array_filter(explode('|', (string) $row['allocation_amounts']), static fn (string $value): bool => $value !== ''))];
                 continue;
             }
-            $items[] = ['purchaseOrderId' => (string) $row['id'], 'orderNumber' => (string) $row['order_number'], 'amount' => $this->actualCost($row), 'source' => 'order'];
+            $items[] = ['purchaseOrderId' => (string) $row['id'], 'orderNumber' => (string) $row['order_number'], 'amount' => $this->actualCost($row), 'source' => 'order', 'allocationExceeded' => false];
         }
         return ['items' => $items, 'total' => $this->sum(array_filter(array_column($items, 'amount'), static fn (?string $amount): bool => $amount !== null))];
     }
@@ -1081,16 +1075,29 @@ final readonly class PurchaseOrderService
         return $row['invoiced_net_total'] !== null ? (string) $row['invoiced_net_total'] : null;
     }
 
-    /** Nach Änderungen an Ist-Kosten dürfen bestehende Verteilungen sie nicht übersteigen. */
-    private function assertAllocationsCovered(string $id): void
+    /**
+     * Übersteigt eine vorhandene Kostenverteilung die Ist-Kosten (oder fehlen Ist-Kosten)?
+     * Belege und direkte Kosten werden trotzdem erfasst – echte Gutschriften dürfen nicht an
+     * einer früheren Verteilung scheitern. Die Verteilung gilt dann als ungültig, wird angezeigt,
+     * protokolliert und in costsByOrder gekennzeichnet, aber nie still angepasst.
+     *
+     * @param list<string> $allocatedAmounts
+     */
+    private function allocationExceeded(?string $actual, array $allocatedAmounts): bool
     {
-        $allocations = $this->orders->allocations($id);
-        if ($allocations === []) {
-            return;
+        if ($allocatedAmounts === []) {
+            return false;
         }
-        $actual = $this->actualCost($this->find($id));
-        if ($actual === null || BigDecimal::of($this->sum(array_column($allocations, 'amount')))->isGreaterThan($actual)) {
-            throw new OrderValidationException(['Die Kostenverteilung übersteigt danach die tatsächlichen Kosten. Bitte zuerst die Verteilung anpassen.']);
+        return $actual === null || BigDecimal::of($this->sum($allocatedAmounts))->isGreaterThan($actual);
+    }
+
+    /** Nach einer Kostenänderung: ungültig gewordene Verteilung im Verlauf festhalten. @param array<string,mixed> $actor */
+    private function flagAllocationIfExceeded(string $id, array $actor, string $now): void
+    {
+        $amounts = array_column($this->orders->allocations($id), 'amount');
+        if ($this->allocationExceeded($this->actualCost($this->find($id)), $amounts)) {
+            $this->orders->addHistory($id, Uuid::v4(), 'allocation', null, 'exceeded',
+                'Kostenverteilung übersteigt nach der Kostenänderung die Ist-Kosten – bitte korrigieren.', (string) $actor['id'], $now);
         }
     }
 

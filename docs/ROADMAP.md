@@ -25,7 +25,7 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 | 3.3 | Aufmaße für vereinbarte Angebotsleistungen | Implementiert (`0024`), PDF seit Phase 3.2.3 |
 | 3.4 | Rapporte für Regieleistungen, auch eigenständig ohne Auftrag | Implementiert (`0025`, `0026`), PDF und Kundenbestätigung seit Phase 3.2.3, Einsatzort / Objekt (`0028`) |
 | 3.4.1 | Bestellungen mit PDF-Ausgabe (schlanke Materialbeschaffung) | Implementiert (`0029`); Versand per E-Mail und Bestellungen am Auftragsdetail geplant |
-| 3.4.1.1 | Bestellverwaltung als Vorgang: AB, Lieferungen, Belege, Zahlungen, Lieferantenanschrift | Implementiert (`0030`) |
+| 3.4.1.1 | Bestellverwaltung als Vorgang: AB, Lieferungen, Belege, Zahlungen, Lieferantenanschrift | Implementiert (`0030`); Phase 3.4.1 damit abgeschlossen |
 | 3.4.2 | Lieferscheine mit PDF-Ausgabe (Liefernachweise) | Geplant |
 | 3.4.3 | Mitarbeiter-Zeiterfassung (übergreifende Arbeitszeiten) | Geplant |
 | 3.5 | Nachkalkulation und Soll-Ist-Vergleich | Geplant |
@@ -337,7 +337,7 @@ Rapporte dokumentieren **abrechenbare Regieleistungen** und entsprechen in ihrer
 
 **Offen:** E-Mail-Versand und ein öffentliches Bestätigungsportal; optionale Übernahme aus Bautagesberichten.
 
-## Phase 3.4.1 / 3.4.1.1 – Bestellungen und Beschaffung (implementiert, Migrationen `0029`, `0030`)
+## Phase 3.4.1 / 3.4.1.1 – Bestellungen und Beschaffung (abgeschlossen, Migrationen `0029`, `0030`)
 
 **Grundsatz:** schlanke, vorgangsorientierte Beschaffung – keine Warenwirtschaft, kein Lager, keine Buchhaltung. Übersicht unter „Kaufmännisch → Bestellungen“.
 
@@ -358,15 +358,15 @@ Rapporte dokumentieren **abrechenbare Regieleistungen** und entsprechen in ihrer
 
 **Ist-Kosten:** direkt erfasster Betrag **oder** Belege, nie beides. Der erste Beleg ersetzt einen direkten Betrag nur nach ausdrücklicher Bestätigung (protokolliert).
 
-**Kostenverteilung:** unverändert (Standard: Auftrag der Bestellung; optional feste Beträge). Jede Kostenänderung prüft die Verteilung erneut und wird abgelehnt, wenn die Verteilung die neuen Ist-Kosten übersteigen würde. `PurchaseOrderService::costsByOrder` bezieht stornierte Bestellungen mit ein.
+**Kostenverteilung:** Standard ist der Auftrag der Bestellung; optional feste Beträge. Gespeicherte Verteilungen dürfen die Ist-Kosten nie übersteigen. Sinken die Ist-Kosten später (Gutschrift, Storno, geänderter direkter Betrag), wird der Beleg trotzdem erfasst; die Verteilung wird nicht still gekürzt, sondern als ungültig markiert (Hinweis mit „Verteilung korrigieren …“, Verlaufseintrag, `allocationExceeded` in Detail und `costsByOrder`). `costsByOrder` bezieht stornierte Bestellungen mit ein.
 
 **Stornieren:** über „Weitere Aktionen“ mit optionalem Grund; Lieferungen, Belege, Zahlungen, Dokumente und Ist-Kosten bleiben, Gutschriften und Rücksendungen sind weiter möglich, neue Fassungen nicht.
 
-**Oberfläche:** kompakter Kopf mit drei Status und drei Beträgen; Bereiche Bestellung (Bearbeiten über eigene Aktion), Auftragsbestätigungen, Lieferungen, Rechnungen und Gutschriften, Zahlungen, Dokumente und Verlauf (einklappbar); jede Erfassung in einem kleinen Dialog.
+**Oberfläche:** kompakter Kopf mit drei Status, drei Beträgen (einzige Betragsübersicht) und Lieferanten-/Kundennummer; Bereiche Bestellung (Bearbeiten über eigene Aktion), Auftragsbestätigungen, Lieferungen, Rechnungen und Gutschriften, Zahlungen, Dokumente und Verlauf (einklappbar); jede Erfassung in einem kleinen Dialog (`purchase-order-dialogs.js`). Die Übersicht hat kein Aktionsmenü je Zeile; Vorgänge werden auf der Detailseite erfasst. Status in der Liste: „Entwurf“, „Storniert“ oder „Bestellt · Lieferung · Zahlung“. Lieferanten-Schnellanlage über den Plus-Knopf neben der Suche (eigener Dialog über dem Bestelldialog).
 
 **Bestandsdaten (`0030`):** bisherige Rechnungen gelten als normale Rechnungen; manuell gesetzte Liefer-/Zahlungsstatus werden als Korrekturereignis übernommen.
 
-**Bewusst offen:** E-Mail-Versand an den Lieferanten, Bestellungen auf der Auftragsdetailseite, Positionsvorschläge aus der Auftragsgrundlage, Wareneingang je Position, Mahnwesen/Bankanbindung. Die Lieferanten-Schnellanlage ist ein ausklappbarer Bereich im Bestelldialog (der globale Dialog unterstützt keine verschachtelten Dialoge).
+**Bewusst offen:** E-Mail-Versand an den Lieferanten, Bestellungen auf der Auftragsdetailseite, Positionsvorschläge aus der Auftragsgrundlage, Wareneingang je Position, Mahnwesen/Bankanbindung. Abgrenzung: Lieferscheine (Phase 3.4.2) betreffen die Übergabe von Material an Kunden/Baustellen, nicht die Beschaffung.
 
 Ursprüngliche Planung:
 

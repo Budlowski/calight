@@ -128,7 +128,7 @@
         const credit = kind === "credit";
         const reversal = kind === "reversal";
         const originals = order.invoices.filter((invoice) => invoice.kind !== "reversal");
-        const kindChoice = credit || reversal ? "" : field('Belegart <span aria-hidden="true">*</span>', `<select name="kind">${options({ invoice: "Rechnung", partial: "Teilrechnung", final: "Schlussrechnung" }, "invoice")}</select>`);
+        const kindChoice = credit || reversal ? "" : field('Belegart <span aria-hidden="true">*</span>', `<select name="kind">${options(order.hasTotalFinal ? { invoice: "Rechnung" } : { invoice: "Rechnung", partial: "Teilrechnung", final: "Schlussrechnung" }, "invoice")}</select>`);
         const relatedChoice = credit && originals.length
           ? field("Zu Originalbeleg (optional)", `<select name="relatedInvoiceId"><option value="">Ohne Bezug</option>${originals.map((invoice) => `<option value="${esc(invoice.id)}">${esc(invoice.kindLabel)} ${esc(invoice.invoiceNumber)} · ${money(invoice.netAmount)}</option>`).join("")}</select>`, "span-all") : "";
         eventDialog({
