@@ -749,6 +749,8 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .step-section-heading,.offer-section-heading { display:flex; min-width:0; align-items:center; gap:var(--space-2); padding-bottom:var(--space-2); border-bottom:1px solid #e3e8eb; }
 .step-section-heading { flex-wrap:wrap; }
 .step-section-heading > div,.offer-section-heading > div { display:flex; min-width:0; flex-direction:column; }
+/* Aktionsleisten im Abschnittskopf stehen nebeneinander (die Regel oben gilt dem Titelblock). */
+.step-section-heading > .step-section-actions { flex-direction:row; flex-wrap:wrap; justify-content:flex-end; }
 .step-section-heading h2,.step-section-heading strong,.offer-section-heading strong { margin:0; color:var(--text); font-size:var(--font-base); line-height:1.25; }
 .step-section-heading small,.offer-section-heading small { color:var(--muted); font-size:11px; font-weight:400; }
 .step-section-number,.offer-section-step { display:inline-flex; width:22px; height:22px; flex:0 0 22px; align-items:center; justify-content:center; border-radius:50%; background:#58778b; color:white; font-size:11px; font-weight:750; }
@@ -1195,7 +1197,8 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .purchase-items-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .purchase-subheading { margin: var(--space-3) 0 0; font-size: var(--font-base); }
 .purchase-items-toolbar .purchase-subheading { margin: 0; }
-.purchase-detail .step-section-actions { flex-wrap: wrap; justify-content: flex-end; }
+.purchase-row-title { display: block; overflow: hidden; color: var(--muted); font-size: var(--font-small); text-overflow: ellipsis; white-space: nowrap; }
+.purchase-row-menu { display: inline-block; }
 .purchase-detail > .card { min-width: 0; }
 .purchase-detail [data-order-view], .purchase-detail [data-order-edit] { min-width: 0; max-width: 100%; }
 .purchase-detail .measurement-table-wrap { max-width: 100%; overflow-x: auto; }
@@ -1264,6 +1267,8 @@ tr.purchase-cancelled > td, .overview-card.purchase-cancelled { color: var(--mut
 /* Buttons: Beschriftungen brechen nie um; bei Platzmangel bricht die Leiste. */
 .button, .table-action, .mini-button { white-space: nowrap; }
 .button { justify-content: center; }
+/* Abstand zwischen Seitenkopf (Titel, Status) und der Trennlinie der Kennzahlen. */
+.page-heading + .project-facts, .order-header-card > .project-facts { margin-top: var(--space-3); }
 .form-actions, .order-detail-actions, .step-section-actions, .master-exchange-actions, .inline-toolbar,
 #offer-editor .offer-revision-primary-action, .section-heading { flex-wrap: wrap; }
 
