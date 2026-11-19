@@ -28,14 +28,14 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 
 | 3.2 | Bautagesberichte und interne Ist-Erfassung | Implementiert: Mitarbeiter, Berichte und Zeiterfassung (`0021`) |
 
-| 3.2.2 | Materialanforderungen, Fotos und Anhänge zu Bautagesberichten | Implementiert (`0023`); PDF-Ausgabe in Phase 3.2.3 verschoben |
+| 3.2.2 | Materialanforderungen, Fotos und Anhänge zu Bautagesberichten | Implementiert (`0023`); PDF-Ausgabe mit Phase 3.2.3 |
 
 | 3.2.1.x | Einheitliche Übersichts- und Detailseiten; serverseitige Pagination, Sortierung und URL-basierter Listenstatus | Implementiert (`0022`) |
-| 3.2.3 | Gemeinsame Dokumentvorlagen und PDF-Grundlagen (schrittweise) | Geplant; bestehende Angebots-PDF-Infrastruktur vorhanden |
+| 3.2.3 | Gemeinsamer Briefbogen, PDFs für Rapporte, Aufmaße und Bautagesberichte, digitale Kundenunterschrift, Rücklauf und Dokumentarchiv | Implementiert (`0027`); externe Ablage (NAS/SMB), E-Mail-Versand und Kundenportal geplant |
 
-| 3.3 | Aufmaße für vereinbarte Angebotsleistungen | Implementiert (`0024`); PDF-Ausgabe in Phase 3.2.3 |
+| 3.3 | Aufmaße für vereinbarte Angebotsleistungen | Implementiert (`0024`), PDF seit Phase 3.2.3 |
 
-| 3.4 | Rapporte für Regieleistungen, auch eigenständig ohne Auftrag | Implementiert (`0025`, `0026`); PDF, Unterschrift und Übermittlung in Phase 3.2.3 |
+| 3.4 | Rapporte für Regieleistungen, auch eigenständig ohne Auftrag | Implementiert (`0025`, `0026`), PDF und Kundenbestätigung seit Phase 3.2.3 |
 
 | 3.4.1 | Bestellungen mit PDF-Ausgabe (schlanke Materialbeschaffung) | Geplant |
 | 3.4.2 | Lieferscheine mit PDF-Ausgabe (Liefernachweise) | Geplant |
@@ -224,7 +224,7 @@ Bautagesberichte dokumentieren die tatsächliche Ausführung und sind **keine** 
 
 - Artikelgenaue Ist-Materialkosten, Fahrzeiten und weitere Aufwendungen sind bewusst noch nicht umgesetzt; sie werden bei Bedarf im Zusammenhang mit der Nachkalkulation (Phase 3.5) geklärt.
 
-- Die **PDF-Ausgabe von Bautagesberichten** gehört zur gemeinsamen Dokumentphase 3.2.3 und wird dort mit der einheitlichen Vorlage umgesetzt.
+- **PDF-Ausgabe** zur internen Dokumentation (Tätigkeiten, Arbeitszeiten ohne Kosten, Bemerkungen, JPEG-Fotos verkleinert eingebunden; Materialanforderungen nicht enthalten). *(implementiert, Phase 3.2.3)*
 
 - Tatsächliche Stunden und Kosten für die Nachkalkulation bereitstellen.
 
@@ -234,7 +234,25 @@ Bautagesberichte dokumentieren die tatsächliche Ausführung und sind **keine** 
 
 - Bautagesberichte sind optional. Aufmaß oder Rapport dürfen nicht davon abhängen.
 
-## Phase 3.2.3 – Einheitliche Dokumentvorlagen und PDF-Grundlagen (geplant)
+## Phase 3.2.3 – Dokumentausgabe und Kundenbestätigung
+
+**Umgesetzt (Migration `0027`):**
+
+- **Gemeinsame PDF-Grundlage:** projekteigene Engine `SimplePdf` (jetzt mit beliebig vielen JPEG-Bildern und optionalem Wasserzeichen) und ein gemeinsamer Briefbogen (`LetterheadPdf`) für Rapporte, Aufmaße und Bautagesberichte: Logo, Firmenangaben, Kopf-/Fußbereich, Empfänger, Metadaten, Tabellen mit wiederholtem Kopf, automatische Seitenumbrüche und Seitenzahlen. Alle Firmendaten stammen aus den Dokumenteinstellungen. Der Angebots-Generator bleibt bewusst eigenständig (kein Risiko für abgabefähige Angebote); er verwendet dieselbe Engine und Einstellungen.
+- **Wasserzeichen:** „ENTWURF“ nur noch auf Entwürfen. Bereits archivierte PDFs abgegebener Angebote bleiben unverändert (sie wurden mit dem früheren Verhalten erzeugt und werden nie neu erzeugt).
+- **Rapport-PDF:** eingereichter Leistungsnachweis (Arbeiten, Stunden, Material, Bemerkungen, Ansprechpartner, optional Auftrag/Projekt) mit Bestätigungsbereich – nie kaufmännische Positionen, Verkaufspreise oder Kosten; auch für eigenständige Rapporte ohne Auftrag.
+- **Kundenbestätigung mit getrennten Nachweisarten:**
+  - *Digital unterschrieben* (`signature`): Der Monteur öffnet die Kundenansicht (ohne Navigation und Preise), der Kunde unterschreibt mit Finger, Stift oder Maus. Die Unterschrift (JPEG) wird nur angenommen, wenn die angezeigte Prüfsumme dem eingereichten Leistungsnachweis entspricht.
+  - *Unterschriebenes Dokument zurückerhalten* (`returned_document`): Das Büro lädt das unterschriebene PDF oder Foto hoch; das Original wird unverändert archiviert.
+  - *Manuell dokumentiert* (`manual`): nur Name und Datum ohne Nachweisdatei; ausdrücklich gekennzeichnet und kein gleichwertiger Unterschriftsnachweis.
+  - *Zur Bestätigung versendet*: reiner Hinweis (Zeitpunkt, Benutzer), keine Bestätigung.
+  - Jede Bestätigung ist per Datenbank-CHECK an die Prüfsumme des eingereichten Stands gebunden und einmalig; Korrekturrapporte erhalten eigene Bestätigungen.
+- **Aufmaß- und Bautagesbericht-PDF:** siehe Phasen 3.2 und 3.3.
+- **Dokumentarchiv:** Verbindliche PDFs (Rapporte ab Einreichung, abgeschlossene Aufmaße) werden je fachlichem Stand einmal erzeugt und unter `APP_DOCUMENTS_PATH` abgelegt (`generated_documents`); spätere Abrufe liefern genau diese Datei. Ein neuer Stand (z. B. nach Kundenbestätigung) erhält eine eigene Datei, ältere bleiben erhalten.
+
+**Geplant:** zusätzliche Ablage erzeugter Dokumente in einer konfigurierbaren Verzeichnisstruktur (z. B. eingebundenes NAS nach Kunde/Projekt/Auftrag/Dokumenttyp), E-Mail-Versand, öffentliches Bestätigungsportal, Bestellungen und Lieferscheine auf derselben Grundlage.
+
+**Grundsätze (weiterhin gültig):**
 
 Ziel ist, **aus einer gemeinsamen Datenbasis einheitlich gestaltete PDF-Dokumente** zu erzeugen, ohne für jede Dokumentart eine zweite Infrastruktur oder einen universellen Dokumenteneditor zu entwickeln. Die bestehende projekteigene PDF-Infrastruktur und vorhandene Angebotsvorlagen sind Ausgangspunkt; diese Phase wird bei Bedarf schrittweise mit den jeweiligen Dokumentmodulen umgesetzt.
 
@@ -262,7 +280,7 @@ Aufmaße dokumentieren die **abrechenbaren ausgeführten Mengen vereinbarter Lei
 - Korrekturen abgeschlossener Aufmaße erfolgen über ein **Korrekturaufmaß** (Verweis auf das korrigierte Aufmaß, auch negative Mengen; die Gesamtmenge darf nicht unter null fallen). Ein Storno- oder Rechnungswesen ist bewusst nicht enthalten.
 - Rechte: `measurements.read`/`measurements.write` (Büro, Monteur – Monteure nur freigegebene Aufträge und eigene Entwürfe), `measurements.complete` für Abschluss und Korrektur (Büro/Admin).
 
-**Offen:** Kundentaugliche PDF-Ausgabe der abgeschlossenen Fassungen (Phase 3.2.3).
+**PDF (Phase 3.2.3):** Abgeschlossene Aufmaße und Korrekturaufmaße als PDF mit Titelhierarchie, vereinbarter, bisheriger, aktueller und kumulierter Menge, Mehrmengen und den festgeschriebenen Summen; einmal erzeugt und archiviert. Entwürfe nur als Vorschau mit Wasserzeichen.
 
 - Als Anlage bzw. Grundlage für Abschlags- und Schlussrechnungen verwendbar.
 
@@ -282,7 +300,9 @@ Rapporte dokumentieren **abrechenbare Regieleistungen** und entsprechen in ihrer
 - **Rechte:** `workreports.read`/`workreports.write` (Büro, Monteur – Monteure sehen eigene Rapporte immer, fremde nur an freigegebenen Aufträgen und fremde eigenständige Rapporte nie; sie bearbeiten nur eigene Entwürfe, Bestätigungen und Korrekturen), `workreports.process` (Büro/Admin) für Abrechnungspositionen, Stammübernahme, Abschluss, Wiederöffnen und nachträgliche Auftragszuordnung. Preise und Beträge liefert auch die API nur mit diesem Recht aus.
 - Rapportstunden sind abrechenbare Angaben und werden nicht mit den Ist-Zeiten der Bautagesberichte verrechnet; Rapportbeträge verändern keine Ist-Kosten.
 
-**Offen:** PDF-Ausgabe, grafische Unterschrift, Übermittlung an Kunden und ein Bestätigungsportal (Dokumentphase 3.2.3); optionale Übernahme aus Bautagesberichten.
+**PDF und Kundenbestätigung (Phase 3.2.3):** Rapport-PDF des eingereichten Leistungsnachweises ohne Preise, mit Unterschriftsbereich; digitale Unterschrift vor Ort, Rücklauf unterschriebener Dokumente und manuelle Dokumentation als getrennte Nachweisarten (siehe Phase 3.2.3).
+
+**Offen:** E-Mail-Versand und ein öffentliches Bestätigungsportal; optionale Übernahme aus Bautagesberichten.
 
 ## Phase 3.4.1 – Bestellungen und Materialbeschaffung (geplant)
 

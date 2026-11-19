@@ -195,15 +195,51 @@ final readonly class WorkReportRepository
         return $statement->rowCount() === 1;
     }
 
-    /** Kundenbestätigung einmalig erfassen, gebunden an die Prüfsumme des eingereichten Stands. */
-    public function confirm(string $id, int $version, string $method, string $name, string $userId, string $at): bool
+    /**
+     * Kundenbestätigung einmalig erfassen, gebunden an die Prüfsumme des eingereichten Stands.
+     * Mit $expectedHash wird zusätzlich geprüft, dass genau dieser Stand bestätigt wurde.
+     *
+     * @param array{path:string,name:string,mime:string,size:int,sha256:string}|null $evidence Nachweisdatei (Unterschrift/Rücklauf)
+     */
+    public function confirm(string $id, int $version, string $kind, string $method, string $name, string $userId, string $at, ?array $evidence = null, ?string $expectedHash = null): bool
     {
-        $statement = $this->pdo->prepare("UPDATE work_reports SET confirmation_status = 'confirmed', confirmation_method = :method,
+        $statement = $this->pdo->prepare("UPDATE work_reports SET confirmation_status = 'confirmed', confirmation_kind = :kind, confirmation_method = :method,
             confirmed_by_name = :name, confirmed_at = :at, confirmation_recorded_by_user_id = :user, confirmation_sha256 = submitted_sha256,
+            confirmation_evidence_path = :evidence_path, confirmation_evidence_name = :evidence_name, confirmation_evidence_mime = :evidence_mime,
+            confirmation_evidence_size = :evidence_size, confirmation_evidence_sha256 = :evidence_sha256,
             version = version + 1, updated_at = :at
-            WHERE id = :id AND version = :version AND status <> 'draft' AND confirmation_status = 'none'");
-        $statement->execute(['method' => $method, 'name' => $name, 'at' => $at, 'user' => $userId, 'id' => $id, 'version' => $version]);
+            WHERE id = :id AND version = :version AND status <> 'draft' AND confirmation_status = 'none'
+              AND (:expected_hash IS NULL OR submitted_sha256 = :expected_hash_value)");
+        $statement->execute([
+            'kind' => $kind, 'method' => $method, 'name' => $name, 'at' => $at, 'user' => $userId, 'id' => $id, 'version' => $version,
+            'evidence_path' => $evidence['path'] ?? null, 'evidence_name' => $evidence['name'] ?? null, 'evidence_mime' => $evidence['mime'] ?? null,
+            'evidence_size' => $evidence['size'] ?? null, 'evidence_sha256' => $evidence['sha256'] ?? null,
+            'expected_hash' => $expectedHash, 'expected_hash_value' => $expectedHash ?? '',
+        ]);
         return $statement->rowCount() === 1;
+    }
+
+    /** „Zur Bestätigung versendet“ vermerken (nur Hinweis, keine Bestätigung). */
+    public function markConfirmationRequested(string $id, int $version, string $userId, string $at): bool
+    {
+        $statement = $this->pdo->prepare("UPDATE work_reports SET confirmation_requested_at = :at, confirmation_requested_by_user_id = :user,
+            version = version + 1, updated_at = :at WHERE id = :id AND version = :version AND status <> 'draft' AND confirmation_status = 'none'");
+        $statement->execute(['at' => $at, 'user' => $userId, 'id' => $id, 'version' => $version]);
+        return $statement->rowCount() === 1;
+    }
+
+    /** Anschrift des Kunden sowie Auftrag und Projekt für die Dokumentausgabe. @return array<string,mixed> */
+    public function documentContext(string $id): array
+    {
+        $statement = $this->pdo->prepare('SELECT c.street, c.house_number, c.postal_code, c.city, c.country,
+            o.order_number, o.title AS order_title, p.project_number, p.name AS project_name,
+            rec.display_name AS confirmation_recorded_by_name, req.display_name AS confirmation_requested_by_name
+            FROM work_reports w JOIN customers c ON c.id = w.customer_id LEFT JOIN orders o ON o.id = w.order_id
+            LEFT JOIN projects p ON p.id = o.project_id LEFT JOIN users rec ON rec.id = w.confirmation_recorded_by_user_id
+            LEFT JOIN users req ON req.id = w.confirmation_requested_by_user_id WHERE w.id = :id');
+        $statement->execute(['id' => $id]);
+        $row = $statement->fetch();
+        return is_array($row) ? $row : [];
     }
 
     /**

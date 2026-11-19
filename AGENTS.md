@@ -261,6 +261,14 @@ Keine zweite Nummernlogik in einem Controller oder Frontend anlegen.
 - Preise, Beträge, Abrechnungspositionen und der Artikelkatalog (nur Verkaufspreise) sind ausschließlich mit `workreports.process` zugänglich – serverseitig in `WorkReportService`, nicht nur in der Oberfläche.
 - Rapporte erzeugen keine Ist-Kosten und keine Bindung an Angebotspositionen; Rapportstunden sind nicht die Ist-Zeiten der Bautagesberichte.
 
+### 4.14 Dokumentausgabe und Kundenbestätigung
+
+- PDFs entstehen ausschließlich mit `SimplePdf`; neue Dokumentarten verwenden den gemeinsamen Briefbogen `Application\LetterheadPdf` (Firmendaten nur aus den Dokumenteinstellungen). Das Wasserzeichen „ENTWURF“ gehört nur auf Entwürfe.
+- Kundenfähige Leistungsnachweise (Rapport-PDF, Kundenansicht zur Unterschrift) enthalten nie kaufmännische Positionen, Verkaufspreise oder Kosten. Bautagesbericht-PDFs enthalten keine Kostensätze und keine Materialanforderungen.
+- Verbindliche PDFs (eingereichte Rapporte, abgeschlossene Aufmaße) über `DocumentArchive` je fachlichem Stand (`source_sha256`) einmal erzeugen und danach unverändert ausliefern; nie überschreiben. Entwürfe werden nicht archiviert.
+- Bestätigungsarten von Rapporten: `signature` (Unterschriftsbild), `returned_document` (hochgeladenes Original), `manual` (ohne Nachweis, ausdrücklich gekennzeichnet). Eine Unterschrift wird nur mit passender `submittedSha256` angenommen; jede Bestätigung ist einmalig und per CHECK an `submitted_sha256` gebunden. „Versendet“ (`confirmation_requested_*`) ist keine Bestätigung.
+- Nachweise und archivierte PDFs liegen unter `APP_DOCUMENTS_PATH/work-reports/<rapport>/` bzw. `measurements/<aufmaß>/`, Auslieferung nur über geschützte Routen (`FileResponse`). Rücklauf-Upload und „versendet“ erfordern `workreports.process`; Unterschrift erfassen dürfen Ersteller und Büro.
+
 ### 4.14 Fachliche Abgrenzung späterer Module
 
 Folgende Punkte sind Zielbild, soweit nicht durch aktuelle Migrationen/Code implementiert:

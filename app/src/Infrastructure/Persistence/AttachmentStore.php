@@ -42,6 +42,32 @@ final readonly class AttachmentStore
         return $relative;
     }
 
+    /** Speichert erzeugte Inhalte (z. B. PDF, Unterschrift) über eine temporäre Datei. */
+    public function storeContents(string $contents, string $folder, string $id, string $extension): string
+    {
+        $temporary = tempnam(sys_get_temp_dir(), 'calight-');
+        if ($temporary === false || file_put_contents($temporary, $contents) !== strlen($contents)) {
+            throw new RuntimeException('Datei konnte nicht vorbereitet werden.');
+        }
+        try {
+            return $this->store($temporary, $folder, $id, $extension);
+        } finally {
+            if (is_file($temporary)) {
+                @unlink($temporary);
+            }
+        }
+    }
+
+    public function read(string $relative): string
+    {
+        $path = $this->absolute($relative);
+        $contents = is_file($path) ? file_get_contents($path) : false;
+        if ($contents === false) {
+            throw new RuntimeException('Gespeicherte Datei wurde nicht gefunden.');
+        }
+        return $contents;
+    }
+
     public function absolute(string $relative): string
     {
         if ($relative === '' || str_contains($relative, '..') || str_starts_with($relative, '/')

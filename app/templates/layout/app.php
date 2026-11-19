@@ -10,7 +10,10 @@
     <script src="/assets/list-view.js?v=<?= $escape((string) filemtime(dirname(__DIR__, 2) . '/public/assets/list-view.js')) ?>" defer></script>
 </head>
 <body<?= $currentUser !== null ? ' data-user-id="'.$escape((string)$currentUser['id']).'"' : '' ?>>
-<?php if ($currentUser !== null): ?>
+<?php
+// Kundenansichten (z. B. Unterschrift) zeigen bewusst keine Calight-Navigation.
+$showShell = $currentUser !== null && !($bareLayout ?? false);
+if ($showShell): ?>
     <header class="topbar">
         <div class="topbar-start">
             <button class="nav-toggle" type="button" data-nav-toggle aria-controls="main-navigation" aria-expanded="false" aria-label="Navigation öffnen" title="Navigation">
@@ -64,14 +67,14 @@
         </nav>
         <main class="content <?= $escape($contentClass ?? '') ?>">
 <?php else: ?>
-        <main class="content content-narrow">
+        <main class="content <?= ($bareLayout ?? false) ? 'content-bare' : 'content-narrow' ?>">
 <?php endif; ?>
             <?php foreach ($flashMessages as $flash): ?>
                 <div class="notice notice-<?= $escape($flash['type']) ?>" role="status"><?= $escape($flash['message']) ?></div>
             <?php endforeach; ?>
             <?= $content ?>
         </main>
-<?php if ($currentUser !== null): ?>
+<?php if ($showShell): ?>
     </div>
 <?php endif; ?>
 <script src="/assets/ui.js?v=<?= $escape((string) filemtime(dirname(__DIR__, 2) . '/public/assets/ui.js')) ?>" defer></script>

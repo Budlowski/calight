@@ -12,7 +12,9 @@ Calight trennt strikt zwischen **Quellcode**, **interner Anwendungsdaten** und (
 ├── offers/                      Angebotsentwürfe, Snapshots,  APP_OFFERS_PATH
 │                                archivierte Angebots-PDFs
 ├── documents/                   Dokumente und Anhänge         APP_DOCUMENTS_PATH
-│   └── daily-reports/<bericht>/<anhang>.<ext>   Anhänge von Bautagesberichten
+│   ├── daily-reports/<bericht>/<anhang>.<ext>   Anhänge von Bautagesberichten
+│   ├── work-reports/<rapport>/<datei>.<ext>     archivierte Rapport-PDFs, Unterschriften, Rückläufe
+│   └── measurements/<aufmaß>/<datei>.pdf        archivierte PDFs abgeschlossener Aufmaße
 └── templates/                   benutzerdefinierte Vorlagen   APP_TEMPLATES_PATH (derzeit ungenutzt)
 ```
 
@@ -26,6 +28,7 @@ Die Pfade werden ausschließlich über die Umgebungsvariablen `APP_DATABASE_PATH
 - Dateien werden nur unter intern erzeugten Namen (UUIDs) gespeichert; Originalnamen sind reine Metadaten in der Datenbank. Die Datenbank speichert Pfade **relativ** zu `APP_DOCUMENTS_PATH` (z. B. `daily-reports/<bericht>/<anhang>.pdf`).
 - Anhänge werden ausschließlich über berechtigungsgeprüfte Routen ausgeliefert; Zugriffe und Löschungen sind auf das jeweilige Ablageverzeichnis begrenzt (auch gegen Symlinks).
 - `.gitignore` und `.dockerignore` schließen versehentlich im Projektordner liegende Laufzeitdaten aus.
+- Archivierte PDFs werden in `generated_documents` mit Dokumenttyp, Datensatz, fachlichem Stand (Prüfsumme), Datei-Prüfsumme, Erzeuger und Zeitpunkt geführt; Dateien werden nie überschrieben. Bautagesbericht-PDFs werden bei Bedarf neu erzeugt und nicht gespeichert.
 - Künftige kundenseitige Dokumentarchive (PDF-Ausgabe, Phase 3.2.3) werden **zusätzlich** und getrennt von diesen internen Daten konfigurierbar sein.
 
 ## Prüfung

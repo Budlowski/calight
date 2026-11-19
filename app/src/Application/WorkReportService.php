@@ -8,6 +8,7 @@ use App\Domain\Calculation\Decimal;
 use App\Domain\Calculation\PriceCalculator;
 use App\Domain\Order\OrderValidationException;
 use App\Http\AccessDeniedException;
+use App\Infrastructure\Persistence\AttachmentStore;
 use App\Infrastructure\Persistence\NumberRangeRepository;
 use App\Infrastructure\Persistence\OrderRepository;
 use App\Infrastructure\Persistence\WorkReportRepository;
@@ -37,6 +38,10 @@ final readonly class WorkReportService
 {
     public const BILLING_TYPES = ['labor' => 'Arbeitsstunden', 'material' => 'Material', 'travel' => 'Anfahrt/Fahrtkosten', 'external' => 'Fremdleistung', 'flat' => 'Pauschale', 'other' => 'Sonstige Leistung'];
     private const MAX_ROWS = 100;
+    private const MAX_SIGNATURE_BYTES = 600 * 1024;
+    public const MAX_EVIDENCE_BYTES = 15 * 1024 * 1024;
+    /** Zulässige Rücklaufdokumente, am Inhalt erkannt. */
+    private const EVIDENCE_TYPES = ['application/pdf' => 'pdf', 'image/jpeg' => 'jpg', 'image/png' => 'png'];
 
     public function __construct(
         private PDO $pdo,
@@ -44,6 +49,7 @@ final readonly class WorkReportService
         private OrderRepository $orders,
         private NumberRangeRepository $numbers,
         private PriceCalculator $prices = new PriceCalculator(),
+        private ?AttachmentStore $store = null,
     ) {
     }
 
@@ -163,6 +169,7 @@ final readonly class WorkReportService
     {
         $row = $this->accessibleReport($id, $actor);
         $labor = $this->reports->labor($id);
+        $context = $this->reports->documentContext($id);
         $result = $this->summary($row, $actor);
         $result += [
             'contactPerson' => $row['contact_person'],
@@ -172,8 +179,21 @@ final readonly class WorkReportService
             'submittedByName' => $row['submitted_by_name'],
             'submittedSha256' => $row['submitted_sha256'],
             'confirmationMethod' => $row['confirmation_method'],
+            'confirmationKind' => $row['confirmation_kind'],
             'confirmedByName' => $row['confirmed_by_name'],
             'confirmedAt' => $row['confirmed_at'],
+            'confirmationRecordedByName' => $context['confirmation_recorded_by_name'] ?? null,
+            'confirmationRequestedAt' => $row['confirmation_requested_at'],
+            'confirmationRequestedByName' => $context['confirmation_requested_by_name'] ?? null,
+            'confirmationEvidence' => $row['confirmation_evidence_path'] !== null
+                ? ['name' => $row['confirmation_evidence_name'], 'mimeType' => $row['confirmation_evidence_mime'], 'size' => (int) $row['confirmation_evidence_size']]
+                : null,
+            'customerAddress' => trim(implode(', ', array_filter([
+                trim(($context['street'] ?? '') . ' ' . ($context['house_number'] ?? '')),
+                trim(($context['postal_code'] ?? '') . ' ' . ($context['city'] ?? '')),
+            ]))),
+            'projectNumber' => $context['project_number'] ?? null,
+            'projectName' => $context['project_name'] ?? null,
             'labor' => array_map(static fn (array $item): array => [
                 'employeeId' => $item['employee_id'], 'workerName' => $item['worker_name'], 'hours' => $item['hours'],
                 'laborItemId' => $item['labor_item_id'], 'laborItemName' => $item['labor_item_name'], 'activity' => $item['activity'],
@@ -373,7 +393,8 @@ final readonly class WorkReportService
         if ($errors !== []) {
             throw new OrderValidationException($errors);
         }
-        if (!$this->reports->confirm($id, $this->version($input), $method, $name, (string) $actor['id'], Clock::now())) {
+        // Ohne Nachweisdatei ausdrücklich als „manuell dokumentiert“ gekennzeichnet.
+        if (!$this->reports->confirm($id, $this->version($input), 'manual', $method, $name, (string) $actor['id'], Clock::now())) {
             throw new OrderValidationException(['Der Rapport wurde zwischenzeitlich geändert. Bitte neu laden.']);
         }
         return $this->detail($id, $actor);
@@ -403,6 +424,154 @@ final readonly class WorkReportService
         }
         if (!$this->reports->assignOrder($id, $this->version($input), (string) $order['id'], (string) $actor['id'], Clock::now())) {
             throw new OrderValidationException(['Der Rapport wurde zwischenzeitlich geändert. Bitte neu laden.']);
+        }
+        return $this->detail($id, $actor);
+    }
+
+    /**
+     * Digitale Kundenunterschrift vor Ort (einfache elektronische Unterschrift).
+     *
+     * Die Unterschrift wird nur angenommen, wenn der Kunde genau den aktuell eingereichten
+     * Leistungsstand gesehen hat (submittedSha256 aus der Kundenansicht).
+     *
+     * @param array<string,mixed> $input version, signerName, image (data:image/jpeg;base64,…), submittedSha256
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
+    public function sign(string $id, array $input, array $actor): array
+    {
+        $report = $this->confirmableReport($id, $actor, false);
+        $name = $this->signerName($input);
+        $hash = trim((string) ($input['submittedSha256'] ?? ''));
+        if ($hash === '' || !hash_equals((string) $report['submitted_sha256'], $hash)) {
+            throw new OrderValidationException(['Der unterschriebene Stand stimmt nicht mit dem eingereichten Leistungsnachweis überein. Bitte die Kundenansicht neu laden.']);
+        }
+        $image = (string) ($input['image'] ?? '');
+        $data = str_starts_with($image, 'data:image/jpeg;base64,') ? base64_decode(substr($image, 23), true) : false;
+        $size = is_string($data) ? @getimagesizefromstring($data) : false;
+        if (!is_string($data) || strlen($data) > self::MAX_SIGNATURE_BYTES || !is_array($size) || ($size[2] ?? null) !== IMAGETYPE_JPEG
+            || $size[0] < 100 || $size[1] < 40 || $size[0] > 4000 || $size[1] > 4000) {
+            throw new OrderValidationException(['Die Unterschrift konnte nicht gelesen werden. Bitte erneut unterschreiben.']);
+        }
+        $evidence = $this->storeEvidence($id, $data, 'jpg', 'Unterschrift.jpg', 'image/jpeg');
+        return $this->confirmWithEvidence($id, $this->version($input), 'signature', 'on_site', $name, $actor, $evidence, $hash);
+    }
+
+    /**
+     * Unterschrieben zurückerhaltenes Dokument (PDF oder Bild) archivieren und als Bestätigung erfassen.
+     *
+     * @param array<string,mixed> $input version, signerName
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
+    public function uploadConfirmation(string $id, string $sourcePath, string $originalName, array $input, array $actor): array
+    {
+        $this->requireProcess($actor);
+        $this->confirmableReport($id, $actor, true);
+        $name = $this->signerName($input);
+        $size = is_file($sourcePath) ? (int) filesize($sourcePath) : 0;
+        if ($size <= 0 || $size > self::MAX_EVIDENCE_BYTES) {
+            throw new OrderValidationException(['Das Dokument ist leer oder größer als 15 MB.']);
+        }
+        // Der Typ wird am Inhalt erkannt, nicht am Dateinamen.
+        $mime = (string) (new \finfo(FILEINFO_MIME_TYPE))->file($sourcePath);
+        $extension = self::EVIDENCE_TYPES[$mime] ?? null;
+        if ($extension === null) {
+            throw new OrderValidationException(['Bitte ein PDF oder ein Foto (JPG, PNG) des unterschriebenen Dokuments hochladen.']);
+        }
+        $contents = (string) file_get_contents($sourcePath);
+        $base = pathinfo(basename(str_replace('\\', '/', $originalName)), PATHINFO_FILENAME);
+        $base = mb_substr(trim((string) preg_replace('/[\x00-\x1F\x7F"]+/u', '', $base)) ?: 'Ruecklauf', 0, 120);
+        $evidence = $this->storeEvidence($id, $contents, $extension, $base . '.' . $extension, $mime);
+        return $this->confirmWithEvidence($id, $this->version($input), 'returned_document', 'later', $name, $actor, $evidence, null);
+    }
+
+    /** Vermerkt, dass das PDF dem Kunden zur Bestätigung übermittelt wurde. @param array<string,mixed> $input @param array<string,mixed> $actor @return array<string,mixed> */
+    public function requestConfirmation(string $id, array $input, array $actor): array
+    {
+        $this->requireProcess($actor);
+        $this->confirmableReport($id, $actor, true);
+        if (!$this->reports->markConfirmationRequested($id, $this->version($input), (string) $actor['id'], Clock::now())) {
+            throw new OrderValidationException(['Der Rapport wurde zwischenzeitlich geändert. Bitte neu laden.']);
+        }
+        return $this->detail($id, $actor);
+    }
+
+    /**
+     * Nachweisdatei (Unterschrift oder Rücklauf) für berechtigte Benutzer.
+     *
+     * @param array<string,mixed> $actor
+     * @return array{contents:string,name:string,mimeType:string,inline:bool}
+     */
+    public function confirmationEvidence(string $id, array $actor): array
+    {
+        $report = $this->accessibleReport($id, $actor);
+        if ($report['confirmation_evidence_path'] === null || $this->store === null) {
+            throw new OrderValidationException(['Für diesen Rapport liegt kein Bestätigungsnachweis vor.']);
+        }
+        $mime = (string) $report['confirmation_evidence_mime'];
+        return [
+            'contents' => $this->store->read((string) $report['confirmation_evidence_path']),
+            'name' => (string) $report['confirmation_evidence_name'],
+            'mimeType' => $mime,
+            'inline' => in_array($mime, ['image/jpeg', 'image/png'], true),
+        ];
+    }
+
+    /** @param array<string,mixed> $actor @return array<string,mixed> */
+    private function confirmableReport(string $id, array $actor, bool $officeOnly): array
+    {
+        $report = $this->accessibleReport($id, $actor);
+        if (!$officeOnly && (!$this->can($actor, 'workreports.write') || (!$this->canProcess($actor) && (string) $report['created_by_user_id'] !== (string) $actor['id']))) {
+            throw new AccessDeniedException('workreports.write.own');
+        }
+        if ($report['status'] === 'draft') {
+            throw new OrderValidationException(['Bestätigt werden kann nur ein eingereichter Leistungsnachweis.']);
+        }
+        if ($report['confirmation_status'] === 'confirmed') {
+            throw new OrderValidationException(['Der Rapport wurde bereits bestätigt. Für Änderungen bitte einen Korrekturrapport anlegen.']);
+        }
+        return $report;
+    }
+
+    /** @param array<string,mixed> $input */
+    private function signerName(array $input): string
+    {
+        $name = trim((string) ($input['signerName'] ?? ''));
+        if ($name === '' || mb_strlen($name) > 200) {
+            throw new OrderValidationException(['Bitte den Namen der unterschreibenden Person angeben (höchstens 200 Zeichen).']);
+        }
+        return $name;
+    }
+
+    /** @return array{path:string,name:string,mime:string,size:int,sha256:string} */
+    private function storeEvidence(string $id, string $contents, string $extension, string $name, string $mime): array
+    {
+        if ($this->store === null) {
+            throw new \RuntimeException('Für Nachweise ist keine Dateiablage konfiguriert.');
+        }
+        $path = $this->store->storeContents($contents, 'work-reports/' . $id, Uuid::v4(), $extension);
+        return ['path' => $path, 'name' => $name, 'mime' => $mime, 'size' => strlen($contents), 'sha256' => hash('sha256', $contents)];
+    }
+
+    /**
+     * @param array{path:string,name:string,mime:string,size:int,sha256:string} $evidence
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
+    private function confirmWithEvidence(string $id, int $version, string $kind, string $method, string $name, array $actor, array $evidence, ?string $expectedHash): array
+    {
+        try {
+            if (!$this->reports->confirm($id, $version, $kind, $method, $name, (string) $actor['id'], Clock::now(), $evidence, $expectedHash)) {
+                throw new OrderValidationException(['Der Rapport wurde zwischenzeitlich geändert oder bereits bestätigt. Bitte neu laden.']);
+            }
+        } catch (Throwable $exception) {
+            // Ohne gültige Bestätigung keine verwaiste Nachweisdatei.
+            try {
+                $this->store?->delete($evidence['path']);
+            } catch (Throwable) {
+            }
+            throw $exception;
         }
         return $this->detail($id, $actor);
     }
@@ -790,6 +959,8 @@ final readonly class WorkReportService
             'canConfirm' => $row['status'] !== 'draft' && $row['confirmation_status'] === 'none' && ($this->canProcess($actor) || $own),
             'canCorrect' => $row['status'] !== 'draft' && $this->can($actor, 'workreports.write') && ($this->canProcess($actor) || $own),
             'canAssignOrder' => $row['order_id'] === null && $this->canProcess($actor),
+            'canSign' => $row['status'] !== 'draft' && $row['confirmation_status'] === 'none' && $this->can($actor, 'workreports.write') && ($this->canProcess($actor) || $own),
+            'canUploadConfirmation' => $row['status'] !== 'draft' && $row['confirmation_status'] === 'none' && $this->canProcess($actor),
         ];
         // Beträge ausschließlich mit Preisrecht.
         if ($this->canProcess($actor)) {

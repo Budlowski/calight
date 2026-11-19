@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration;
 
+use App\Application\DocumentArchive;
+use App\Application\MeasurementPdfService;
 use App\Application\MeasurementService;
 use App\Application\OfferPdfService;
 use App\Application\OfferService;
@@ -16,7 +18,9 @@ use App\Http\AccessDeniedException;
 use App\Http\Request;
 use App\Infrastructure\Database\ConnectionFactory;
 use App\Infrastructure\Database\Migrator;
+use App\Infrastructure\Persistence\AttachmentStore;
 use App\Infrastructure\Persistence\DocumentSettingsRepository;
+use App\Infrastructure\Persistence\GeneratedDocumentRepository;
 use App\Infrastructure\Persistence\MeasurementRepository;
 use App\Infrastructure\Persistence\NumberRangeRepository;
 use App\Infrastructure\Persistence\OfferJsonStore;
@@ -188,6 +192,35 @@ final class MeasurementTest extends TestCase
         });
     }
 
+    public function testMeasurementPdfShowsProgressAndArchivesCompletedState(): void
+    {
+        $this->withOrder(function (array $env): void {
+            ['service' => $service, 'pdf' => $pdfService, 'office' => $office, 'order' => $order, 'keys' => $keys, 'pdo' => $pdo] = $env;
+            $first = $this->measure($service, $service->create(['orderId' => $order['id']], $office), [$keys['meter'] => '30'], $office);
+            $preview = $pdfService->pdf($first['id'], $office);
+            $this->assertTrue(str_contains($preview['pdf'], '(ENTWURF) Tj') && $preview['fileName'] === 'Aufmass_Entwurf.pdf', 'Entwürfe nur als Vorschau.');
+            $completed = $service->complete($first['id'], ['version' => $first['version']], $office)['measurement'];
+
+            $second = $this->measure($service, $service->create(['orderId' => $order['id']], $office), [$keys['meter'] => '75', $keys['addendum'] => '5'], $office);
+            $done = $service->complete($second['id'], ['version' => $second['version'], 'confirmOverrun' => true], $office)['measurement'];
+            $document = $pdfService->pdf($done['id'], $office);
+            $pdf = $document['pdf'];
+            $this->assertTrue(str_contains($pdf, (string) $done['measurementNumber']) && !str_contains($pdf, 'ENTWURF'));
+            $this->assertTrue(str_contains($pdf, 'NYM-J 3x1,5') && str_contains($pdf, 'Steckdose'), 'Positionen aus Auftragsgrundlage und Nachtrag.');
+            $this->assertTrue(str_contains($pdf, '(30) Tj') && str_contains($pdf, '(75) Tj') && str_contains($pdf, '(105) Tj'), 'Bisher, dieses Aufmaß und Gesamt.');
+            $this->assertTrue(str_contains($pdf, 'Mehrmenge 5 m \\(best'), 'Mehrmengen werden ausgewiesen.');
+            $this->assertTrue(!str_contains($pdf, 'Abzweigdose'), 'Nur Positionen mit Menge in diesem Aufmaß.');
+            $this->assertSame($pdf, $pdfService->pdf($done['id'], $office)['pdf'], 'Abgeschlossene Aufmaße werden archiviert und unverändert erneut ausgeliefert.');
+            $this->assertSame(1, (int) $pdo->query("SELECT COUNT(*) FROM generated_documents WHERE document_type = 'measurement'")->fetchColumn());
+
+            $correction = $this->measure($service, $service->create(['correctionOf' => $completed['id']], $office), [$keys['meter'] => '-5'], $office);
+            $corrected = $service->complete($correction['id'], ['version' => $correction['version']], $office)['measurement'];
+            $correctionPdf = $pdfService->pdf($corrected['id'], $office)['pdf'];
+            $this->assertTrue(str_contains($correctionPdf, 'Korrekturaufma') && str_contains($correctionPdf, (string) $completed['measurementNumber']), 'Korrekturaufmaß mit Bezug zum korrigierten Aufmaß.');
+            $this->assertTrue(str_contains($correctionPdf, '(-5) Tj'));
+        });
+    }
+
     /**
      * Auftrag aus Angebot (10 % Nachlass): Titel mit 100 m Leitung zu 2,50 € und Bedarfsposition
      * (10 Stk. zu 15,00 €), Alternativtitel; dazu ein angenommener und ein nur abgegebener Nachtrag.
@@ -242,8 +275,12 @@ final class MeasurementTest extends TestCase
             $offerService->submitOffer($pending['id'], $pendingEtag, null, '2026-11-10', true);
 
             $addendumId = (string) $pdo->query('SELECT id FROM order_addenda')->fetchColumn();
+            $measurementService = new MeasurementService($pdo, new MeasurementRepository($pdo), new OrderRepository($pdo), $numbers);
             $test([
-                'service' => new MeasurementService($pdo, new MeasurementRepository($pdo), new OrderRepository($pdo), $numbers),
+                'pdo' => $pdo,
+                'pdf' => new MeasurementPdfService($measurementService, new MeasurementRepository($pdo), new DocumentSettingsRepository($pdo),
+                    new DocumentArchive(new GeneratedDocumentRepository($pdo), new AttachmentStore($tmp . '/documents'))),
+                'service' => $measurementService,
                 'orders' => $orders,
                 'order' => $order,
                 'office' => $office,

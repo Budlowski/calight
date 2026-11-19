@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http;
 
+use App\Application\DailyReportPdfService;
 use App\Application\DailyReportService;
 use App\Application\MaterialRequestService;
 use App\Domain\DailyReportValidationException;
@@ -12,7 +13,7 @@ use JsonException;
 
 final readonly class DailyReportController
 {
-    public function __construct(private View $view,private DailyReportService $service,private ?MaterialRequestService $materialRequests=null) {}
+    public function __construct(private View $view,private DailyReportService $service,private ?MaterialRequestService $materialRequests=null,private ?DailyReportPdfService $pdf=null) {}
     public function register(Router $router):void
     {
         $router->add('GET','/daily-reports',fn(Request $request):Response=>$this->view->render('daily-reports/index',['initialOrderId'=>(string)($request->query['create_for']??''),'initialReportId'=>(string)($request->query['open']??'')]));
@@ -22,6 +23,7 @@ final readonly class DailyReportController
         $router->add('GET','/api/daily-reports/order/{id}/targets',fn(Request $request,array $parameters):Response=>$this->respond(fn()=>$this->service->orderTargets($parameters['id'],$this->actor())));
         $router->add('GET','/api/daily-reports/order/{id}/totals',fn(Request $request,array $parameters):Response=>$this->totals($parameters['id']));
         $router->add('GET','/api/daily-reports/{id}',fn(Request $request,array $parameters):Response=>$this->respond(fn()=>$this->detail($parameters['id'])));
+        $router->add('GET','/api/daily-reports/{id}/pdf',fn(Request $request,array $parameters):Response=>$this->respondPdf($parameters['id']));
         $router->add('POST','/api/daily-reports/{id}/attachments',fn(Request $request,array $parameters):Response=>$this->upload($request,$parameters['id']));
         $router->add('GET','/api/daily-reports/{id}/attachments/{attachment}',fn(Request $request,array $parameters):Response=>$this->download($parameters['id'],$parameters['attachment']));
         $router->add('DELETE','/api/daily-reports/{id}/attachments/{attachment}',fn(Request $request,array $parameters):Response=>$this->mutate($request,function()use($parameters){$this->service->deleteAttachment($parameters['id'],$parameters['attachment'],$this->actor());return['deleted'=>true];}));
@@ -29,6 +31,16 @@ final readonly class DailyReportController
         $router->add('PUT','/api/daily-reports/{id}',fn(Request $request,array $parameters):Response=>$this->mutate($request,fn(array $data)=>$this->service->update($parameters['id'],$data,$this->actor())));
         $router->add('DELETE','/api/daily-reports/{id}',fn(Request $request,array $parameters):Response=>$this->mutate($request,function(array $data)use($parameters){$this->service->delete($parameters['id'],(int)($data['version']??0),$this->actor());return['deleted'=>true];}));
     }
+    private function respondPdf(string $id): Response
+    {
+        try {
+            $document = ($this->pdf ?? throw new \RuntimeException('PDF-Ausgabe ist nicht konfiguriert.'))->pdf($id, $this->actor());
+        } catch (DailyReportValidationException $exception) {
+            return Response::json(['error' => $exception->getMessage(), 'details' => $exception->errors], 422);
+        }
+        return FileResponse::pdf($document['pdf'], $document['fileName']);
+    }
+
     /** Berichtsdetail inklusive der aus diesem Bericht gemeldeten Materialanforderungen. */
     private function detail(string $id): array
     {

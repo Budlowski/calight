@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http;
 
+use App\Application\MeasurementPdfService;
 use App\Application\MeasurementService;
 use App\Domain\Order\OrderValidationException;
 use App\View\View;
@@ -12,7 +13,7 @@ use JsonException;
 /** Aufmaße: Übersicht, Bearbeitungsseite und JSON-API (Rechte siehe AuthorizationPolicy). */
 final readonly class MeasurementController
 {
-    public function __construct(private View $view, private MeasurementService $service)
+    public function __construct(private View $view, private MeasurementService $service, private ?MeasurementPdfService $pdf = null)
     {
     }
 
@@ -33,6 +34,10 @@ final readonly class MeasurementController
             $this->service->delete($parameters['id'], (int) ($data['version'] ?? 0), $this->actor());
             return ['deleted' => true];
         }));
+        $router->add('GET', '/api/measurements/{id}/pdf', function (Request $request, array $parameters): Response {
+            $document = ($this->pdf ?? throw new \RuntimeException('PDF-Ausgabe ist nicht konfiguriert.'))->pdf($parameters['id'], $this->actor());
+            return FileResponse::pdf($document['pdf'], $document['fileName']);
+        });
         $router->add('POST', '/api/measurements/{id}/complete', fn (Request $request, array $parameters): Response => $this->complete($request, $parameters['id']));
     }
 

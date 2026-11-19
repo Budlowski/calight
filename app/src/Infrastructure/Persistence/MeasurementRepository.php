@@ -78,6 +78,17 @@ final readonly class MeasurementRepository
         return $statement->fetchAll();
     }
 
+    /** Kundenanschrift und Projekt für die Dokumentausgabe. @return array<string,mixed> */
+    public function documentContext(string $id): array
+    {
+        $statement = $this->pdo->prepare('SELECT c.customer_number, c.street, c.house_number, c.postal_code, c.city, p.project_number, p.name AS project_name
+            FROM measurements m JOIN orders o ON o.id = m.order_id JOIN customers c ON c.id = o.customer_id
+            LEFT JOIN projects p ON p.id = o.project_id WHERE m.id = :id');
+        $statement->execute(['id' => $id]);
+        $row = $statement->fetch();
+        return is_array($row) ? $row : [];
+    }
+
     /** @return list<array<string,mixed>> */
     public function items(string $measurementId): array
     {

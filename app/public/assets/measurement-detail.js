@@ -162,6 +162,8 @@
     if (measurement.canComplete) actions.push('<button class="button" type="button" data-complete data-icon="clipboard-check" title="Aufmaß verbindlich abschließen">Abschließen …</button>');
     if (measurement.canEdit) actions.push('<button class="button button-danger-light" type="button" data-delete data-icon="trash">Entwurf löschen</button>');
     if (measurement.canCorrect) actions.push('<button class="button button-light" type="button" data-correct data-icon="square-pen">Korrekturaufmaß anlegen</button>');
+    // PDF: abgeschlossene Aufmaße archiviert, Entwürfe nur als Vorschau mit Wasserzeichen.
+    actions.push(`<a class="button button-light" href="/api/measurements/${encodeURIComponent(measurement.id)}/pdf" data-icon="file-down">${measurement.status === "completed" ? "PDF herunterladen" : "PDF-Vorschau"}</a>`);
     root.querySelector("[data-actions]").innerHTML = actions.join("");
 
     for (const name of ["title", "measurementDate", "notes"]) {

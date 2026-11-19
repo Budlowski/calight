@@ -34,6 +34,7 @@ use App\Infrastructure\Persistence\DocumentLockRepository;
 use App\Infrastructure\Persistence\EmployeeRepository;
 use App\Infrastructure\Persistence\DailyReportRepository;
 use App\Infrastructure\Persistence\AttachmentStore;
+use App\Infrastructure\Persistence\GeneratedDocumentRepository;
 use App\Infrastructure\Persistence\MaterialRequestRepository;
 use App\Infrastructure\Persistence\MeasurementRepository;
 use App\Infrastructure\Persistence\WorkReportRepository;
@@ -83,9 +84,12 @@ final readonly class Bootstrap
         $userRepository=new UserRepository($this->pdo);
         $employeeRepository=new EmployeeRepository($this->pdo);
         $dailyReportRepository=new DailyReportRepository($this->pdo);
-        $dailyReportService=new DailyReportService($this->pdo,$dailyReportRepository,$employeeRepository,new OrderRepository($this->pdo),new AttachmentStore($this->config->documentsPath));
-        $measurementService=new MeasurementService($this->pdo,new MeasurementRepository($this->pdo),new OrderRepository($this->pdo),$numberRanges);
-        $workReportService=new WorkReportService($this->pdo,new WorkReportRepository($this->pdo),new OrderRepository($this->pdo),$numberRanges,$priceCalculator);
+        $documentStore=new AttachmentStore($this->config->documentsPath);
+        $documentArchive=new DocumentArchive(new GeneratedDocumentRepository($this->pdo),$documentStore);
+        $dailyReportService=new DailyReportService($this->pdo,$dailyReportRepository,$employeeRepository,new OrderRepository($this->pdo),$documentStore);
+        $measurementRepository=new MeasurementRepository($this->pdo);
+        $measurementService=new MeasurementService($this->pdo,$measurementRepository,new OrderRepository($this->pdo),$numberRanges);
+        $workReportService=new WorkReportService($this->pdo,new WorkReportRepository($this->pdo),new OrderRepository($this->pdo),$numberRanges,$priceCalculator,$documentStore);
         $materialRequestService=new MaterialRequestService(new MaterialRequestRepository($this->pdo),new OrderRepository($this->pdo),$dailyReportRepository);
 
         return new Application(
@@ -106,10 +110,10 @@ final readonly class Bootstrap
             $documentLockService,
             new UserAccessController(new UserAccessService($userRepository)),
             new EmployeeController($view,new EmployeeService($employeeRepository,$userRepository)),
-            new DailyReportController($view,$dailyReportService,$materialRequestService),
+            new DailyReportController($view,$dailyReportService,$materialRequestService,new DailyReportPdfService($dailyReportService,$documentSettingsRepository)),
             new MaterialRequestController($view,$materialRequestService),
-            new MeasurementController($view,$measurementService),
-            new WorkReportController($view,$workReportService),
+            new MeasurementController($view,$measurementService,new MeasurementPdfService($measurementService,$measurementRepository,$documentSettingsRepository,$documentArchive)),
+            new WorkReportController($view,$workReportService,new WorkReportPdfService($workReportService,$documentSettingsRepository,$documentArchive),$documentSettingsRepository),
         );
     }
 }

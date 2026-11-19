@@ -4,43 +4,137 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Pdf;
 
+/**
+ * Projekteigene, abhängigkeitsfreie PDF-Erzeugung (A4, Helvetica, WinAnsi).
+ *
+ * Unterstützt Text, Linien, Rechtecke und beliebig viele JPEG-Bilder (Logo,
+ * Unterschrift, Fotos). Das Wasserzeichen ist optional, damit verbindliche
+ * Dokumente ohne „ENTWURF“-Aufdruck ausgegeben werden können.
+ */
 final class SimplePdf
 {
-    /** @var list<string> */ private array $pages=[''];
-    private int $page=0;
-    /** @var array{data:string,width:int,height:int}|null */ private ?array $jpeg=null;
-    public function page():void{$this->pages[]='';$this->page++;}
-    public function text(float $x,float $y,float $size,string $text,bool $bold=false,string $color='0 0 0'):void
+    /** @var list<string> */
+    private array $pages = [''];
+    private int $page = 0;
+    /** @var array<string,array{name:string,data:string,width:int,height:int}> JPEG-Bilder nach Inhalts-Hash */
+    private array $images = [];
+
+    public function __construct(private readonly ?string $watermark = 'ENTWURF')
     {
-        $encoded=iconv('UTF-8','Windows-1252//TRANSLIT',$text)?:$text;
-        $escaped=str_replace(['\\','(',')'],['\\\\','\\(','\\)'],$encoded);
-        $this->pages[$this->page].="BT /".($bold?'F2':'F1')." {$size} Tf {$color} rg {$x} {$y} Td ({$escaped}) Tj ET\n";
     }
-    public function line(float $x1,float $y1,float $x2,float $y2,string $color='.75 .78 .8'):void{$this->pages[$this->page].="{$color} RG {$x1} {$y1} m {$x2} {$y2} l S\n";}
-    public function textRight(float $right,float $y,float $size,string $text,bool $bold=false,string $color='0 0 0'):void{$this->text($right-(strlen($text)*$size*.48),$y,$size,$text,$bold,$color);}
-    public function jpeg(string $data,float $x,float $y,float $width,float $height):bool
+
+    public function page(): void
     {
-        $size=@getimagesizefromstring($data);if(!is_array($size)||($size[2]??null)!==IMAGETYPE_JPEG)return false;$this->jpeg=['data'=>$data,'width'=>(int)$size[0],'height'=>(int)$size[1]];$this->pages[$this->page].="q {$width} 0 0 {$height} {$x} {$y} cm /Im1 Do Q\n";return true;
+        $this->pages[] = '';
+        $this->page++;
     }
+
+    public function text(float $x, float $y, float $size, string $text, bool $bold = false, string $color = '0 0 0'): void
+    {
+        $encoded = iconv('UTF-8', 'Windows-1252//TRANSLIT', $text) ?: $text;
+        $escaped = str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $encoded);
+        $this->pages[$this->page] .= "BT /" . ($bold ? 'F2' : 'F1') . " {$size} Tf {$color} rg {$x} {$y} Td ({$escaped}) Tj ET\n";
+    }
+
+    public function line(float $x1, float $y1, float $x2, float $y2, string $color = '.75 .78 .8'): void
+    {
+        $this->pages[$this->page] .= "{$color} RG {$x1} {$y1} m {$x2} {$y2} l S\n";
+    }
+
+    /** Rechteck mit Umriss (x/y = linke untere Ecke). */
+    public function rect(float $x, float $y, float $width, float $height, string $color = '.75 .78 .8'): void
+    {
+        $this->pages[$this->page] .= "{$color} RG {$x} {$y} {$width} {$height} re S\n";
+    }
+
+    public function textRight(float $right, float $y, float $size, string $text, bool $bold = false, string $color = '0 0 0'): void
+    {
+        $this->text($right - (strlen($text) * $size * .48), $y, $size, $text, $bold, $color);
+    }
+
+    public function jpeg(string $data, float $x, float $y, float $width, float $height): bool
+    {
+        $size = @getimagesizefromstring($data);
+        if (!is_array($size) || ($size[2] ?? null) !== IMAGETYPE_JPEG) {
+            return false;
+        }
+        // Gleiche Bilder (z. B. das Logo auf mehreren Seiten) werden nur einmal eingebettet.
+        $key = sha1($data);
+        $this->images[$key] ??= ['name' => 'Im' . (count($this->images) + 1), 'data' => $data, 'width' => (int) $size[0], 'height' => (int) $size[1]];
+        $this->pages[$this->page] .= "q {$width} 0 0 {$height} {$x} {$y} cm /{$this->images[$key]['name']} Do Q\n";
+        return true;
+    }
+
     /** @return array{x:float,y:float,width:float,height:float}|null */
-    public function jpegContained(string $data,float $x,float $y,float $maxWidth,float $maxHeight):?array
+    public function jpegContained(string $data, float $x, float $y, float $maxWidth, float $maxHeight): ?array
     {
-        $size=@getimagesizefromstring($data);if(!is_array($size)||($size[2]??null)!==IMAGETYPE_JPEG||$size[0]<=0||$size[1]<=0)return null;
-        $dimensions=self::containDimensions((float)$size[0],(float)$size[1],$maxWidth,$maxHeight);$width=$dimensions['width'];$height=$dimensions['height'];
-        $placement=['x'=>$x+($maxWidth-$width)/2,'y'=>$y+($maxHeight-$height)/2,'width'=>$width,'height'=>$height];
-        return $this->jpeg($data,$placement['x'],$placement['y'],$width,$height)?$placement:null;
+        $size = @getimagesizefromstring($data);
+        if (!is_array($size) || ($size[2] ?? null) !== IMAGETYPE_JPEG || $size[0] <= 0 || $size[1] <= 0) {
+            return null;
+        }
+        $dimensions = self::containDimensions((float) $size[0], (float) $size[1], $maxWidth, $maxHeight);
+        $width = $dimensions['width'];
+        $height = $dimensions['height'];
+        $placement = ['x' => $x + ($maxWidth - $width) / 2, 'y' => $y + ($maxHeight - $height) / 2, 'width' => $width, 'height' => $height];
+        return $this->jpeg($data, $placement['x'], $placement['y'], $width, $height) ? $placement : null;
     }
+
     /** @return array{width:float,height:float} */
-    public static function containDimensions(float $sourceWidth,float $sourceHeight,float $maxWidth,float $maxHeight):array
+    public static function containDimensions(float $sourceWidth, float $sourceHeight, float $maxWidth, float $maxHeight): array
     {
-        if($sourceWidth<=0||$sourceHeight<=0||$maxWidth<=0||$maxHeight<=0)throw new \InvalidArgumentException('Bild- und Rahmenmaße müssen positiv sein.');
-        $scale=min($maxWidth/$sourceWidth,$maxHeight/$sourceHeight);return['width'=>$sourceWidth*$scale,'height'=>$sourceHeight*$scale];
+        if ($sourceWidth <= 0 || $sourceHeight <= 0 || $maxWidth <= 0 || $maxHeight <= 0) {
+            throw new \InvalidArgumentException('Bild- und Rahmenmaße müssen positiv sein.');
+        }
+        $scale = min($maxWidth / $sourceWidth, $maxHeight / $sourceHeight);
+        return ['width' => $sourceWidth * $scale, 'height' => $sourceHeight * $scale];
     }
-    public function output():string
+
+    public function output(): string
     {
-        $total=count($this->pages);foreach($this->pages as $index=>&$page){$watermark="q BT /F2 58 Tf .94 .95 .96 rg .707 .707 -.707 .707 155 290 Tm (ENTWURF) Tj ET Q\n";$page=$watermark.$page."BT /F1 7 Tf .35 .4 .45 rg 520 25 Td (Seite ".($index+1)." / {$total}) Tj ET\n";}unset($page);
-        $objects=[1=>'<< /Type /Catalog /Pages 2 0 R >>',2=>'PAGES',3=>'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',4=>'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>'];$kids=[];$next=5;$imageResource='';if($this->jpeg!==null){$imageId=$next++;$image=$this->jpeg;$objects[$imageId]='<< /Type /XObject /Subtype /Image /Width '.$image['width'].' /Height '.$image['height'].' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '.strlen($image['data'])." >>\nstream\n".$image['data']."\nendstream";$imageResource=" /XObject << /Im1 {$imageId} 0 R >>";}
-        foreach($this->pages as $content){$page=$next++;$stream=$next++;$kids[]="{$page} 0 R";$objects[$page]="<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>{$imageResource} >> /Contents {$stream} 0 R >>";$objects[$stream]="<< /Length ".strlen($content)." >>\nstream\n{$content}endstream";}
-        $objects[2]='<< /Type /Pages /Count '.count($kids).' /Kids ['.implode(' ',$kids).'] >>';ksort($objects);$pdf="%PDF-1.4\n%\xE2\xE3\xCF\xD3\n";$offsets=[0];foreach($objects as $id=>$body){$offsets[$id]=strlen($pdf);$pdf.="{$id} 0 obj\n{$body}\nendobj\n";}$xref=strlen($pdf);$pdf.="xref\n0 ".(count($objects)+1)."\n0000000000 65535 f \n";for($i=1;$i<=count($objects);$i++)$pdf.=sprintf("%010d 00000 n \n",$offsets[$i]);return $pdf."trailer\n<< /Size ".(count($objects)+1)." /Root 1 0 R >>\nstartxref\n{$xref}\n%%EOF";
+        $total = count($this->pages);
+        foreach ($this->pages as $index => &$page) {
+            $watermark = $this->watermark === null ? ''
+                : "q BT /F2 58 Tf .94 .95 .96 rg .707 .707 -.707 .707 155 290 Tm (" . str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], (string) (iconv('UTF-8', 'Windows-1252//TRANSLIT', $this->watermark) ?: $this->watermark)) . ") Tj ET Q\n";
+            $page = $watermark . $page . "BT /F1 7 Tf .35 .4 .45 rg 520 25 Td (Seite " . ($index + 1) . " / {$total}) Tj ET\n";
+        }
+        unset($page);
+
+        $objects = [
+            1 => '<< /Type /Catalog /Pages 2 0 R >>',
+            2 => 'PAGES',
+            3 => '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
+            4 => '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
+        ];
+        $next = 5;
+        $xObjects = [];
+        foreach ($this->images as $image) {
+            $id = $next++;
+            $objects[$id] = '<< /Type /XObject /Subtype /Image /Width ' . $image['width'] . ' /Height ' . $image['height']
+                . ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' . strlen($image['data']) . " >>\nstream\n" . $image['data'] . "\nendstream";
+            $xObjects[] = "/{$image['name']} {$id} 0 R";
+        }
+        $imageResource = $xObjects === [] ? '' : ' /XObject << ' . implode(' ', $xObjects) . ' >>';
+        $kids = [];
+        foreach ($this->pages as $content) {
+            $page = $next++;
+            $stream = $next++;
+            $kids[] = "{$page} 0 R";
+            $objects[$page] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>{$imageResource} >> /Contents {$stream} 0 R >>";
+            $objects[$stream] = "<< /Length " . strlen($content) . " >>\nstream\n{$content}endstream";
+        }
+        $objects[2] = '<< /Type /Pages /Count ' . count($kids) . ' /Kids [' . implode(' ', $kids) . '] >>';
+        ksort($objects);
+        $pdf = "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n";
+        $offsets = [0];
+        foreach ($objects as $id => $body) {
+            $offsets[$id] = strlen($pdf);
+            $pdf .= "{$id} 0 obj\n{$body}\nendobj\n";
+        }
+        $xref = strlen($pdf);
+        $pdf .= "xref\n0 " . (count($objects) + 1) . "\n0000000000 65535 f \n";
+        for ($i = 1; $i <= count($objects); $i++) {
+            $pdf .= sprintf("%010d 00000 n \n", $offsets[$i]);
+        }
+        return $pdf . "trailer\n<< /Size " . (count($objects) + 1) . " /Root 1 0 R >>\nstartxref\n{$xref}\n%%EOF";
     }
 }

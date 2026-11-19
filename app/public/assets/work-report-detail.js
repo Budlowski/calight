@@ -16,6 +16,8 @@
   const catalogResults = root.querySelector("[data-catalog-results]");
   const STATUS_LABELS = { draft: "Entwurf", submitted: "Eingereicht", processed: "Bearbeitet" };
   const METHOD_LABELS = { on_site: "vor Ort", later: "nachträglich" };
+  // Nachweisarten der Kundenbestätigung; „manuell“ hat ausdrücklich keinen Unterschriftsnachweis.
+  const KIND_LABELS = { signature: "Digital unterschrieben", returned_document: "Unterschriebenes Dokument zurückerhalten", manual: "Manuell dokumentiert (ohne Nachweis)" };
   const OTHER = "__other";
 
   let report = null;
@@ -327,9 +329,7 @@
         ? `<small class="muted">nachträglich zugeordnet von ${esc(report.orderAssignedByName)} am ${format.dateTime(report.orderAssignedAt)}</small>` : ""}`
       : '<span class="muted">Ohne Auftrag (eigenständiger Rapport)</span>';
     root.querySelector("[data-customer]").textContent = report.customerName;
-    root.querySelector("[data-confirmation]").textContent = report.confirmationStatus === "confirmed"
-      ? `Bestätigt von ${report.confirmedByName} (${METHOD_LABELS[report.confirmationMethod] || ""}) am ${format.dateTime(report.confirmedAt)}`
-      : (report.status === "draft" ? "–" : "Noch nicht bestätigt");
+    root.querySelector("[data-confirmation]").innerHTML = confirmationText();
     document.title = `Rapport ${number} · ${report.customerName}`;
     const details = [
       report.correctedNumber ? `Korrektur zu ${esc(report.correctedNumber)}` : "",
@@ -351,7 +351,11 @@
       actions.push('<button class="button" type="button" data-action="process" data-icon="clipboard-check">Bearbeitung abschließen …</button>');
     }
     if (report.canProcess && report.status === "processed") actions.push('<button class="button button-light" type="button" data-action="reopen" data-icon="refresh-cw">Bearbeitung wieder öffnen</button>');
-    if (report.canConfirm) actions.push('<button class="button button-light" type="button" data-action="confirm" data-icon="square-pen">Kundenbestätigung erfassen</button>');
+    actions.push(`<a class="button button-light" href="/api/work-reports/${encodeURIComponent(report.id)}/pdf" data-icon="file-down">${report.status === "draft" ? "PDF-Vorschau" : "PDF herunterladen"}</a>`);
+    if (report.canSign) actions.push(`<a class="button" href="/work-reports/${encodeURIComponent(report.id)}/sign" data-icon="square-pen">Kundenunterschrift</a>`);
+    if (report.canUploadConfirmation) actions.push('<button class="button button-light" type="button" data-action="upload-confirmation" data-icon="file-up">Rücklauf hochladen …</button>');
+    if (report.canUploadConfirmation && !report.confirmationRequestedAt) actions.push('<button class="button button-light" type="button" data-action="request-confirmation" data-icon="clipboard-list">Als versendet markieren</button>');
+    if (report.canConfirm) actions.push('<button class="button button-light" type="button" data-action="confirm" data-icon="square-pen">Manuell dokumentieren …</button>');
     if (report.canCorrect) actions.push('<button class="button button-light" type="button" data-action="correct" data-icon="copy">Korrektur anlegen</button>');
     if (report.canAssignOrder) actions.push('<button class="button button-light" type="button" data-action="assign-order" data-icon="clipboard-list">Auftrag zuordnen …</button>');
     root.querySelector("[data-actions]").innerHTML = actions.join("");
@@ -382,6 +386,19 @@
     render();
   }
 
+  // Bestätigungsstand mit Nachweisart; „versendet“ ist nur ein Hinweis, keine Bestätigung.
+  function confirmationText() {
+    if (report.confirmationStatus === "confirmed") {
+      const evidence = report.confirmationEvidence
+        ? ` · <a href="/api/work-reports/${encodeURIComponent(report.id)}/confirmation-evidence">Nachweis öffnen</a>` : "";
+      return `${esc(KIND_LABELS[report.confirmationKind] || "Bestätigt")}: ${esc(report.confirmedByName)} (${METHOD_LABELS[report.confirmationMethod] || ""}), ${format.dateTime(report.confirmedAt)}${evidence}`;
+    }
+    if (report.status === "draft") return "–";
+    return report.confirmationRequestedAt
+      ? `Zur Bestätigung versendet am ${format.dateTime(report.confirmationRequestedAt)}${report.confirmationRequestedByName ? ` von ${esc(report.confirmationRequestedByName)}` : ""}`
+      : "Noch nicht bestätigt";
+  }
+
   async function load() {
     const [current, ref] = await Promise.all([
       api(`/api/work-reports/${encodeURIComponent(root.dataset.id)}`),
@@ -389,6 +406,10 @@
     ]);
     reference = ref;
     adopt(current);
+    if (new URLSearchParams(location.search).get("signed") === "1") {
+      history.replaceState(null, "", location.pathname);
+      notify(message, "Die Kundenunterschrift wurde gespeichert und dem eingereichten Leistungsnachweis zugeordnet.", "success");
+    }
   }
 
   async function saveProof({ silent = false } = {}) {
@@ -466,13 +487,44 @@
       const form = document.createElement("form");
       form.className = "form-stack";
       form.innerHTML = `
-        <p>Die Bestätigung bezieht sich ausschließlich auf den eingereichten Leistungsnachweis ${esc(report.reportNumber)} und kann nicht auf geänderte Stände übertragen werden.</p>
+        <p>Nur verwenden, wenn keine Unterschrift und kein unterschriebenes Dokument vorliegt (z. B. mündliche Bestätigung). Die Bestätigung wird als <strong>manuell dokumentiert</strong> gekennzeichnet und bezieht sich ausschließlich auf den eingereichten Leistungsnachweis ${esc(report.reportNumber)}.</p>
         <label><span class="field-label">Bestätigt von <span aria-hidden="true">*</span></span><input name="confirmedByName" maxlength="200" required autocomplete="off" value="${esc(report.contactPerson || "")}"></label>
         <label><span class="field-label">Art der Bestätigung</span><select name="method"><option value="on_site">Vor Ort</option><option value="later">Nachträglich</option></select></label>`;
-      const ok = await CalightModal.open({ title: "Kundenbestätigung erfassen", content: form, actions: [{ label: "Abbrechen", value: false }, { label: "Bestätigung speichern", value: true, primary: true, validate: true }], initialFocus: '[name="confirmedByName"]' });
+      const ok = await CalightModal.open({ title: "Bestätigung manuell dokumentieren", content: form, actions: [{ label: "Abbrechen", value: false }, { label: "Bestätigung speichern", value: true, primary: true, validate: true }], initialFocus: '[name="confirmedByName"]' });
       if (!ok) return;
       adopt(await api(`/api/work-reports/${encodeURIComponent(report.id)}/confirm`, { method: "POST", body: { version: report.version, confirmedByName: form.elements.confirmedByName.value.trim(), method: form.elements.method.value } }));
-      notify(message, "Kundenbestätigung wurde erfasst.", "success");
+      notify(message, "Kundenbestätigung wurde als manuell dokumentiert erfasst.", "success");
+    },
+    // Rücklauf: unterschriebenes PDF oder Foto archivieren (Büro).
+    async "upload-confirmation"() {
+      const form = document.createElement("form");
+      form.className = "form-stack";
+      form.innerHTML = `
+        <p>Das Originaldokument wird unverändert archiviert und dem eingereichten Leistungsnachweis ${esc(report.reportNumber)} zugeordnet.</p>
+        <label><span class="field-label">Unterschrieben von <span aria-hidden="true">*</span></span><input name="signerName" maxlength="200" required autocomplete="off" value="${esc(report.contactPerson || "")}"></label>
+        <label><span class="field-label">Unterschriebenes Dokument (PDF, JPG, PNG, bis 15 MB) <span aria-hidden="true">*</span></span><input name="file" type="file" accept="application/pdf,image/jpeg,image/png" required></label>`;
+      const ok = await CalightModal.open({ title: "Unterschriebenes Dokument hochladen", content: form, actions: [{ label: "Abbrechen", value: false }, { label: "Hochladen", value: true, primary: true, validate: true }], initialFocus: '[name="signerName"]' });
+      if (!ok) return;
+      const file = form.elements.file.files[0];
+      if (!file || file.size > 15 * 1024 * 1024) {
+        notify(message, "Bitte ein Dokument bis 15 MB auswählen.");
+        return;
+      }
+      const body = new FormData();
+      body.append("file", file);
+      body.append("signerName", form.elements.signerName.value.trim());
+      body.append("version", String(report.version));
+      const response = await fetch(`/api/work-reports/${encodeURIComponent(report.id)}/confirmation-document`, {
+        method: "POST", credentials: "same-origin", headers: { "X-CSRF-Token": root.dataset.csrf, Accept: "application/json" }, body,
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error((result.details || [result.error || `HTTP ${response.status}`]).join(" "));
+      adopt(result.data);
+      notify(message, "Das unterschriebene Dokument wurde archiviert.", "success");
+    },
+    async "request-confirmation"() {
+      adopt(await api(`/api/work-reports/${encodeURIComponent(report.id)}/confirmation-request`, { method: "POST", body: { version: report.version } }));
+      notify(message, "Als zur Bestätigung versendet vermerkt.", "success");
     },
     // Nachträgliche Zuordnung (Büro): nur Aufträge desselben Kunden; der Leistungsnachweis bleibt unverändert.
     async "assign-order"() {
