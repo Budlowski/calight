@@ -207,6 +207,8 @@
     conflict: "Konflikt: Zeitblöcke und Bautagesbericht für denselben Auftrag – fließt erst nach Auswahl der maßgeblichen Quelle in die Ist-Stunden ein",
     chosen_time_tracking: "maßgeblich: Zeiterfassung",
     chosen_daily_report: "maßgeblich: Bautagesbericht",
+    no_order: "ohne Auftrag – nur Dokumentation, keine Ist-Stunden eines Auftrags",
+    not_order_hours: "nachträglich zugeordnet – Stunden noch nicht als Auftragsstunden übernommen",
   };
 
   const SOURCE_LABEL = { time_tracking: "Zeiterfassung", daily_report: "Bautagesbericht" };
@@ -216,11 +218,11 @@
     return `<section class="card form-stack time-references">
       <div class="step-section-heading"><div><h2>Zeiten aus anderen Modulen</h2><small>Nur zur Kontrolle – werden hier nicht addiert</small></div></div>
       <ul class="time-reference-list">
-        ${day.dailyReportTimes.map((row) => `<li class="${row.status === "conflict" ? "is-conflict" : ""}"><a href="/daily-reports/${encodeURIComponent(row.reportId)}">Bautagesbericht · ${esc(row.orderNumber)}</a>
+        ${day.dailyReportTimes.map((row) => `<li class="${row.status === "conflict" ? "is-conflict" : ""}"><a href="/daily-reports/${encodeURIComponent(row.reportId)}">Bautagesbericht · ${row.orderNumber ? esc(row.orderNumber) : `ohne Auftrag · ${esc(row.customerName)}`}</a>
           <span>${format.number(row.hours, 2)} h${row.trackedMinutes ? ` · Zeiterfassung ${hours(row.trackedMinutes)}` : ""}</span>
           <small class="${row.status === "conflict" ? "time-conflict-text" : "muted"}">${SOURCE_TEXT[row.status]}${row.chosenByName ? ` (gewählt von ${esc(row.chosenByName)}${row.chosenAt ? ` am ${format.dateTime(row.chosenAt)}` : ""})` : ""}</small>
           ${row.history && row.history.length ? `<details class="time-source-history"><summary>Verlauf der Quellenwahl (${row.history.length})</summary><ul>${row.history.map((event) => `<li>${format.dateTime(event.changedAt)} · ${esc(event.changedByName)}: ${SOURCE_LABEL[event.previousSource] || "keine Wahl"} → ${SOURCE_LABEL[event.source] || "Wahl aufgehoben"}</li>`).join("")}</ul></details>` : ""}
-          ${day.canChooseSource && row.status !== "report_only" ? `<span class="time-source-actions">
+          ${day.canChooseSource && ["conflict", "chosen_time_tracking", "chosen_daily_report"].includes(row.status) ? `<span class="time-source-actions">
             <button class="button button-light button-small" type="button" data-source="time_tracking" data-order="${esc(row.orderId)}"${row.status === "chosen_time_tracking" ? " disabled" : ""}>Zeiterfassung maßgeblich</button>
             <button class="button button-light button-small" type="button" data-source="daily_report" data-order="${esc(row.orderId)}"${row.status === "chosen_daily_report" ? " disabled" : ""}>Bautagesbericht maßgeblich</button></span>` : ""}</li>`).join("")}
         ${day.workReportTimes.map((row) => `<li><a href="/work-reports/${encodeURIComponent(row.reportId)}">Rapport ${esc(row.reportNumber || "Entwurf")}${row.orderNumber ? ` · ${esc(row.orderNumber)}` : ""}</a>

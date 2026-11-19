@@ -40,7 +40,7 @@ final readonly class MaterialRequestService
     public function page(array $parameters, array $actor): array
     {
         $query = ListQuery::fromArray($parameters, MaterialRequestRepository::LIST_SORTS, 'created', MaterialRequestRepository::LIST_FILTERS);
-        $page = $this->requests->page($query, $this->isTechnician($actor));
+        $page = $this->requests->page($query, $this->isTechnician($actor) ? (string) $actor['id'] : null);
         $page['items'] = array_map(fn (array $row): array => $this->map($row, $actor), $page['items']);
         return $page;
     }
@@ -66,28 +66,45 @@ final readonly class MaterialRequestService
     {
         $orderId = trim((string) ($input['orderId'] ?? ''));
         $reportId = trim((string) ($input['dailyReportId'] ?? ''));
+        $customerId = null;
         if ($reportId !== '') {
-            // Aus dem Bericht heraus gilt dessen Auftrag; ein abweichender Auftrag wäre inkonsistent.
+            // Aus dem Bericht heraus gelten dessen Kunde und Auftrag; ein abweichender Auftrag wäre inkonsistent.
             $report = $this->reports->find($reportId);
             if ($report === null) {
                 throw new DailyReportValidationException(['Bautagesbericht wurde nicht gefunden.']);
             }
-            if ($orderId !== '' && $orderId !== (string) $report['order_id']) {
+            if ($orderId !== '' && $orderId !== (string) ($report['order_id'] ?? '')) {
                 throw new DailyReportValidationException(['Der Bautagesbericht gehört nicht zum angegebenen Auftrag.']);
             }
-            $orderId = (string) $report['order_id'];
+            // Monteure: eigene Berichte oder Berichte freigegebener Aufträge (wie die Berichtsansicht).
+            if ($this->isTechnician($actor) && (string) $report['created_by_user_id'] !== (string) $actor['id']
+                && ($report['order_id'] === null || $report['order_status'] === 'open')) {
+                throw new AccessDeniedException('reports.released.read');
+            }
+            $orderId = (string) ($report['order_id'] ?? '');
+            $customerId = (string) $report['customer_id'];
         }
-        $order = $this->orders->find($orderId);
-        if ($order === null) {
+        // Ohne Auftrag nur aus einem Bericht heraus; es wird nie ein Auftrag angelegt.
+        $order = null;
+        if ($orderId !== '') {
+            $order = $this->orders->find($orderId);
+            if ($order === null) {
+                throw new DailyReportValidationException(['Auftrag wurde nicht gefunden.']);
+            }
+            if ($reportId === '') {
+                $this->assertOrderAccess((string) $order['status'], $actor);
+            }
+            $customerId = (string) $order['customer_id'];
+        } elseif ($customerId === null) {
             throw new DailyReportValidationException(['Auftrag wurde nicht gefunden.']);
         }
-        $this->assertOrderAccess((string) $order['status'], $actor);
         $values = $this->validate($input);
         $id = Uuid::v4();
         $now = Clock::now();
         $this->requests->insert([
             'id' => $id,
-            'order_id' => $orderId,
+            'customer_id' => $customerId,
+            'order_id' => $order !== null ? $orderId : null,
             'daily_report_id' => $reportId !== '' ? $reportId : null,
             'description' => $values['description'],
             'notes' => $values['notes'],
@@ -161,7 +178,10 @@ final readonly class MaterialRequestService
         if ($row === null) {
             throw new DailyReportValidationException(['Materialanforderung wurde nicht gefunden.']);
         }
-        $this->assertOrderAccess((string) $row['order_status'], $actor);
+        // Monteure: eigene Anforderungen immer, sonst nur zu freigegebenen Aufträgen.
+        if ($this->isTechnician($actor) && (string) $row['created_by_user_id'] !== (string) $actor['id']) {
+            $this->assertOrderAccess((string) ($row['order_status'] ?? 'open'), $actor);
+        }
         return $row;
     }
 
@@ -235,6 +255,7 @@ final readonly class MaterialRequestService
             'orderId' => $row['order_id'],
             'orderNumber' => $row['order_number'],
             'orderTitle' => $row['order_title'],
+            'customerId' => $row['customer_id'],
             'customerName' => $row['customer_name'],
             'dailyReportId' => $row['daily_report_id'],
             'reportDate' => $row['report_date'],

@@ -1448,3 +1448,9 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 .time-source-history summary { cursor: pointer; color: var(--muted, #667); }
 .time-source-history ul { margin: 4px 0 0; padding-left: 18px; }
 .time-report-conflicts { margin-bottom: 16px; }
+/* Bautagesbericht: Zuordnung (Kunde, Projekt, Auftrag, Stundenrelevanz) */
+.report-assignment { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0 0 12px; }
+.report-assignment dt { color: var(--muted, #667); font-weight: 600; }
+.report-assignment dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.report-assignment-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+@media (max-width: 560px) { .report-assignment { grid-template-columns: 1fr; } .report-assignment dd { margin-bottom: 6px; } }

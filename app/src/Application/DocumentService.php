@@ -221,14 +221,16 @@ final readonly class DocumentService
                 $date = (new DateTimeImmutable((string) $report['report_date']))->format('d.m.Y');
                 $rows[] = $row('daily-report:' . $report['id'], 'daily_report', 'Bautagesbericht ' . $date . ($report['title'] !== '' ? ' · ' . $report['title'] : ''),
                     'Bautagesbericht_' . $report['report_date'] . '.pdf', 'application/pdf', $report['report_date'],
-                    [['label' => 'Auftrag ' . $report['order_number'], 'href' => '/orders/' . rawurlencode((string) $report['order_id'])]],
+                    // Berichte ohne Auftrag: keine leere Auftragsreferenz, nur der Bericht selbst.
+                    $report['order_id'] !== null ? [['label' => 'Auftrag ' . $report['order_number'], 'href' => '/orders/' . rawurlencode((string) $report['order_id'])]]
+                        : [['label' => 'Bautagesbericht ' . $date, 'href' => '/daily-reports/' . rawurlencode((string) $report['id'])]],
                     '/api/daily-reports/' . rawurlencode((string) $report['id']) . '/pdf', $context($report['customer_id'], $report['project_id'], $report['order_id']));
             }
             foreach ($this->documents->dailyReportAttachments() as $attachment) {
                 $rows[] = $row('daily-report-attachment:' . $attachment['id'], 'daily_report_attachment', (string) $attachment['original_name'], (string) $attachment['original_name'],
                     (string) $attachment['mime_type'], $attachment['created_at'],
-                    [['label' => 'Bautagesbericht ' . (new DateTimeImmutable((string) $attachment['report_date']))->format('d.m.Y'), 'href' => '/daily-reports/' . rawurlencode((string) $attachment['report_id'])],
-                     ['label' => 'Auftrag ' . $attachment['order_number'], 'href' => '/orders/' . rawurlencode((string) $attachment['order_id'])]],
+                    array_merge([['label' => 'Bautagesbericht ' . (new DateTimeImmutable((string) $attachment['report_date']))->format('d.m.Y'), 'href' => '/daily-reports/' . rawurlencode((string) $attachment['report_id'])]],
+                        $attachment['order_id'] !== null ? [['label' => 'Auftrag ' . $attachment['order_number'], 'href' => '/orders/' . rawurlencode((string) $attachment['order_id'])]] : []),
                     '/api/daily-reports/' . rawurlencode((string) $attachment['report_id']) . '/attachments/' . rawurlencode((string) $attachment['id']),
                     $context($attachment['customer_id'], $attachment['project_id'], $attachment['order_id']));
             }

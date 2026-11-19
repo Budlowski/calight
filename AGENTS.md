@@ -230,17 +230,20 @@ Keine zweite Nummernlogik in einem Controller oder Frontend anlegen.
 
 ### 4.11 Bautagesberichte und Zeiterfassung
 
-- Bautagesberichte gehören immer zu einem Auftrag und dokumentieren die tatsächliche Ausführung. Mehrere Berichte pro Auftrag und Tag sind zulässig.
+- Bautagesberichte gehören zu einem **Kunden** (`daily_reports.customer_id`, Pflicht); Projekt und Auftrag sind optional – auch dauerhaft (Migration `0035`). Mit Auftrag kommen Kunde und Projekt aus dem Auftrag. Es wird nie ein Auftrag für einen Bericht angelegt. Mehrere Berichte pro Auftrag und Tag sind zulässig.
+- Nachträgliche Auftragszuordnung nur mit `orders.write` (`DailyReportService::assignOrder`), nur Aufträge desselben Kunden und passenden Projekts, protokolliert über `order_assigned_at/_by`. Sie ist organisatorisch und macht die Stunden **nicht** zu Ist-Stunden des Auftrags.
+- Kostenrelevanz der Berichtsstunden über `labor_counts_for_order`: Berichte mit Auftrag bei Anlage (und alle Bestandsberichte) = 1; Berichte ohne Auftrag = 0, auch nach späterer Zuordnung, bis das Büro mit `timesheet.manage` die Stunden bewusst übernimmt (`countLaborForOrder`, `labor_assigned_at/_by`). Alle Ist-Stunden-/Kostenabfragen (`costRowsForOrder`, `TimeTrackingRepository::orderTimes`, `dailyReportTimesInRange`) filtern darauf. In der Zeiterfassung erscheinen solche Zeiten als Referenz (`no_order`, `not_order_hours`), ohne Konflikt und ohne Doppelzählung.
+- Bautagesberichte haben keinen Abschluss-Status; PDFs werden bei jedem Abruf neu erzeugt und nicht archiviert.
 - Ein Bericht enthält Datum, optionale Bezeichnung, Tätigkeit, Bemerkungen und mehrere Zeiteinträge.
 - Zeiteinträge enthalten Mitarbeiter, Arbeitsdatum, Dauer, optionale Tätigkeit und optional ein stabiles Ziel in der Auftragsgrundlage.
 - Zuordnung erfolgt anhand interner IDs als Auftrag, Titel oder Position; niemals anhand sichtbarer Nummern oder Texte.
 - Ziele können aus ursprünglicher Auftragsgrundlage oder angenommenem Nachtrag stammen. Direkte Regieaufträge ohne Struktur bleiben auf Auftragsebene.
 - Dauer × Kostensatz-Snapshot ergibt die Ist-Lohnkosten mit exakter Dezimalarithmetik.
 - Kostenfelder werden nur mit `costs.read` ausgeliefert/angezeigt.
-- Techniker sehen nur freigegebene Aufträge (derzeit nicht Status `open`), buchen nur eigene Zeiten und bearbeiten nur eigene Berichte.
+- Techniker sehen eigene Berichte immer, fremde nur an freigegebenen Aufträgen (derzeit nicht Status `open`) und fremde Berichte ohne Auftrag nie; sie buchen nur eigene Zeiten und bearbeiten nur eigene Berichte. Für Berichte ohne Auftrag erhalten sie aktive Kunden und nicht archivierte Projekte nur mit Nummer und Name.
 - Berichte verwenden ihre eigene Versionsnummer für konkurrierende Änderungen. Sie benötigen bewusst keine globale Auftragssperre.
 - **Anhänge** (`daily_report_attachments`) liegen über `AttachmentStore` unter `APP_DOCUMENTS_PATH/daily-reports/<bericht>/<anhang>.<ext>`. Der Dateityp wird mit `finfo` am Inhalt geprüft (Whitelist in `DailyReportService::ATTACHMENT_TYPES`), Speicherpfade entstehen nur aus UUIDs. Auslieferung ausschließlich über die geschützte Route mit denselben Leserechten wie der Bericht; nur Vorschaubilder inline, alles andere als Download. Hinzufügen/Entfernen wie Bearbeiten des Berichts.
-- **Materialanforderungen** (`material_requests`) sind eigenständige Datensätze mit Pflicht-Auftragsbezug und optionalem Bericht (`ON DELETE SET NULL`). Sie werden nur über die eigene API geändert, nie über das Speichern eines Berichts. Erfassen mit `reports.write`, Erledigen/Wiedereröffnen nur mit `materials.manage` (Büro/Admin); Monteure ändern nur eigene offene Anforderungen freigegebener Aufträge. Erledigte Anforderungen bleiben erhalten. Sie sind keine Bestellung und keine Ist-Kosten.
+- **Materialanforderungen** (`material_requests`) sind eigenständige Datensätze mit Pflicht-Kundenbezug (`customer_id`), Auftragsbezug (Pflicht außer bei Anforderungen aus einem Bericht ohne Auftrag; es wird nie ein Auftrag erzeugt) und optionalem Bericht (`ON DELETE SET NULL`). Sie werden nur über die eigene API geändert, nie über das Speichern eines Berichts. Erfassen mit `reports.write`, Erledigen/Wiedereröffnen nur mit `materials.manage` (Büro/Admin); Monteure ändern nur eigene offene Anforderungen freigegebener Aufträge. Erledigte Anforderungen bleiben erhalten. Sie sind keine Bestellung und keine Ist-Kosten.
 
 ### 4.12 Aufmaße
 
@@ -293,7 +296,8 @@ Keine zweite Nummernlogik in einem Controller oder Frontend anlegen.
 
 Folgende Punkte sind Zielbild, soweit nicht durch aktuelle Migrationen/Code implementiert:
 
-- **Bautagesbericht:** interne Tagesdokumentation und Ist-Erfassung; kein abrechenbarer Leistungsnachweis.
+- **Bautagesbericht:** interne Dokumentation tatsächlicher Arbeiten und Termine; kein abrechenbarer Leistungsnachweis. Ein Auftrag ist optional, auch dauerhaft. Die organisatorische Zuordnung zu einem Auftrag ist nicht gleichbedeutend mit der Zuordnung seiner Zeiten als Auftragskosten.
+- **Rapport (Abgrenzung):** abrechenbarer Leistungsnachweis; neue eingereichte Rapporte benötigen einen Auftrag (siehe 4.13).
 - **Aufmaß:** seit Phase 3.3 implementiert (siehe 4.12); Nachweis ausgeführter Mengen vereinbarter Leistungen, keine Rechnung und kein Materialverbrauch. Die PDF-Ausgabe folgt in Phase 3.2.3.
 - **Rapport:** seit Phase 3.4 implementiert (siehe 4.13); Nachweis abrechenbarer Regieleistungen, nicht identisch mit internen Zeiten. PDF, Unterschrift und Übermittlung folgen in Phase 3.2.3.
 - **Nachkalkulation:** späterer Soll-Ist-Vergleich aus unveränderlichen Grundlagen, Ist-Kosten und separat erfasster Erlösseite.

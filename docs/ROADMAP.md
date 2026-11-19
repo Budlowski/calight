@@ -18,7 +18,7 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 | 2.4 | Angebotsabgabe, Validierung, Snapshot, archivierte PDF, Status | Implementiert; Integrationstests teilweise ausstehend |
 | 2.5 | Angebotsrevisionen und Nachträge | Implementiert (Revisionen `0017`, Nachträge `0019`) |
 | 3.1 | Auftragsverwaltung, projektfreie Angebote, direkte Regieaufträge | Implementiert (`0018`), Rollen und Bearbeitungssperren (`0020`) |
-| 3.2 | Bautagesberichte und interne Ist-Erfassung | Implementiert: Mitarbeiter, Bautagesberichte und berichtsbezogene Ist-Zeiten (`0021`); übergreifende Zeiterfassung seit Phase 3.4.3 |
+| 3.2 | Bautagesberichte und interne Ist-Erfassung | Implementiert: Mitarbeiter, Bautagesberichte und berichtsbezogene Ist-Zeiten (`0021`); übergreifende Zeiterfassung seit Phase 3.4.3; Berichte ohne Auftrag (`0035`) |
 | 3.2.2 | Materialanforderungen, Fotos und Anhänge zu Bautagesberichten | Implementiert (`0023`); PDF-Ausgabe mit Phase 3.2.3 |
 | 3.2.1.x | Einheitliche Übersichts- und Detailseiten; serverseitige Pagination, Sortierung und URL-basierter Listenstatus | Implementiert (`0022`) |
 | 3.2.3 | Gemeinsamer Briefbogen, PDFs für Rapporte, Aufmaße und Bautagesberichte, digitale Kundenunterschrift, Rücklauf und Dokumentarchiv | Implementiert (`0027`); externe Ablage (NAS/SMB), E-Mail-Versand und Kundenportal geplant |
@@ -51,11 +51,11 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 
 - **Auftrag:** Eigenständiger Vorgang zur Ausführung. Entsteht aus einem angenommenen Angebot **oder direkt ohne Angebot** als Regieauftrag.
 
-- **Bautagesbericht:** Tagesdokumentation tatsächlicher Tätigkeiten, Zeiten und Aufwendungen; kein Abrechnungsnachweis.
+- **Bautagesbericht:** Interne Dokumentation tatsächlicher Arbeiten und Termine; kein Abrechnungsnachweis. Kunde ist Pflicht, ein Auftrag optional – auch dauerhaft.
 
 - **Aufmaß:** Nachweis ausgeführter Mengen zu vereinbarten Angebotspositionen.
 
-- **Rapport:** Nachweis abrechenbarer Regieleistungen, typischerweise Stunden, Material und Anfahrt.
+- **Rapport:** Abrechenbarer Leistungsnachweis für Regieleistungen, typischerweise Stunden, Material und Anfahrt. Neue eingereichte Rapporte benötigen einen Auftrag.
 
 - **Bestellung:** Beauftragung eines Lieferanten zur Materialbeschaffung; kein Wareneingangs- oder Lagerverwaltungssystem.
 
@@ -220,6 +220,8 @@ Umgesetzt: Für neue Angebote ist nur noch ein Kunde erforderlich, das Projekt i
 Bautagesberichte dokumentieren die tatsächliche Ausführung und sind **keine** Aufmaße oder Rapporte.
 
 - Je Auftrag beliebig viele Berichte mit Datum, Tätigkeiten und Bemerkungen. **(implementiert)**
+
+- **Berichte ohne Auftrag** (Migration `0035`): z. B. Besichtigung vor dem Angebot, Bestandsaufnahme, allgemeiner Kundentermin. Kunde Pflicht, Projekt optional; kein künstlicher Auftrag. Zeiten, Materialanforderungen (mit Kundenbezug), Fotos/Anhänge und PDF (ohne Auftragszeile) funktionieren wie bisher. Übersicht mit Filtern Kunde, Projekt, „mit/ohne Auftrag“. Das Büro kann den Bericht später einem Auftrag desselben Kunden zuordnen (organisatorisch, mit Benutzer und Zeitpunkt). Die Stunden werden dadurch **nicht** automatisch Ist-Stunden des Auftrags; dafür ist die bewusste Übernahme „Stunden als Auftragsstunden übernehmen“ (`timesheet.manage`) nötig, danach gilt die übliche Quellenwahl gegenüber der Zeiterfassung. Bestehende auftragsbezogene Berichte zählen unverändert. **(implementiert)**
 
 - Ein oder mehrere Mitarbeiter mit Arbeitszeiten und Zuordnung zu Auftrag, Titel oder Position der verbindlichen Grundlage; Kostensatz als Snapshot. **(implementiert)**
 

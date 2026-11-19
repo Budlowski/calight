@@ -115,9 +115,11 @@ final readonly class TimeTrackingRepository
     /** Zeiten aus Bautagesberichten (Referenz bzw. Ist-Basis ohne Zeiterfassung). @return list<array<string,mixed>> */
     public function dailyReportTimes(string $employeeId, string $from, string $to): array
     {
-        $statement = $this->pdo->prepare('SELECT e.id, e.report_id, e.work_date, e.duration_hours, e.description, r.order_id, o.order_number, o.title AS order_title
-            FROM daily_report_time_entries e JOIN daily_reports r ON r.id = e.report_id JOIN orders o ON o.id = r.order_id
-            WHERE e.employee_id = :employee AND e.work_date BETWEEN :from AND :to ORDER BY e.work_date, o.order_number');
+        // Auch Berichte ohne Auftrag (Referenz); labor_counts_for_order zeigt, ob die Stunden als Ist-Stunden des Auftrags zählen.
+        $statement = $this->pdo->prepare("SELECT e.id, e.report_id, e.work_date, e.duration_hours, e.description, r.order_id, r.labor_counts_for_order, o.order_number, o.title AS order_title,
+                CASE WHEN c.customer_type = 'company' THEN c.company_name ELSE trim(c.first_name || ' ' || c.last_name) END AS customer_name
+            FROM daily_report_time_entries e JOIN daily_reports r ON r.id = e.report_id LEFT JOIN orders o ON o.id = r.order_id JOIN customers c ON c.id = r.customer_id
+            WHERE e.employee_id = :employee AND e.work_date BETWEEN :from AND :to ORDER BY e.work_date, o.order_number");
         $statement->execute(['employee' => $employeeId, 'from' => $from, 'to' => $to]);
         return $statement->fetchAll();
     }
@@ -149,7 +151,7 @@ final readonly class TimeTrackingRepository
             FROM time_entries t JOIN employees e ON e.id = t.employee_id WHERE t.order_id = :order ORDER BY t.work_date, t.start_time');
         $entries->execute(['order' => $orderId]);
         $reports = $this->pdo->prepare('SELECT e.id, e.report_id, e.employee_id, e.work_date, e.duration_hours, e.hourly_cost_rate_snapshot, m.display_name AS employee_name
-            FROM daily_report_time_entries e JOIN daily_reports r ON r.id = e.report_id JOIN employees m ON m.id = e.employee_id WHERE r.order_id = :order ORDER BY e.work_date');
+            FROM daily_report_time_entries e JOIN daily_reports r ON r.id = e.report_id JOIN employees m ON m.id = e.employee_id WHERE r.order_id = :order AND r.labor_counts_for_order = 1 ORDER BY e.work_date');
         $reports->execute(['order' => $orderId]);
         $choices = $this->pdo->prepare('SELECT c.employee_id, c.work_date, c.order_id, c.source, c.chosen_at, u.display_name AS chosen_by_name
             FROM time_source_choices c JOIN users u ON u.id = c.chosen_by_user_id WHERE c.order_id = :order');
@@ -166,7 +168,7 @@ final readonly class TimeTrackingRepository
     {
         $sql = 'SELECT e.employee_id, e.work_date, e.duration_hours, r.order_id, o.order_number, m.display_name AS employee_name
             FROM daily_report_time_entries e JOIN daily_reports r ON r.id = e.report_id JOIN orders o ON o.id = r.order_id JOIN employees m ON m.id = e.employee_id
-            WHERE e.work_date BETWEEN :from AND :to';
+            WHERE e.work_date BETWEEN :from AND :to AND r.labor_counts_for_order = 1';
         $parameters = ['from' => $from, 'to' => $to];
         if ($employeeId !== null) {
             $sql .= ' AND e.employee_id = :employee';

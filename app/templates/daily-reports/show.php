@@ -1,13 +1,13 @@
 <?php $title='Bautagesbericht';$contentClass='content-wide'; ?>
 <div id="daily-report-detail" class="detail-page" data-id="<?= $escape($reportId) ?>" data-csrf="<?= $escape($csrfToken) ?>">
-    <nav class="breadcrumb" aria-label="Brotkrümelnavigation"><ol><li><a href="/orders" data-order-list>Aufträge</a></li><li data-order-crumb></li><li><a href="/daily-reports">Bautagesberichte</a></li><li aria-current="page" data-current-crumb>Bautagesbericht</li></ol></nav>
+    <nav class="breadcrumb" aria-label="Brotkrümelnavigation"><ol><li><a href="/daily-reports">Bautagesberichte</a></li><li data-order-crumb hidden></li><li aria-current="page" data-current-crumb>Bautagesbericht</li></ol></nav>
     <div class="page-heading"><div><h1 data-title>Bautagesbericht</h1><p class="muted" data-meta>Bericht wird geladen …</p></div><div class="order-detail-actions"><a class="button button-light" href="/api/daily-reports/<?= $escape(rawurlencode($reportId)) ?>/pdf" data-icon="file-down" title="Gespeicherter Stand als PDF zur internen Dokumentation">PDF</a></div></div>
     <div class="notice" data-message role="status" hidden></div>
     <form id="daily-report-form" class="card form-stack detail-form-card" novalidate>
         <section class="report-form-section">
-            <div class="step-section-heading"><span class="step-section-number">1</span><div><h2>Auftragsdaten</h2><small>Auftrag und Berichtsgrunddaten</small></div></div>
+            <div class="step-section-heading"><span class="step-section-number">1</span><div><h2>Zuordnung und Grunddaten</h2><small>Kunde, Projekt, Auftrag und Berichtsdatum</small></div></div>
+            <div class="report-assignment-box" data-assignment></div>
             <div class="form-grid report-head-grid">
-                <label><span class="field-label">Auftrag</span><select name="orderId" disabled></select></label>
                 <label><span class="field-label">Berichtsdatum <span aria-hidden="true">*</span></span><input name="reportDate" type="date" required></label>
                 <label><span class="field-label">Bezeichnung (optional)</span><input name="title" maxlength="200"></label>
             </div>

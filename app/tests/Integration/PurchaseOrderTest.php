@@ -550,8 +550,8 @@ final class PurchaseOrderTest extends TestCase
     private function materialRequest(PDO $pdo, string $orderId, string $userId, string $description): string
     {
         $id = Uuid::v4();
-        $pdo->prepare("INSERT INTO material_requests(id, order_id, description, notes, status, created_by_user_id, version, created_at, updated_at)
-            VALUES(:id, :order, :description, '', 'open', :user, 1, '2026-11-12T08:00:00Z', '2026-11-12T08:00:00Z')")
+        $pdo->prepare("INSERT INTO material_requests(id, customer_id, order_id, description, notes, status, created_by_user_id, version, created_at, updated_at)
+            VALUES(:id, (SELECT customer_id FROM orders WHERE id = :order), :order, :description, '', 'open', :user, 1, '2026-11-12T08:00:00Z', '2026-11-12T08:00:00Z')")
             ->execute(['id' => $id, 'order' => $orderId, 'description' => $description, 'user' => $userId]);
         return $id;
     }

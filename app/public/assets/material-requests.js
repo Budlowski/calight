@@ -167,13 +167,19 @@
   const message = root.querySelector("[data-message]");
   const orderFilter = root.querySelector("[data-order-filter]");
   const orderHref = (request) => `/orders/${encodeURIComponent(request.orderId)}`;
+  /** Auftrag als Link; Anforderungen aus Berichten ohne Auftrag verweisen auf den Bericht. */
+  const orderLink = (request, className = "") => request.orderId
+    ? `<a${className ? ` class="${className}"` : ""} href="${orderHref(request)}">${esc(request.orderNumber)}</a>`
+    : request.dailyReportId
+      ? `<a${className ? ` class="${className}"` : ""} href="/daily-reports/${encodeURIComponent(request.dailyReportId)}">Ohne Auftrag</a>`
+      : `<span${className ? ` class="${className}"` : ""}>Ohne Auftrag</span>`;
   const reportLink = (request) => (request.dailyReportId
     ? `<a href="/daily-reports/${encodeURIComponent(request.dailyReportId)}">Bericht ${format.date(request.reportDate)}</a>`
     : "Direkt angefordert");
 
   const renderCard = (request) => `
     <article class="overview-card material-request-card">
-      <div class="management-card-head"><a class="service-number" href="${orderHref(request)}">${esc(request.orderNumber)}</a>${badge(request)}</div>
+      <div class="management-card-head">${orderLink(request, "service-number")}${badge(request)}</div>
       <div class="overview-card-meta"><span>${esc(request.customerName)}</span><span>${esc(request.orderTitle)}</span></div>
       <div class="material-request-text">${lines(request.description)}</div>
       ${request.notes ? `<p class="muted material-request-notes">${esc(request.notes)}</p>` : ""}
@@ -194,7 +200,7 @@
     </tr></thead>
     <tbody>${requests.map((request) => `
       <tr>
-        <td class="cell-number"><a href="${orderHref(request)}">${esc(request.orderNumber)}</a></td>
+        <td class="cell-number">${orderLink(request)}</td>
         <td class="cell-text" title="${esc(request.customerName)}">${esc(request.customerName)}</td>
         <td class="cell-title material-request-cell" title="${esc(request.description)}">${esc(request.description.split("\n")[0])}${request.description.includes("\n") ? " …" : ""}
           <small class="muted">${reportLink(request)}</small></td>

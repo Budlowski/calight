@@ -8,11 +8,19 @@
   const message = root.querySelector("[data-message]");
   const orderFilter = root.querySelector("[data-order-filter]");
   const employeeFilter = root.querySelector("[data-employee-filter]");
+  const customerFilter = root.querySelector("[data-customer-filter]");
+  const projectFilter = root.querySelector("[data-project-filter]");
 
   let orders = [];
+  let customers = [];
+  let projects = [];
 
   const href = (report) => `/daily-reports/${encodeURIComponent(report.id)}`;
-  const titleOf = (report) => report.title || report.order_title;
+  const titleOf = (report) => report.title || report.order_title || report.project_name || "Ohne Bezeichnung";
+  /** Zuordnung kompakt: Auftrag, sonst Projekt, sonst „Ohne Auftrag“. */
+  const assignmentOf = (report) => report.order_number || "Ohne Auftrag";
+  const customerOption = (customer, selected = "") => `<option value="${esc(customer.id)}"${customer.id === selected ? " selected" : ""}>${esc(customer.customerNumber || "Ohne Nr.")} · ${esc(customer.name)}</option>`;
+  const projectOption = (project, selected = "") => `<option value="${esc(project.id)}"${project.id === selected ? " selected" : ""}>${esc(project.projectNumber ? `${project.projectNumber} · ` : "")}${esc(project.name)}</option>`;
   const orderOption = (order, selected = "") => `<option value="${esc(order.id)}"${order.id === selected ? " selected" : ""}>${esc(order.order_number)} · ${esc(order.title)}</option>`;
 
   const renderCard = (report) => `
@@ -20,7 +28,7 @@
       <div class="management-card-head"><span class="service-number">${format.date(report.report_date)}</span><span>${format.hours(report.total_hours)}</span></div>
       <div class="overview-card-title" title="${esc(titleOf(report))}">${esc(titleOf(report))}</div>
       <div class="overview-card-meta">
-        <span>${esc(report.order_number)} · ${esc(report.customer_name)}</span>
+        <span>${esc(assignmentOf(report))} · ${esc(report.customer_name)}${report.project_name ? ` · ${esc(report.project_name)}` : ""}</span>
         <span>${esc(report.employee_names || "Keine Arbeitszeiten")}</span>
         ${report.total_labor_cost !== undefined ? `<span>${format.money(report.total_labor_cost)} Ist-Lohnkosten</span>` : ""}
         <span>Geändert ${format.dateTime(report.updated_at)}</span>
@@ -35,7 +43,7 @@
     <tbody>${reports.map((report) => `
       <tr tabindex="0" data-href="${href(report)}">
         <td class="cell-date">${format.date(report.report_date)}</td>
-        <td class="cell-number">${esc(report.order_number)}</td>
+        <td class="cell-number">${report.order_number ? esc(report.order_number) : '<span class="muted">Ohne Auftrag</span>'}</td>
         <td class="cell-text" title="${esc(report.customer_name)}">${esc(report.customer_name)}</td>
         <td class="cell-title" title="${esc(report.title || report.activities)}">${esc(report.title || "Ohne Bezeichnung")}</td>
         <td class="cell-text" title="${esc(report.employee_names || "")}">${esc(report.employee_names || "–")}</td>
@@ -49,7 +57,8 @@
     endpoint: "/api/daily-reports",
     results: root.querySelector("[data-list]"),
     search: root.querySelector("[data-search]"),
-    filters: { order: orderFilter, date: root.querySelector("[data-date-filter]"), employee: employeeFilter },
+    primaryFilters: ["customer"],
+    filters: { customer: customerFilter, project: projectFilter, assignment: root.querySelector("[data-assignment-filter]"), order: orderFilter, date: root.querySelector("[data-date-filter]"), employee: employeeFilter },
     sortSelect: root.querySelector("[data-sort]"),
     count: root.querySelector("[data-count]"),
     reset: root.querySelector("[data-reset]"),
@@ -70,28 +79,51 @@
     renderCard,
   });
 
+  /**
+   * Anlegen: Auftrag wählen (Kunde und Projekt werden übernommen) oder ohne Auftrag
+   * direkt einen Kunden und optional ein Projekt wählen. Es wird nie ein Auftrag angelegt.
+   */
   function createReport() {
     const form = document.createElement("form");
-    // Vorauswahl: Einstieg vom Auftrag oder aktuell gefilterter Auftrag.
-    const preselected = root.dataset.initialOrder || orderFilter.value;
+    // Vorauswahl: Einstieg vom Auftrag oder aktuell gefilterter Auftrag/Kunde.
+    const preselectedOrder = orders.find((order) => order.id === (root.dataset.initialOrder || orderFilter.value));
+    const preselectedCustomer = preselectedOrder?.customer_id || customerFilter.value;
     form.className = "form-stack";
     form.noValidate = true;
     form.innerHTML = `
-      <label><span class="field-label">Auftrag <span aria-hidden="true">*</span></span>
-        <select name="orderId" required><option value="">Auftrag auswählen …</option>${orders.map((order) => orderOption(order, preselected)).join("")}</select></label>
+      <label><span class="field-label">Kunde <span aria-hidden="true">*</span></span>
+        <select name="customerId" required><option value="">Kunde auswählen …</option>${customers.map((customer) => customerOption(customer, preselectedCustomer)).join("")}</select></label>
+      <label><span class="field-label">Auftrag (optional)</span><select name="orderId"></select></label>
+      <label data-project-field><span class="field-label">Projekt (optional)</span><select name="projectId"></select></label>
       <label><span class="field-label">Berichtsdatum <span aria-hidden="true">*</span></span><input name="reportDate" type="date" required></label>
-      <label><span class="field-label">Bezeichnung (optional)</span><input name="title" maxlength="200"></label>
+      <label><span class="field-label">Bezeichnung (optional)</span><input name="title" maxlength="200" placeholder="z. B. Besichtigung, Bestandsaufnahme"></label>
+      <p class="muted">Ohne Auftrag z. B. für Besichtigungen vor dem Angebot. Das Büro kann den Bericht später einem Auftrag zuordnen.</p>
       <p class="field-error" data-dialog-error hidden></p>`;
     const now = new Date();
     form.elements.reportDate.value = new Date(now - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-
-    Calight.searchableSelect(form.elements.orderId, { placeholder: "Auftragsnummer, Bezeichnung oder Kunde …" });
+    const sync = () => {
+      const customerId = form.elements.customerId.value;
+      const selectedOrder = form.elements.orderId.value || preselectedOrder?.id || "";
+      const available = orders.filter((order) => order.customer_id === customerId);
+      form.elements.orderId.innerHTML = '<option value="">Ohne Auftrag</option>' + available.map((order) => orderOption(order, selectedOrder)).join("");
+      form.elements.orderId.disabled = available.length === 0;
+      // Mit Auftrag gilt dessen Projekt; ohne Auftrag optional ein Projekt des Kunden.
+      const withOrder = Boolean(form.elements.orderId.value);
+      const customerProjects = projects.filter((project) => project.customerId === customerId);
+      form.elements.projectId.innerHTML = '<option value="">Ohne Projekt</option>' + customerProjects.map((project) => projectOption(project, form.elements.projectId.value)).join("");
+      form.querySelector("[data-project-field]").hidden = withOrder || customerProjects.length === 0;
+      if (withOrder) form.elements.projectId.value = "";
+    };
+    form.elements.customerId.addEventListener("change", sync);
+    form.elements.orderId.addEventListener("change", sync);
+    sync();
+    Calight.searchableSelect(form.elements.customerId, { placeholder: "Kundennummer oder Name eingeben …" });
     Calight.createDialog({
       title: "Bautagesbericht anlegen",
       form,
       submitLabel: "Anlegen",
       discardMessage: "Den begonnenen Bautagesbericht verwerfen?",
-      initialFocus: preselected ? '[name="reportDate"]' : ".suggest-select input",
+      initialFocus: preselectedCustomer ? '[name="reportDate"]' : ".suggest-select input",
       submit: async () => {
         const report = await api("/api/daily-reports", {
           method: "POST",
@@ -110,6 +142,10 @@
     // Filteroptionen zuerst laden, damit Werte aus der URL ausgewählt werden können.
     const reference = await api("/api/daily-reports/reference-data");
     orders = reference.orders;
+    customers = reference.customers || [];
+    projects = reference.projects || [];
+    customerFilter.innerHTML = '<option value="">Alle Kunden</option>' + customers.map((customer) => customerOption(customer)).join("");
+    projectFilter.innerHTML = '<option value="">Alle Projekte</option>' + projects.map((project) => projectOption(project)).join("");
     const employees = reference.filterEmployees || reference.employees;
     orderFilter.innerHTML = '<option value="">Alle Aufträge</option>' + orders.map((order) => orderOption(order)).join("");
     employeeFilter.innerHTML = '<option value="">Alle Mitarbeiter</option>' + employees

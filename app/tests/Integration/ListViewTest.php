@@ -283,8 +283,8 @@ final class ListViewTest extends TestCase
     private function report(PDO $pdo, string $orderId, string $date, string $userId, string $createdAt, array $entries): string
     {
         $id = Uuid::v4();
-        $pdo->prepare("INSERT INTO daily_reports(id,order_id,report_date,title,activities,notes,created_by_user_id,version,created_at,updated_at)
-            VALUES(:id,:order,:date,'','Montage','',:user,1,:at,:at)")
+        $pdo->prepare("INSERT INTO daily_reports(id,customer_id,order_id,labor_counts_for_order,report_date,title,activities,notes,created_by_user_id,version,created_at,updated_at)
+            VALUES(:id,(SELECT customer_id FROM orders WHERE id=:order),:order,1,:date,'','Montage','',:user,1,:at,:at)")
             ->execute(['id' => $id, 'order' => $orderId, 'date' => $date, 'user' => $userId, 'at' => $createdAt]);
         $entry = $pdo->prepare("INSERT INTO daily_report_time_entries(id,report_id,employee_id,work_date,duration_hours,description,target_kind,
             target_basis_type,target_basis_id,target_node_id,hourly_cost_rate_snapshot,labor_cost,created_at,updated_at)

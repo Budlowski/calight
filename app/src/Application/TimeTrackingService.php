@@ -457,13 +457,21 @@ final readonly class TimeTrackingService
         $choices = array_column($this->times->choices($employeeId, $date, $date), null, 'order_id');
         $times = $this->times;
         return array_map(static function (array $row) use ($tracked, $choices, $times, $employeeId, $date): array {
-            $choice = $choices[$row['order_id']] ?? null;
-            $status = !isset($tracked[$row['order_id']]) ? 'report_only' : ($choice === null ? 'conflict' : 'chosen_' . $choice['source']);
+            // Berichte ohne Auftrag bzw. ohne übernommene Stunden sind nur Referenz: keine Ist-Stunden, kein Konflikt.
+            $countable = $row['order_id'] !== null && (int) $row['labor_counts_for_order'] === 1;
+            $choice = $countable ? ($choices[$row['order_id']] ?? null) : null;
+            $status = match (true) {
+                $row['order_id'] === null => 'no_order',
+                !$countable => 'not_order_hours',
+                !isset($tracked[$row['order_id']]) => 'report_only',
+                $choice === null => 'conflict',
+                default => 'chosen_' . $choice['source'],
+            };
             return [
-                'reportId' => $row['report_id'], 'orderId' => $row['order_id'], 'orderNumber' => $row['order_number'], 'orderTitle' => $row['order_title'],
+                'reportId' => $row['report_id'], 'orderId' => $row['order_id'], 'orderNumber' => $row['order_number'], 'orderTitle' => $row['order_title'], 'customerName' => $row['customer_name'],
                 'hours' => $row['duration_hours'], 'description' => $row['description'], 'status' => $status,
-                'trackedMinutes' => $tracked[$row['order_id']] ?? 0, 'chosenByName' => $choice['chosen_by_name'] ?? null, 'chosenAt' => $choice['chosen_at'] ?? null,
-                'history' => $status === 'report_only' ? [] : array_map(static fn (array $event): array => ['previousSource' => $event['previous_source'], 'source' => $event['source'],
+                'trackedMinutes' => $row['order_id'] !== null ? ($tracked[$row['order_id']] ?? 0) : 0, 'chosenByName' => $choice['chosen_by_name'] ?? null, 'chosenAt' => $choice['chosen_at'] ?? null,
+                'history' => !in_array($status, ['conflict', 'chosen_time_tracking', 'chosen_daily_report'], true) ? [] : array_map(static fn (array $event): array => ['previousSource' => $event['previous_source'], 'source' => $event['source'],
                     'changedByName' => $event['changed_by_name'], 'changedAt' => $event['changed_at']], $times->choiceEvents($employeeId, $date, (string) $row['order_id'])),
             ];
         }, $this->times->dailyReportTimes($employeeId, $date, $date));

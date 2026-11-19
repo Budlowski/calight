@@ -11,12 +11,12 @@ final readonly class MaterialRequestRepository
 {
     /** Sortierbare Spalten der Übersicht mit natürlicher Richtung. */
     public const LIST_SORTS = ['created' => 'desc', 'needed' => 'asc', 'order' => 'asc', 'customer' => 'asc', 'status' => 'asc', 'updated' => 'desc'];
-    public const LIST_FILTERS = ['status', 'order'];
+    public const LIST_FILTERS = ['status', 'order', 'customer'];
 
     private const CUSTOMER_NAME = "CASE WHEN c.customer_type='company' THEN c.company_name ELSE trim(c.first_name || ' ' || c.last_name) END";
     private const SELECT = "m.*, o.order_number, o.title AS order_title, o.status AS order_status, r.report_date,
         u.display_name AS creator_name, cu.display_name AS completed_by_name, c.customer_number, %s AS customer_name";
-    private const FROM = 'material_requests m JOIN orders o ON o.id = m.order_id JOIN customers c ON c.id = o.customer_id
+    private const FROM = 'material_requests m LEFT JOIN orders o ON o.id = m.order_id JOIN customers c ON c.id = m.customer_id
         JOIN users u ON u.id = m.created_by_user_id LEFT JOIN users cu ON cu.id = m.completed_by_user_id
         LEFT JOIN daily_reports r ON r.id = m.daily_report_id';
 
@@ -25,15 +25,18 @@ final readonly class MaterialRequestRepository
     }
 
     /**
-     * @param bool $releasedOnly Techniker sehen nur Anforderungen freigegebener Aufträge.
+     * @param string|null $technicianId Techniker: eigene Anforderungen und solche freigegebener Aufträge.
      * @return array{items:list<array<string,mixed>>,total:int,page:int,perPage:int,pageCount:int,sort:string,dir:string}
      */
-    public function page(ListQuery $query, bool $releasedOnly): array
+    public function page(ListQuery $query, ?string $technicianId): array
     {
         $page = (new Paginator($this->pdo))
             ->search($query, ['m.description', 'm.notes', 'o.order_number', 'o.title', self::CUSTOMER_NAME, 'u.display_name']);
-        if ($releasedOnly) {
-            $page->where("o.status <> 'open'");
+        if ($technicianId !== null) {
+            $page->where("(m.created_by_user_id = :material_technician OR (m.order_id IS NOT NULL AND o.status <> 'open'))", ['material_technician' => $technicianId]);
+        }
+        if ($query->filter('customer') !== null) {
+            $page->where('m.customer_id = :material_customer', ['material_customer' => (string) $query->filter('customer')]);
         }
         // Ohne Statusfilter zeigt die Übersicht offene Anforderungen; „all“ zeigt alle.
         $status = $query->filter('status');
@@ -50,7 +53,7 @@ final readonly class MaterialRequestRepository
             [
                 'created' => 'm.created_at',
                 'needed' => 'm.needed_by',
-                'order' => 'o.order_number COLLATE NOCASE',
+                'order' => "COALESCE(o.order_number, '') COLLATE NOCASE",
                 'customer' => self::CUSTOMER_NAME . ' COLLATE NOCASE',
                 'status' => "CASE m.status WHEN 'open' THEN 0 ELSE 1 END",
                 'updated' => 'm.updated_at',
@@ -91,8 +94,8 @@ final readonly class MaterialRequestRepository
     public function insert(array $data): void
     {
         $this->pdo->prepare('INSERT INTO material_requests
-            (id, order_id, daily_report_id, description, notes, needed_by, status, created_by_user_id, version, created_at, updated_at)
-            VALUES (:id, :order_id, :daily_report_id, :description, :notes, :needed_by, \'open\', :created_by_user_id, 1, :created_at, :updated_at)')
+            (id, customer_id, order_id, daily_report_id, description, notes, needed_by, status, created_by_user_id, version, created_at, updated_at)
+            VALUES (:id, :customer_id, :order_id, :daily_report_id, :description, :notes, :needed_by, \'open\', :created_by_user_id, 1, :created_at, :updated_at)')
             ->execute($data);
     }
 

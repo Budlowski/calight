@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration;
 
+use App\Application\DailyReportService;
 use App\Application\OfferPdfService;
 use App\Application\OfferService;
 use App\Application\OrderService;
@@ -17,6 +18,8 @@ use App\Http\Request;
 use App\Infrastructure\Database\ConnectionFactory;
 use App\Infrastructure\Database\Migrator;
 use App\Infrastructure\Persistence\AttachmentStore;
+use App\Infrastructure\Persistence\DailyReportRepository;
+use App\Infrastructure\Persistence\EmployeeRepository;
 use App\Infrastructure\Persistence\DocumentSettingsRepository;
 use App\Infrastructure\Persistence\NumberRangeRepository;
 use App\Infrastructure\Persistence\OfferJsonStore;
@@ -172,7 +175,7 @@ final class TimeTrackingTest extends TestCase
             // Bestehende Bautagesberichte (z. B. vor Einführung der Zeiterfassung).
             foreach (['2026-11-16' => '7.500', '2026-11-17' => '6.000'] as $date => $hours) {
                 $report = Uuid::v4();
-                $pdo->prepare("INSERT INTO daily_reports (id, order_id, report_date, activities, created_by_user_id, created_at, updated_at) VALUES (:id, :order, :date, 'Montage', :user, :now, :now)")
+                $pdo->prepare("INSERT INTO daily_reports (id, customer_id, order_id, labor_counts_for_order, report_date, activities, created_by_user_id, created_at, updated_at) VALUES (:id, (SELECT customer_id FROM orders WHERE id = :order), :order, 1, :date, 'Montage', :user, :now, :now)")
                     ->execute(['id' => $report, 'order' => $order, 'date' => $date, 'user' => $tech['id'], 'now' => '2026-11-18T08:00:00Z']);
                 $pdo->prepare("INSERT INTO daily_report_time_entries (id, report_id, employee_id, work_date, duration_hours, target_kind, hourly_cost_rate_snapshot, labor_cost, created_at, updated_at)
                     VALUES (:id, :report, :employee, :date, :hours, 'order', '42.0000', '0.00', :now, :now)")
@@ -292,7 +295,7 @@ final class TimeTrackingTest extends TestCase
 
             // Bautagesbericht am 01.12. → ungeklärter Konflikt.
             $dailyReport = Uuid::v4();
-            $pdo->prepare("INSERT INTO daily_reports (id, order_id, report_date, activities, created_by_user_id, created_at, updated_at) VALUES (:id, :order, '2026-12-01', 'Montage', :user, :now, :now)")
+            $pdo->prepare("INSERT INTO daily_reports (id, customer_id, order_id, labor_counts_for_order, report_date, activities, created_by_user_id, created_at, updated_at) VALUES (:id, (SELECT customer_id FROM orders WHERE id = :order), :order, 1, '2026-12-01', 'Montage', :user, :now, :now)")
                 ->execute(['id' => $dailyReport, 'order' => $order, 'user' => $tech['id'], 'now' => '2026-12-02T08:00:00Z']);
             $pdo->prepare("INSERT INTO daily_report_time_entries (id, report_id, employee_id, work_date, duration_hours, target_kind, hourly_cost_rate_snapshot, labor_cost, created_at, updated_at)
                 VALUES (:id, :report, :employee, '2026-12-01', '5.000', 'order', '40.0000', '0.00', :now, :now)")
@@ -341,6 +344,39 @@ final class TimeTrackingTest extends TestCase
             $this->assertThrows(AccessDeniedException::class, fn () => $service->report('2026-12-01', '2026-12-31', null, null, $tech));
             $this->assertThrows(DocumentValidationException::class, fn () => $service->actualHoursForOrder($order, $office, '2026-12-31', '2026-12-01'));
             $this->assertTrue(!array_key_exists('expenses', $actual) && !array_key_exists('kilometers', $actual), 'Spesen und km werden nicht verrechnet.');
+        });
+    }
+
+    public function testDailyReportsWithoutOrderAreReferenceOnlyUntilHoursAreTakenOver(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['service' => $service, 'tech' => $tech, 'office' => $office, 'employee' => $employee, 'order' => $order, 'pdo' => $pdo, 'customer' => $customer] = $env;
+            $reports = new DailyReportService($pdo, new DailyReportRepository($pdo), new EmployeeRepository($pdo), new OrderRepository($pdo));
+            // Zeiterfassung 4 h am Auftrag; zusätzlich Besichtigung 2 h im Bautagesbericht ohne Auftrag.
+            $service->createEntry(['date' => '2026-11-16', 'start' => '08:00', 'end' => '12:00', 'activity' => 'work', 'orderId' => $order], $tech);
+            $report = $reports->create(['customerId' => $customer, 'reportDate' => '2026-11-16', 'activities' => 'Besichtigung',
+                'entries' => [['employeeId' => $employee, 'durationHours' => '2', 'targetKey' => 'order']]], $tech);
+
+            $day = $service->day($employee, '2026-11-16', $office);
+            $this->assertSame(['no_order', null], [$day['dailyReportTimes'][0]['status'], $day['dailyReportTimes'][0]['orderId']], 'Zeiten ohne Auftrag sichtbar, nur Referenz.');
+            $this->assertSame(240, $day['totals']['netMinutes'], 'Keine Doppelzählung.');
+            $actual = $service->actualHoursForOrder($order, $office);
+            $this->assertSame([240, 'complete'], [$actual['totals']['netMinutes'], $actual['status']]);
+
+            // Organisatorische Zuordnung: Stunden zählen weiterhin nicht, kein Konflikt.
+            $assigned = $reports->assignOrder($report['id'], ['version' => $report['version'], 'orderId' => $order], $office);
+            $this->assertSame('not_order_hours', $service->day($employee, '2026-11-16', $office)['dailyReportTimes'][0]['status']);
+            $this->assertSame([240, 'complete'], [$service->actualHoursForOrder($order, $office)['totals']['netMinutes'], $service->actualHoursForOrder($order, $office)['status']]);
+            $this->assertSame(240, $service->report('2026-11-01', '2026-11-30', null, null, $office)['totals']['netMinutes']);
+            $this->assertSame([], $service->report('2026-11-01', '2026-11-30', null, null, $office)['conflicts']);
+
+            // Bewusste Übernahme: jetzt gilt die übliche Konfliktregel mit expliziter Quellenwahl.
+            $reports->countLaborForOrder($report['id'], ['version' => $assigned['version']], $office);
+            $this->assertSame('conflict', $service->day($employee, '2026-11-16', $office)['dailyReportTimes'][0]['status']);
+            $actual = $service->actualHoursForOrder($order, $office);
+            $this->assertSame(['incomplete', 0, 120], [$actual['status'], $actual['totals']['netMinutes'], $actual['unresolved']['reportMinutes']]);
+            $service->chooseSource(['employeeId' => $employee, 'date' => '2026-11-16', 'orderId' => $order, 'source' => 'time_tracking'], $office);
+            $this->assertSame([240, 'complete'], [$service->actualHoursForOrder($order, $office)['totals']['netMinutes'], $service->actualHoursForOrder($order, $office)['status']]);
         });
     }
 

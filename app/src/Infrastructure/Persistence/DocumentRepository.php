@@ -58,15 +58,15 @@ final readonly class DocumentRepository
     /** Bautagesberichte (PDF wird vom Fachmodul erzeugt). @return list<array<string,mixed>> */
     public function dailyReports(): array
     {
-        return $this->pdo->query('SELECT r.id, r.report_date, r.title, r.updated_at, r.order_id, o.order_number, o.customer_id, o.project_id
-            FROM daily_reports r JOIN orders o ON o.id = r.order_id')->fetchAll();
+        return $this->pdo->query('SELECT r.id, r.report_date, r.title, r.updated_at, r.order_id, o.order_number, r.customer_id, r.project_id
+            FROM daily_reports r LEFT JOIN orders o ON o.id = r.order_id')->fetchAll();
     }
 
     /** Anhänge zu Bautagesberichten. @return list<array<string,mixed>> */
     public function dailyReportAttachments(): array
     {
-        return $this->pdo->query('SELECT a.id, a.report_id, a.original_name, a.mime_type, a.storage_path, a.created_at, r.report_date, r.order_id, o.order_number, o.customer_id, o.project_id
-            FROM daily_report_attachments a JOIN daily_reports r ON r.id = a.report_id JOIN orders o ON o.id = r.order_id')->fetchAll();
+        return $this->pdo->query('SELECT a.id, a.report_id, a.original_name, a.mime_type, a.storage_path, a.created_at, r.report_date, r.order_id, o.order_number, r.customer_id, r.project_id
+            FROM daily_report_attachments a JOIN daily_reports r ON r.id = a.report_id LEFT JOIN orders o ON o.id = r.order_id')->fetchAll();
     }
 
     /** Auswahlliste Kunden (aktive und archivierte, damit alte Dokumente auffindbar bleiben). @return list<array{id:string,label:string}> */

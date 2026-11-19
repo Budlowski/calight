@@ -36,12 +36,14 @@ final readonly class DailyReportPdfService
             'Bautagesbericht',
             trim((string) $report['title']) !== '' ? (string) $report['title'] : 'Interne Dokumentation vom ' . $date,
             [(string) $report['customer_name']],
-            [
+            // Projekt und Auftrag nur bei Angabe – ohne Auftrag keine leere oder künstliche Auftragsnummer.
+            array_values(array_filter([
                 ['Berichtsdatum', $date],
-                ['Auftrag', trim($report['order_number'] . ' · ' . $report['order_title'])],
+                $report['project_id'] !== null ? ['Projekt', trim(($report['project_number'] ?? '') . ' · ' . ($report['project_name'] ?? ''), ' ·')] : null,
+                $report['order_id'] !== null ? ['Auftrag', trim($report['order_number'] . ' · ' . $report['order_title'])] : null,
                 ['Kundennummer', (string) ($report['customer_number'] ?? '')],
                 ['Erstellt von', (string) ($report['creator_name'] ?? '')],
-            ],
+            ])),
         );
 
         $pdf->section('Tätigkeiten');
