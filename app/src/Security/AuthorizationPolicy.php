@@ -28,6 +28,9 @@ final class AuthorizationPolicy
         // Materialanforderungen: Erfassen wie Berichte, Erledigen/Wiedereröffnen nur durch Büro/Admin.
         if (preg_match('#^/api/material-requests/[^/]+/status$#', $path) === 1) return ['reports.read', 'materials.manage'];
         if (str_starts_with($path, '/material-requests') || str_starts_with($path, '/api/material-requests')) return [$write ? 'reports.write' : 'reports.read'];
+        // Bestellungen: Verwaltung durch Büro/Admin; Rechnungen, Ist-Kosten und Kostenverteilung zusätzlich nur mit costs.read.
+        if (preg_match('#^/api/purchase-orders/[^/]+/(invoices(/[^/]+)?|actual-cost|allocations)$#', $path) === 1) return ['purchases.write', 'costs.read'];
+        if (str_starts_with($path, '/purchase-orders') || str_starts_with($path, '/api/purchase-orders')) return [$write ? 'purchases.write' : 'purchases.read'];
         if (preg_match('#^/api/offers/[^/]+/order$#', $path) === 1) return ['offers.read', 'orders.write'];
         if (preg_match('#^/api/change-orders/[^/]+/accept$#', $path) === 1) return ['offers.write', 'orders.write'];
         if (str_starts_with($path, '/settings') || str_starts_with($path, '/api/settings')) return ['settings.manage'];

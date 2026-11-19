@@ -24,7 +24,7 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 | 3.2.3 | Gemeinsamer Briefbogen, PDFs für Rapporte, Aufmaße und Bautagesberichte, digitale Kundenunterschrift, Rücklauf und Dokumentarchiv | Implementiert (`0027`); externe Ablage (NAS/SMB), E-Mail-Versand und Kundenportal geplant |
 | 3.3 | Aufmaße für vereinbarte Angebotsleistungen | Implementiert (`0024`), PDF seit Phase 3.2.3 |
 | 3.4 | Rapporte für Regieleistungen, auch eigenständig ohne Auftrag | Implementiert (`0025`, `0026`), PDF und Kundenbestätigung seit Phase 3.2.3, Einsatzort / Objekt (`0028`) |
-| 3.4.1 | Bestellungen mit PDF-Ausgabe (schlanke Materialbeschaffung) | Geplant |
+| 3.4.1 | Bestellungen mit PDF-Ausgabe (schlanke Materialbeschaffung) | Implementiert (`0029`); Versand per E-Mail und Bestellungen am Auftragsdetail geplant |
 | 3.4.2 | Lieferscheine mit PDF-Ausgabe (Liefernachweise) | Geplant |
 | 3.4.3 | Mitarbeiter-Zeiterfassung (übergreifende Arbeitszeiten) | Geplant |
 | 3.5 | Nachkalkulation und Soll-Ist-Vergleich | Geplant |
@@ -222,7 +222,7 @@ Bautagesberichte dokumentieren die tatsächliche Ausführung und sind **keine** 
 
 - Fotos und Anhänge je Bericht (Bilder, PDF, Text bis 15 MB), serverseitig zugriffsgeschützt. **(implementiert, Phase 3.2.2)**
 
-- **Materialanforderungen** statt täglicher Materialverbrauchserfassung: Monteure melden benötigtes Material als Freitext mit optionaler Bemerkung und Wunschtermin aus dem Bericht oder direkt am Auftrag; das Büro bearbeitet sie zentral (offen/erledigt). Materialanforderungen sind eigenständige Datensätze mit Auftragsbezug, keine Bestellungen und keine Ist-Kosten. Eine spätere Bestellfunktion (Phase 3.4.1) kann sie übernehmen. **(implementiert, Phase 3.2.2)**
+- **Materialanforderungen** statt täglicher Materialverbrauchserfassung: Monteure melden benötigtes Material als Freitext mit optionaler Bemerkung und Wunschtermin aus dem Bericht oder direkt am Auftrag; das Büro bearbeitet sie zentral (offen/erledigt). Materialanforderungen sind eigenständige Datensätze mit Auftragsbezug, keine Bestellungen und keine Ist-Kosten. Bestellungen (Phase 3.4.1) können sie als Positionsvorschlag übernehmen; die Anforderung bleibt dabei offen. **(implementiert, Phase 3.2.2)**
 
 - Artikelgenaue Ist-Materialkosten, Fahrzeiten und weitere Aufwendungen sind bewusst noch nicht umgesetzt; sie werden bei Bedarf im Zusammenhang mit der Nachkalkulation (Phase 3.5) geklärt.
 
@@ -336,7 +336,27 @@ Rapporte dokumentieren **abrechenbare Regieleistungen** und entsprechen in ihrer
 
 **Offen:** E-Mail-Versand und ein öffentliches Bestätigungsportal; optionale Übernahme aus Bautagesberichten.
 
-## Phase 3.4.1 – Bestellungen und Materialbeschaffung (geplant)
+## Phase 3.4.1 – Bestellungen und Materialbeschaffung (implementiert, Migration `0029`)
+
+**Umgesetzt:** Eine Bestellung ist ein zentraler Beschaffungsvorgang. Drei Erfassungswege führen in dieselbe Übersicht („Kaufmännisch → Bestellungen“):
+
+- **Intern, leer:** Lieferant wählen, Positionen frei oder aus dem Artikelstamm (Einkaufspreis als Vorschlag) erfassen, Bestell-PDF aus Calight erzeugen.
+- **Intern aus Materialbedarf:** offene Materialanforderungen auswählen; ihr Freitext wird als bearbeitbare Position übernommen, der Bezug bleibt gespeichert, die Anforderung bleibt offen.
+- **Extern:** bereits online, telefonisch oder vor Ort aufgegebene Bestellung schnell erfassen (Lieferant, Referenz, Datum, optional Betrag, Auftrag und Bestätigung als Datei). Keine Positionen nötig, kein künstlicher Calight-Beleg.
+
+Regeln:
+- **Bestellnummer** aus dem Nummernkreis „Bestellungen“ (`BE…`), vergeben beim Anlegen.
+- **Status:** Bestellstatus (Entwurf, Bestellt, Storniert), Lieferstatus (Ausstehend, Teilgeliefert, Geliefert) und Zahlungsstatus (Offen, Teilbezahlt, Bezahlt) sind unabhängig; jede Änderung steht mit Benutzer, Zeit und optionaler Bemerkung im Statusverlauf. Uploads ändern keinen Status.
+- **Ausgabe:** „Bestellen“ verlangt mindestens eine Position mit Bezeichnung und Menge, speichert einen Lieferanten-Snapshot und archiviert das PDF unveränderlich als Fassung. Danach sind Lieferant und Positionen gesperrt; Änderungen nur über „Neue Fassung“ (ältere PDFs bleiben erhalten).
+- **Stornieren** behält Dokumente, Rechnungen und entstandene Kosten. Löschen ist nur für nie bestellte Entwürfe möglich.
+- **Dokumente:** eigene Bestell-PDFs, Bestell- und Auftragsbestätigungen, Lieferscheine und Rechnungen des Lieferanten sowie sonstige Anhänge (PDF und Bilder, Typprüfung am Inhalt, max. 15 MB) unter `APP_DOCUMENTS_PATH/purchase-orders/<bestellung>/`.
+- **Ist-Kosten:** genau eine Quelle – Summe mehrerer Lieferantenrechnungen (Nummer, Datum, Netto, optional USt./Brutto und Beleg) **oder** ein direkt erfasster Betrag. Beides gleichzeitig lehnt der Server ab. Der erwartete Bestellwert zählt nie als Ist-Kosten; der Zahlungsstatus ist nur ein Nachweis.
+- **Kostenzuordnung:** Standard sind die vollen Ist-Kosten für den Auftrag der Bestellung. Optional feste Beträge auf mehrere Aufträge; Summe höchstens Ist-Kosten, der Rest bleibt als „nicht verteilt“ sichtbar. Mit Verteilung gelten nur die verteilten Beträge. `PurchaseOrderService::costsByOrder` liefert diese Werte für Phase 3.5.
+- **Rechte:** `purchases.read`/`purchases.write` für Büro und Admin; Preise, Beträge, Rechnungen und Rechnungsbelege zusätzlich nur mit `costs.read`. Techniker haben keinen Zugriff.
+
+**Bewusst offen:** E-Mail-Versand an den Lieferanten, Bestellungen in der Auftragsdetailseite, Lieferantenanschriften im Stamm (der Lieferantenstamm hat nur Name und Kontakt), Übernahme aus der Auftragsgrundlage statt aus Materialanforderungen.
+
+Ursprüngliche Planung:
 
 Bestellungen sind **an Lieferanten gerichtete Beschaffungsdokumente**, keine Rechnungen und keine Lager- oder Wareneingangsbuchungen. Ziel ist die einfache Erstellung einer einheitlichen Bestellung als PDF aus Calight.
 

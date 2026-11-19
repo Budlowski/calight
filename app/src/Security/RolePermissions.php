@@ -19,6 +19,8 @@ final class RolePermissions
             'reports.read', 'reports.write', 'materials.manage',
             'measurements.read', 'measurements.write', 'measurements.complete',
             'workreports.read', 'workreports.write', 'workreports.process',
+            // Bestellungen (Phase 3.4.1); Beträge zusätzlich nur mit costs.read.
+            'purchases.read', 'purchases.write',
         ],
         'technician' => ['dashboard.read', 'orders.read', 'reports.read', 'reports.write', 'measurements.read', 'measurements.write', 'workreports.read', 'workreports.write'],
     ];

@@ -446,7 +446,7 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .order-basis-card > p { margin: var(--space-2) 0; }
 .order-basis-card .order-basis-note { margin-top: var(--space-3); }
 .order-history-card .section-heading { margin-bottom: var(--space-2); }
-.document-status-line { display: flex; align-items: center; gap: var(--space-2); color: var(--muted); font-size: var(--font-small); }
+.document-status-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--muted); font-size: var(--font-small); }
 .order-status-history { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); }
 .order-status-entry { display: grid; grid-template-columns: 120px minmax(180px,1fr) auto; align-items: center; gap: var(--space-3); min-height: 38px; padding: 6px 9px; border-bottom: 1px solid var(--border); }
 .order-status-entry:last-child { border-bottom: 0; }
@@ -1185,6 +1185,43 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 }
 
 
+/* Bestellungen (Phase 3.4.1) */
+.purchase-kind-choice { display: grid; gap: var(--space-2); margin: 0; padding: 0; border: 0; }
+.purchase-kind-choice > label, .purchase-request { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); font-weight: 400; cursor: pointer; }
+.purchase-kind-choice > label:has(input:checked), .purchase-request:has(input:checked) { border-color: var(--primary); background: #edf4f8; }
+.purchase-kind-choice input, .purchase-request input { width: auto; min-height: 0; margin-top: 3px; }
+.purchase-kind-choice span, .purchase-request span { display: grid; gap: 2px; }
+.purchase-kind-choice small, .purchase-request small { color: var(--muted); font-size: var(--font-small); }
+.purchase-request-list { display: grid; gap: var(--space-2); max-height: 260px; overflow-y: auto; }
+.purchase-head-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.purchase-item-row { grid-template-columns: 90px 80px 120px minmax(200px, 2fr) 110px 110px auto; }
+.purchase-item-row.no-prices { grid-template-columns: 90px 80px 120px minmax(200px, 2fr) auto; }
+.purchase-item-row .purchase-item-notes { grid-column: 1 / -2; }
+.purchase-items-table td { vertical-align: top; }
+.purchase-tracking { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.purchase-tracking-block { display: grid; gap: var(--space-2); }
+.purchase-tracking-form { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.purchase-tracking-form select { width: auto; flex: 0 1 170px; }
+.purchase-tracking-form input { flex: 1 1 160px; width: auto; }
+.purchase-subheading { margin: var(--space-3) 0 0; font-size: var(--font-base); }
+.purchase-inline-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-2); }
+.purchase-inline-form > label { flex: 0 1 140px; }
+.purchase-inline-form > .purchase-inline-wide { flex: 1 1 240px; }
+.purchase-documents { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+.purchase-documents li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: 6px 0; border-bottom: 1px solid #e5eaed; }
+.purchase-documents li > a { display: inline-flex; align-items: center; gap: 6px; overflow-wrap: anywhere; }
+.purchase-allocation-row { display: grid; grid-template-columns: minmax(200px, 1fr) 140px auto; gap: var(--space-2); align-items: center; margin-bottom: var(--space-2); }
+.purchase-request-links { padding-top: var(--space-2); border-top: 1px solid var(--border); }
+@media (max-width: 1100px) {
+    .purchase-item-row, .purchase-item-row.no-prices { grid-template-columns: 1fr 1fr; }
+    .purchase-item-row .work-report-wide, .purchase-item-row .purchase-item-notes { grid-column: 1 / -1; }
+}
+@media (max-width: 800px) {
+    .purchase-head-grid, .purchase-tracking { grid-template-columns: 1fr; }
+    .purchase-allocation-row { grid-template-columns: 1fr auto; }
+    .purchase-allocation-row select { grid-column: 1 / -1; }
+}
+
 /* ==========================================================================
    Gemeinsame UI-Muster (projektweit, siehe docs/ui-guidelines.md)
    Steht bewusst am Dateiende und vereinheitlicht ältere Einzelregeln.
@@ -1219,6 +1256,11 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 .status-active, .status-commissioned, .status-material-done, .status-measurement-completed, .status-work-processed, .work-status-done { background-color: var(--status-success-bg); color: var(--status-success-fg); }
 .status-work-confirmed { background-color: var(--status-special-bg); color: var(--status-special-fg); }
 .status-archived, .status-rejected { background-color: var(--status-muted-bg); color: var(--status-muted-fg); }
+.status-po-status-draft, .status-po-delivery-pending, .status-po-payment-open { background-color: var(--status-neutral-bg); color: var(--status-neutral-fg); }
+.status-po-status-ordered, .status-po-origin { background-color: var(--status-info-bg); color: var(--status-info-fg); }
+.status-po-delivery-partial, .status-po-payment-partial { background-color: var(--status-warning-bg); color: var(--status-warning-fg); }
+.status-po-delivery-delivered, .status-po-payment-paid { background-color: var(--status-success-bg); color: var(--status-success-fg); }
+.status-po-status-cancelled { background-color: var(--status-muted-bg); color: var(--status-muted-fg); text-decoration: line-through; }
 
 /* Suchvorschläge (Calight.suggest / Calight.searchableSelect). */
 .suggest-select, .work-report-catalog { position: relative; }

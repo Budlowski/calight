@@ -269,7 +269,14 @@ Keine zweite Nummernlogik in einem Controller oder Frontend anlegen.
 - Bestätigungsarten von Rapporten: `signature` (Unterschriftsbild), `returned_document` (hochgeladenes Original), `manual` (ohne Nachweis, ausdrücklich gekennzeichnet). Eine Unterschrift wird nur mit passender `submittedSha256` angenommen; jede Bestätigung ist einmalig und per CHECK an `submitted_sha256` gebunden. „Versendet“ (`confirmation_requested_*`) ist keine Bestätigung.
 - Nachweise und archivierte PDFs liegen unter `APP_DOCUMENTS_PATH/work-reports/<rapport>/` bzw. `measurements/<aufmaß>/`, Auslieferung nur über geschützte Routen (`FileResponse`). Rücklauf-Upload und „versendet“ erfordern `workreports.process`; Unterschrift erfassen dürfen Ersteller und Büro.
 
-### 4.14 Fachliche Abgrenzung späterer Module
+### 4.15 Bestellungen (Phase 3.4.1)
+
+- Eine Bestellung ist Beschaffung beim Lieferanten: intern (Entwurf → „Bestellen“ mit archiviertem PDF je Fassung) oder extern erfasst (sofort „Bestellt“, ohne Pflicht zu Positionen, ohne eigenen Calight-Beleg). Materialanforderungen bleiben eigenständig; eine Übernahme schlägt nur Positionen vor und erledigt sie nicht.
+- Bestell-, Liefer- und Zahlungsstatus sind unabhängig und werden in `purchase_order_history` protokolliert. Nach dem Bestellen sind Lieferant (Snapshot) und Positionen gesperrt; Änderungen nur über „Neue Fassung“. Ausgegebene PDFs (`purchase_order_documents`, `kind = own_order`) nie überschreiben oder löschen.
+- Ist-Kosten haben genau eine Quelle: `purchase_orders.actual_net_total` **oder** die Summe von `purchase_order_invoices` – nie beides. Erwarteter Bestellwert ist keine Ist-Kosten. Kosten je Auftrag ausschließlich über `PurchaseOrderService::costsByOrder` auswerten (Verteilung schlägt Auftragsbezug).
+- Rechte: `purchases.read`/`purchases.write`; Beträge, Preise, Rechnungen und Rechnungsbelege zusätzlich `costs.read` (serverseitig gefiltert). Dateien unter `APP_DOCUMENTS_PATH/purchase-orders/<bestellung>/`.
+
+### 4.16 Fachliche Abgrenzung späterer Module
 
 Folgende Punkte sind Zielbild, soweit nicht durch aktuelle Migrationen/Code implementiert:
 
@@ -278,7 +285,7 @@ Folgende Punkte sind Zielbild, soweit nicht durch aktuelle Migrationen/Code impl
 - **Rapport:** seit Phase 3.4 implementiert (siehe 4.13); Nachweis abrechenbarer Regieleistungen, nicht identisch mit internen Zeiten. PDF, Unterschrift und Übermittlung folgen in Phase 3.2.3.
 - **Nachkalkulation:** späterer Soll-Ist-Vergleich aus unveränderlichen Grundlagen, Ist-Kosten und separat erfasster Erlösseite.
 - **Abrechnungstracking:** später nur Referenzen auf extern erstellte Rechnungen und Status. Keine Faktura oder Zahlungsbuchhaltung.
-- Bestellungen, artikelgenauer Materialverbrauch, PDF-Ausgabe von Bautagesberichten, CardDAV und eine eigene mobile Monteuransicht sind noch keine implementierten Prozesse, solange Code und Migrationen nichts anderes zeigen. Materialanforderungen und Berichtsanhänge sind seit Phase 3.2.2 implementiert.
+- Artikelgenauer Materialverbrauch, Lager und Wareneingang, CardDAV und eine eigene mobile Monteuransicht sind noch keine implementierten Prozesse, solange Code und Migrationen nichts anderes zeigen. Materialanforderungen und Berichtsanhänge sind seit Phase 3.2.2 implementiert.
 
 **Ein Bautagesbericht ist kein Rapport. Ein Aufmaß ist keine Rechnung. Calight ersetzt keine Rechnungsstellung.** Künftige Module dürfen diese Datenarten nicht aus Bequemlichkeit vermischen.
 

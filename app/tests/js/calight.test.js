@@ -48,4 +48,12 @@ for (const [quantity, price, expected] of [["0,333", "2.50", "0.83"], ["3,5", "8
 assert(fromUnits(toUnits("0,1", 3) + toUnits("0,2", 3), 3) === "0.300", "0,1 + 0,2 bleibt exakt");
 assert(DECIMAL_PATTERN.test("3,5") && !DECIMAL_PATTERN.test("3,5 h"), "decimal pattern");
 
+// Bestellpositionen: Einkaufspreise mit bis zu 4 Nachkommastellen, Vorschau wie der Server (HalfUp auf Cent).
+{
+  const { exact } = globalThis.Calight;
+  assert(exact.fromUnits(exact.lineCents(exact.toUnits("12", 3), "3.4567"), 2) === "41.48", "12 × 3,4567 € = 41,48 €");
+  assert(exact.fromUnits(exact.lineCents(exact.toUnits("0,333", 3), "2.50"), 2) === "0.83", "0,333 × 2,50 € = 0,83 €");
+  assert(exact.fromUnits(exact.lineCents(exact.toUnits("3", 3), "0.0050"), 2) === "0.02", "3 × 0,005 € = 0,015 € → 0,02 €");
+}
+
 console.log("calight helper tests passed");

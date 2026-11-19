@@ -47,9 +47,8 @@ if ($showShell): ?>
 ?>
             <?php
             // Gruppen erscheinen nur mit mindestens einem sichtbaren Eintrag. Noch nicht
-            // implementierte Bereiche (Bestellungen, Lieferscheine, Nachkalkulation,
-            // Abrechnung, Zeiterfassung) werden erst mit ihrer Umsetzung aufgenommen –
-            // die Gruppe „Kaufmännisch“ entsteht dann hier.
+            // implementierte Bereiche (Lieferscheine, Nachkalkulation, Abrechnung,
+            // Zeiterfassung) werden erst mit ihrer Umsetzung aufgenommen.
             $navGroup = static function (string $label, string $links) use ($escape): string {
                 return $links === '' ? '' : '<span class="sidebar-section-label">' . $escape($label) . '</span>' . $links;
             };
@@ -63,6 +62,7 @@ if ($showShell): ?>
                 . $navLink('/work-reports', 'clipboard-check', 'Rapporte', ['workreports.read'])
                 . $navLink('/measurements', 'ruler', 'Aufmaße', ['measurements.read'])
                 . $navLink('/material-requests', 'package', 'Materialanforderungen', ['reports.read'])) ?>
+            <?= $navGroup('Kaufmännisch', $navLink('/purchase-orders', 'shopping-cart', 'Bestellungen', ['purchases.read'])) ?>
 
             <?php $managementLinks = $navLink('/master-data', 'database', 'Stammdaten', ['master_data.read', 'costs.read']) . $navLink('/settings', 'settings', 'Einstellungen', ['settings.manage']); ?>
             <div class="sidebar-management"<?= $managementLinks === '' ? ' hidden' : '' ?>>

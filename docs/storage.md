@@ -14,7 +14,8 @@ Calight trennt strikt zwischen **Quellcode**, **interner Anwendungsdaten** und (
 ├── documents/                   Dokumente und Anhänge         APP_DOCUMENTS_PATH
 │   ├── daily-reports/<bericht>/<anhang>.<ext>   Anhänge von Bautagesberichten
 │   ├── work-reports/<rapport>/<datei>.<ext>     archivierte Rapport-PDFs, Unterschriften, Rückläufe
-│   └── measurements/<aufmaß>/<datei>.pdf        archivierte PDFs abgeschlossener Aufmaße
+│   ├── measurements/<aufmaß>/<datei>.pdf        archivierte PDFs abgeschlossener Aufmaße
+│   └── purchase-orders/<bestellung>/<datei>.<ext>  Bestell-PDFs je Fassung, Belege des Lieferanten
 └── templates/                   benutzerdefinierte Vorlagen   APP_TEMPLATES_PATH (derzeit ungenutzt)
 ```
 

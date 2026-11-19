@@ -110,6 +110,7 @@ Die folgenden Funktionen sind geplant und teilweise noch nicht implementiert.
 | 3.3 | Aufmaße für Angebotsarbeiten (Teilaufmaße, Fortschritt, Korrekturen) | Implementiert |
 | 3.4 | Rapporte für Regiearbeiten (Leistungsnachweis, kaufmännische Bearbeitung, vorbereitete Kundenbestätigung) | Implementiert |
 | 3.2.3 | PDF-Ausgabe für Rapporte, Aufmaße und Bautagesberichte, digitale Kundenunterschrift, Rücklauf und Dokumentenarchiv | Implementiert; externe Ablage und E-Mail-Versand geplant |
+| 3.4.1 | Bestellungen: interne Bestellungen mit Bestell-PDF, extern erfasste Bestellungen, Liefer- und Zahlungsstatus, Lieferantenrechnungen, Ist-Kosten und Kostenverteilung auf Aufträge | Implementiert; E-Mail-Versand geplant |
 | 3.5 | Nachkalkulation und Soll-Ist-Vergleich | Geplant |
 | 3.6 | Abrechnungstracking | Geplant |
 | 4.1 | Ansprechpartnerverwaltung | Geplant |
