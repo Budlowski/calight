@@ -1113,6 +1113,25 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .status-work-submitted { background:#e2edf7; color:#22577c; }
 .status-work-processed { background:#e3f2e7; color:#1e5b31; }
 .status-work-confirmed { background:#f3ecfa; color:#5b3a7a; }
+/* Rapportkopf: Titel behält Vorrang, Aktionen brechen als ganze Buttons um. */
+.work-report-header-actions { flex:0 1 auto; min-width:0; }
+.work-report-header-actions .order-detail-actions { flex-wrap:wrap; justify-content:flex-end; }
+#work-report-detail .order-detail-actions .button { white-space:nowrap; }
+#work-report-detail .order-detail-heading { gap:var(--space-3); }
+#work-report-detail .order-heading-main { flex:1 1 280px; }
+#work-report-detail .order-heading-main h1 { overflow-wrap:normal; }
+.work-report-billing-bar { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:var(--space-2); }
+.work-report-billing-bar:has(.order-detail-actions:empty) { display:none; }
+.work-report-billing-bar .order-detail-actions { flex-wrap:wrap; }
+.work-report-billing .step-section-heading > [data-billing-tools] { flex:0 0 auto; flex-direction:row; flex-wrap:wrap; justify-content:flex-end; }
+.work-report-header-actions .order-detail-actions, .work-report-billing-bar .order-detail-actions { flex:0 1 auto; min-width:0; }
+@media (max-width: 800px) {
+    #work-report-detail .order-heading-main { flex:0 0 auto; }
+    .work-report-header-actions .order-detail-actions, .work-report-billing-bar { justify-content:flex-start; }
+    #work-report-detail .context-menu-panel { left:0; right:auto; max-width:calc(100vw - 32px); }
+    .work-report-billing .step-section-heading { flex-wrap:wrap; }
+    .work-report-billing .step-section-heading > [data-billing-tools] { width:100%; justify-content:flex-start; flex-wrap:wrap; margin-left:0; }
+}
 .work-report-head-grid { grid-template-columns:repeat(3, minmax(0, 1fr)); }
 .work-report-proof h3 { margin:0; font-size:var(--font-base); }
 .work-report-row { display:grid; gap:var(--space-2); align-items:end; padding:var(--space-2); border:1px solid var(--border); border-radius:var(--radius); background:#fff; }

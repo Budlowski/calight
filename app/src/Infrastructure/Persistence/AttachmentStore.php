@@ -28,8 +28,8 @@ final readonly class AttachmentStore
         $relative = $folder . '/' . $id . '.' . $extension;
         $target = $this->absolute($relative);
         $directory = dirname($target);
-        if (!is_dir($directory) && !mkdir($directory, 0770, true) && !is_dir($directory)) {
-            throw new RuntimeException('Ablageverzeichnis für Anhänge konnte nicht angelegt werden.');
+        if (!is_dir($directory) && !@mkdir($directory, 0770, true) && !is_dir($directory)) {
+            throw new RuntimeException('Ablageverzeichnis konnte nicht angelegt werden. Bitte Schreibrechte der Dokumentenablage prüfen (storage:check).');
         }
         if (file_exists($target)) {
             throw new RuntimeException('Anhang existiert bereits.');

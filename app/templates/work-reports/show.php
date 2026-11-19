@@ -16,7 +16,7 @@
                 <h1 data-title>Rapport wird geladen …</h1>
                 <div class="document-status-line" data-status-line></div>
             </div>
-            <div class="measurement-actions">
+            <div class="measurement-actions work-report-header-actions">
                 <div class="order-detail-actions" data-actions></div>
                 <span class="measurement-dirty-hint" data-dirty-hint hidden>Ungespeicherte Änderungen</span>
             </div>
@@ -65,6 +65,10 @@
                 <button class="button button-light button-small" type="button" data-billing-prefill data-icon="copy">Aus Leistungsnachweis übernehmen</button>
                 <button class="button button-light button-small" type="button" data-billing-add data-icon="plus">Freie Position</button>
             </div>
+        </div>
+        <div class="work-report-billing-bar">
+            <span class="measurement-dirty-hint" data-billing-dirty-hint hidden>Ungespeicherte Positionen</span>
+            <div class="order-detail-actions" data-billing-actions></div>
         </div>
         <div class="work-report-catalog" data-catalog-box>
             <input type="search" data-catalog-search placeholder="Artikel oder Lohnkostengruppe aus dem Stamm suchen …" aria-label="Stammartikel suchen" autocomplete="off">

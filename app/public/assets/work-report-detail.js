@@ -45,7 +45,8 @@
   function setDirty(kind, value) {
     if (kind === "proof") proofDirty = value;
     else billingDirty = value;
-    root.querySelector("[data-dirty-hint]").hidden = !(proofDirty || billingDirty);
+    root.querySelector("[data-dirty-hint]").hidden = !proofDirty;
+    root.querySelector("[data-billing-dirty-hint]").hidden = !billingDirty;
   }
 
   // ---------------------------------------------------------------------------
@@ -339,26 +340,36 @@
     ].filter(Boolean).join(" · ");
     root.querySelector("[data-status-line]").innerHTML = `<span class="status-badge status-work-${esc(report.status)}">${STATUS_LABELS[report.status]}</span>${report.confirmationStatus === "confirmed" ? '<span class="status-badge status-work-confirmed">Vom Kunden bestätigt</span>' : ""}<span>${details}</span>`;
 
-    // Alle Aktionen sitzen gemeinsam oben.
+    // Kopf: nur Dokument-, Bestätigungs- und seltene Aktionen. Die kaufmännischen
+    // Aktionen sitzen direkt am Abschnitt „Kaufmännische Bearbeitung“.
+    const menu = (label, icon, items) => items.length
+      ? `<details class="context-menu"><summary class="button button-light" data-icon="${icon}">${label}</summary><div class="context-menu-panel">${items.join("")}</div></details>` : "";
     const actions = [];
+    const more = [];
     if (editableProof()) {
       actions.push('<button class="button button-light" type="button" data-action="save-proof" data-shortcut-save data-icon="save" title="Entwurf speichern (Strg+S)">Entwurf speichern</button>');
       actions.push('<button class="button" type="button" data-action="submit" data-icon="clipboard-check">Einreichen …</button>');
-      actions.push('<button class="button button-danger-light" type="button" data-action="delete" data-icon="trash">Entwurf löschen</button>');
+      more.push('<button type="button" data-action="delete" data-icon="trash">Entwurf löschen</button>');
     }
-    if (editableBilling()) {
-      actions.push('<button class="button button-light" type="button" data-action="save-billing" data-shortcut-save data-icon="save" title="Positionen speichern (Strg+S)">Positionen speichern</button>');
-      actions.push('<button class="button" type="button" data-action="process" data-icon="clipboard-check">Bearbeitung abschließen …</button>');
-    }
-    if (report.canProcess && report.status === "processed") actions.push('<button class="button button-light" type="button" data-action="reopen" data-icon="refresh-cw">Bearbeitung wieder öffnen</button>');
-    actions.push(`<a class="button button-light" href="/api/work-reports/${encodeURIComponent(report.id)}/pdf" data-icon="file-down">${report.status === "draft" ? "PDF-Vorschau" : "PDF herunterladen"}</a>`);
-    if (report.canSign) actions.push(`<a class="button" href="/work-reports/${encodeURIComponent(report.id)}/sign" data-icon="square-pen">Kundenunterschrift</a>`);
-    if (report.canUploadConfirmation) actions.push('<button class="button button-light" type="button" data-action="upload-confirmation" data-icon="file-up">Rücklauf hochladen …</button>');
-    if (report.canUploadConfirmation && !report.confirmationRequestedAt) actions.push('<button class="button button-light" type="button" data-action="request-confirmation" data-icon="clipboard-list">Als versendet markieren</button>');
-    if (report.canConfirm) actions.push('<button class="button button-light" type="button" data-action="confirm" data-icon="square-pen">Manuell dokumentieren …</button>');
-    if (report.canCorrect) actions.push('<button class="button button-light" type="button" data-action="correct" data-icon="copy">Korrektur anlegen</button>');
-    if (report.canAssignOrder) actions.push('<button class="button button-light" type="button" data-action="assign-order" data-icon="clipboard-list">Auftrag zuordnen …</button>');
+    actions.push(`<a class="button button-light" href="/api/work-reports/${encodeURIComponent(report.id)}/pdf" data-icon="file-down">${report.status === "draft" ? "PDF-Vorschau" : "PDF"}</a>`);
+    if (report.canSign) actions.push(`<a class="button" href="/work-reports/${encodeURIComponent(report.id)}/sign" data-icon="square-pen">Unterschrift</a>`);
+    const confirmation = [];
+    if (report.canUploadConfirmation) confirmation.push('<button type="button" data-action="upload-confirmation" data-icon="file-up">Rücklauf hochladen …</button>');
+    if (report.canUploadConfirmation && !report.confirmationRequestedAt) confirmation.push('<button type="button" data-action="request-confirmation" data-icon="clipboard-list">Als versendet markieren</button>');
+    if (report.canConfirm) confirmation.push('<button type="button" data-action="confirm" data-icon="square-pen">Manuell dokumentieren …</button>');
+    actions.push(menu("Bestätigung", "clipboard-check", confirmation));
+    if (report.canCorrect) more.push('<button type="button" data-action="correct" data-icon="copy">Korrekturrapport anlegen</button>');
+    if (report.canAssignOrder) more.push('<button type="button" data-action="assign-order" data-icon="clipboard-list">Auftrag zuordnen …</button>');
+    actions.push(menu("Weitere Aktionen", "menu", more));
     root.querySelector("[data-actions]").innerHTML = actions.join("");
+
+    const billingActions = [];
+    if (editableBilling()) {
+      billingActions.push('<button class="button button-light" type="button" data-action="save-billing" data-shortcut-save data-icon="save" title="Positionen speichern (Strg+S)">Positionen speichern</button>');
+      billingActions.push('<button class="button" type="button" data-action="process" data-icon="clipboard-check">Bearbeitung abschließen …</button>');
+    }
+    if (report.canProcess && report.status === "processed") billingActions.push('<button class="button button-light" type="button" data-action="reopen" data-icon="refresh-cw">Bearbeitung wieder öffnen</button>');
+    root.querySelector("[data-billing-actions]").innerHTML = billingActions.join("");
   }
 
   function render() {
@@ -553,10 +564,12 @@
     },
   };
 
-  root.querySelector("[data-actions]").addEventListener("click", (event) => {
-    const button = event.target.closest("[data-action]");
-    if (button) run(button, handlers[button.dataset.action]);
-  });
+  for (const box of root.querySelectorAll("[data-actions], [data-billing-actions]")) {
+    box.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-action]");
+      if (button) run(button, handlers[button.dataset.action]);
+    });
+  }
 
   window.addEventListener("beforeunload", (event) => {
     if (!proofDirty && !billingDirty) return;

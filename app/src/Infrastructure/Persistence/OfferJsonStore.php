@@ -26,7 +26,7 @@ final readonly class OfferJsonStore
         $this->validator->validate($offer);
 
         $directory = $this->offerDirectory($projectId, $offerId);
-        if (!is_dir($directory) && !mkdir($directory, 0770, true) && !is_dir($directory)) {
+        if (!is_dir($directory) && !@mkdir($directory, 0770, true) && !is_dir($directory)) {
             throw new RuntimeException('Angebotsverzeichnis konnte nicht angelegt werden.');
         }
 
