@@ -230,7 +230,8 @@ final class WorkReportTest extends TestCase
                 'labor' => [['employeeId' => $anna, 'hours' => '1,5', 'laborItemId' => $laborItem]],
                 'materials' => [['quantity' => '2', 'unit' => 'Stk.', 'description' => 'Leuchtmittel']],
             ], $technician);
-            $submitted = $service->submit($standalone['id'], ['version' => $standalone['version']], $technician);
+            // Historischer Rapport: vor der Auftragspflicht ohne Auftrag eingereicht – bleibt gültig.
+            $submitted = $this->legacySubmit($pdo, $service, $standalone, $technician, 'RP2026-0901');
             $this->assertTrue(str_starts_with((string) $submitted['reportNumber'], 'RP'));
             $hash = $submitted['submittedSha256'];
 
@@ -298,8 +299,9 @@ final class WorkReportTest extends TestCase
             ['pdo' => $pdo, 'service' => $service, 'technician' => $technician, 'customer' => $customer, 'anna' => $anna] = $env;
             $draft = $service->create(['customerId' => $customer, 'workDate' => '2026-11-12'], $technician);
             $draft = $this->saveProof($service, $draft, ['description' => 'Bestand', 'labor' => [['employeeId' => $anna, 'hours' => '1']]], $technician);
-            $submitted = $service->submit($draft['id'], ['version' => $draft['version']], $technician);
+            $submitted = $service->submit($draft['id'], ['version' => $draft['version'], 'createOrder' => true], $technician);
             $this->assertSame('', $submitted['workLocation']);
+            $this->assertTrue($submitted['orderId'] !== null, 'Neue Einreichungen immer mit Auftrag.');
 
             // Ohne Einsatzort entspricht die Prüfsumme exakt der bisherigen Bildung (ohne das neue Feld).
             $row = $pdo->query("SELECT * FROM work_reports WHERE id = " . $pdo->quote($submitted['id']))->fetch();
@@ -311,6 +313,157 @@ final class WorkReportTest extends TestCase
                 'materials' => [],
             ];
             $this->assertSame(hash('sha256', json_encode($legacy, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)), $submitted['submittedSha256']);
+        });
+    }
+
+    /**
+     * Simuliert einen vor der Auftragspflicht eingereichten Rapport ohne Auftrag (Bestandsdaten):
+     * gleicher Status, gleiche Prüfsummenbildung wie WorkReportService::submit, aber ohne Auftrag.
+     *
+     * @param array<string,mixed> $draft @param array<string,mixed> $actor @return array<string,mixed>
+     */
+    private function legacySubmit(PDO $pdo, WorkReportService $service, array $draft, array $actor, string $number): array
+    {
+        $repository = new WorkReportRepository($pdo);
+        $row = $repository->find($draft['id']);
+        $hash = (new \ReflectionMethod(WorkReportService::class, 'proofHash'))->invoke($service, $row, $repository->labor($draft['id']), $repository->materials($draft['id']));
+        $pdo->prepare("UPDATE work_reports SET status = 'submitted', report_number = :number, submitted_by_user_id = :user, submitted_at = :at, submitted_sha256 = :hash,
+            version = version + 1, updated_at = :at WHERE id = :id AND status = 'draft' AND order_id IS NULL")
+            ->execute(['number' => $number, 'user' => $actor['id'], 'at' => '2026-11-01T08:00:00Z', 'hash' => $hash, 'id' => $draft['id']]);
+        return $service->detail($draft['id'], $actor);
+    }
+
+    public function testSubmissionRequiresAnOrderAndCanCreateARegieOrder(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['pdo' => $pdo, 'service' => $service, 'office' => $office, 'technician' => $technician, 'colleague' => $colleague,
+                'regie' => $regie, 'orders' => $orders, 'anna' => $anna, 'customer' => $customer] = $env;
+            $count = static fn (): int => (int) $pdo->query('SELECT COUNT(*) FROM orders')->fetchColumn();
+            $proof = ['workLocation' => 'Werk 2', 'description' => 'Spontane Reparatur', 'labor' => [['employeeId' => $anna, 'hours' => '2']]];
+
+            // Entwurf ohne Auftrag bleibt möglich.
+            $draft = $this->saveProof($service, $service->create(['customerId' => $customer, 'workDate' => '2026-11-12'], $technician), $proof, $technician);
+            $this->assertSame(null, $draft['orderId']);
+            $before = $count();
+
+            // Ohne Auswahl keine Einreichung; nichts wird angelegt.
+            $this->assertThrows(OrderValidationException::class, fn () => $service->submit($draft['id'], ['version' => $draft['version']], $technician));
+            // Nicht freigegebene Aufträge bleiben für Monteure gesperrt – auch bei der Einreichung.
+            $this->assertThrows(AccessDeniedException::class, fn () => $service->submit($draft['id'], ['version' => $draft['version'], 'orderId' => $regie['id']], $technician));
+            // Auftrag eines anderen Kunden und abgeschlossene Aufträge sind unzulässig.
+            $other = Uuid::v4();
+            $pdo->prepare("INSERT INTO customers(id,customer_number,customer_type,company_name,created_at,updated_at) VALUES(:id,'K9','company','Fremd','2026-11-12T08:00:00Z','2026-11-12T08:00:00Z')")->execute(['id' => $other]);
+            $foreign = $orders->createRegie(['customerId' => $other, 'title' => 'Fremd', 'orderDate' => '2026-11-12']);
+            $orders->changeStatus($foreign['id'], 'open', 'in_progress');
+            $this->assertThrows(OrderValidationException::class, fn () => $service->submit($draft['id'], ['version' => $draft['version'], 'orderId' => $foreign['id']], $technician));
+            $closed = $orders->createRegie(['customerId' => $customer, 'title' => 'Erledigt', 'orderDate' => '2026-11-12']);
+            $orders->changeStatus($closed['id'], 'open', 'in_progress');
+            $orders->changeStatus($closed['id'], 'in_progress', 'completed');
+            $this->assertThrows(OrderValidationException::class, fn () => $service->submit($draft['id'], ['version' => $draft['version'], 'orderId' => $closed['id']], $office));
+            $this->assertTrue(!in_array($closed['id'], array_column($service->referenceData($office)['orders'], 'id'), true), 'Abgeschlossene Aufträge stehen nicht zur Auswahl.');
+            // Fremder Entwurf: kein Regieauftrag über einen fremden Rapport.
+            $this->assertThrows(AccessDeniedException::class, fn () => $service->submit($draft['id'], ['version' => $draft['version'], 'createOrder' => true], $colleague));
+            $before = $count();
+            $this->assertSame('draft', $service->detail($draft['id'], $office)['status']);
+
+            // Monteur lässt einen Regieauftrag anlegen – ohne allgemeines Auftragsrecht.
+            $this->assertTrue(!RolePermissions::allows('technician', 'orders.write'));
+            $this->assertSame(['orders.write'], AuthorizationPolicy::required(new Request('POST', '/api/orders', [], [], [], '')));
+            $submitted = $service->submit($draft['id'], ['version' => $draft['version'], 'createOrder' => true], $technician);
+            $this->assertSame($before + 1, $count());
+            $this->assertSame('submitted', $submitted['status']);
+            $created = $pdo->query('SELECT * FROM orders WHERE id = ' . $pdo->quote((string) $submitted['orderId']))->fetch();
+            $this->assertSame(['regie', $customer, 'Regiearbeiten – Werk 2', 'open', null, '2026-11-12'],
+                [$created['order_type'], $created['customer_id'], $created['title'], $created['status'], $created['source_offer_id'], $created['order_date']], 'Regieauftrag mit Kunde und Einsatzort, ohne Angebot.');
+            $this->assertSame($created['order_number'], $submitted['createdOrderNumber']);
+            $this->assertTrue($created['order_number'] !== '' && $created['order_number'] !== $regie['orderNumber'], 'Eigene reguläre Auftragsnummer aus dem Nummernkreis.');
+            $this->assertSame(0, (int) $pdo->query("SELECT COUNT(*) FROM order_addenda WHERE order_id = " . $pdo->quote((string) $created['id']))->fetchColumn());
+            $this->assertSame('Regiearbeiten – 13.11.2026', WorkReportService::regieTitle(['work_location' => '', 'work_date' => '2026-11-13']));
+
+            // Prüfsumme enthält den verbindlich zugeordneten Auftrag; Bestätigung bindet daran.
+            $repository = new WorkReportRepository($pdo);
+            $expected = (new \ReflectionMethod(WorkReportService::class, 'proofHash'))->invoke($service, $repository->find($submitted['id']), $repository->labor($submitted['id']), $repository->materials($submitted['id']));
+            $this->assertSame($expected, $submitted['submittedSha256']);
+            $confirmed = $service->confirm($submitted['id'], ['version' => $submitted['version'], 'confirmedByName' => 'Frau Mack', 'method' => 'on_site'], $technician);
+            $this->assertSame([$submitted['submittedSha256'], 'confirmed'], [$confirmed['submittedSha256'], $confirmed['confirmationStatus']]);
+
+            // Wiederholte Einreichung (Doppelklick, zweite Anfrage mit altem Stand): kein zweiter Auftrag.
+            $this->assertThrows(OrderValidationException::class, fn () => $service->submit($draft['id'], ['version' => $draft['version'], 'createOrder' => true], $technician));
+            $this->assertSame($before + 1, $count());
+
+            // Mehrere Rapporte zu einem Regieauftrag; bestehende Zuordnung wird nicht erneut abgefragt.
+            $second = $this->saveProof($service, $service->create(['customerId' => $customer, 'workDate' => '2026-11-13'], $office), $proof, $office);
+            $second = $service->submit($second['id'], ['version' => $second['version'], 'orderId' => $created['id']], $office);
+            $this->assertSame([$created['id'], null], [$second['orderId'], $second['createdOrderNumber']]);
+            $orders->changeStatus($regie['id'], 'open', 'in_progress');
+            $third = $this->saveProof($service, $service->create(['orderId' => $regie['id'], 'workDate' => '2026-11-13'], $technician), $proof, $technician);
+            $third = $service->submit($third['id'], ['version' => $third['version'], 'createOrder' => true], $technician);
+            $this->assertSame([$regie['id'], null], [$third['orderId'], $third['createdOrderNumber']], 'Vorhandene Zuordnung bleibt, kein neuer Auftrag.');
+            $this->assertSame(2, count($service->forOrder($created['id'], $office)));
+            $this->assertSame($before + 1, $count());
+        });
+    }
+
+    public function testSubmissionWithOrderCreationIsAllOrNothing(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['pdo' => $pdo, 'service' => $service, 'technician' => $technician, 'anna' => $anna, 'customer' => $customer] = $env;
+            $count = static fn (): int => (int) $pdo->query('SELECT COUNT(*) FROM orders')->fetchColumn();
+            $draft = $this->saveProof($service, $service->create(['customerId' => $customer, 'workDate' => '2026-11-12'], $technician),
+                ['description' => 'Reparatur', 'labor' => [['employeeId' => $anna, 'hours' => '1']]], $technician);
+            $before = $count();
+            $state = static fn (): array => $pdo->query('SELECT status, order_id, report_number, submitted_sha256, version FROM work_reports WHERE id = ' . $pdo->quote($draft['id']))->fetch();
+            $initial = $state();
+
+            // Auftragsanlage scheitert → Rapport bleibt unverändert Entwurf.
+            $pdo->exec("CREATE TRIGGER test_fail_order BEFORE INSERT ON orders BEGIN SELECT RAISE(ABORT, 'Auftrag fehlgeschlagen'); END");
+            $this->assertThrows(\Throwable::class, fn () => $service->submit($draft['id'], ['version' => $draft['version'], 'createOrder' => true], $technician));
+            $pdo->exec('DROP TRIGGER test_fail_order');
+            $this->assertSame([$initial, $before], [$state(), $count()]);
+
+            // Einreichung scheitert nach der Auftragsanlage → kein verwaister Auftrag, keine Zuordnung.
+            $pdo->exec("CREATE TRIGGER test_fail_submit BEFORE UPDATE OF status ON work_reports WHEN NEW.status = 'submitted' BEGIN SELECT RAISE(ABORT, 'Einreichung fehlgeschlagen'); END");
+            $this->assertThrows(\Throwable::class, fn () => $service->submit($draft['id'], ['version' => $draft['version'], 'createOrder' => true], $technician));
+            $pdo->exec('DROP TRIGGER test_fail_submit');
+            $this->assertSame([$initial, $before], [$state(), $count()]);
+            $this->assertTrue(!$pdo->inTransaction());
+
+            // Danach regulär einreichbar – genau ein Auftrag.
+            $submitted = $service->submit($draft['id'], ['version' => $draft['version'], 'createOrder' => true], $technician);
+            $this->assertSame([$before + 1, 'submitted'], [$count(), $submitted['status']]);
+        });
+    }
+
+    public function testCorrectionsReuseTheOrderAndHistoricReportsStayValid(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['pdo' => $pdo, 'service' => $service, 'office' => $office, 'technician' => $technician, 'orders' => $orders, 'anna' => $anna, 'customer' => $customer] = $env;
+            $count = static fn (): int => (int) $pdo->query('SELECT COUNT(*) FROM orders')->fetchColumn();
+            $proof = ['description' => 'Bestand', 'labor' => [['employeeId' => $anna, 'hours' => '1']]];
+            $historic = $this->legacySubmit($pdo, $service, $this->saveProof($service, $service->create(['customerId' => $customer, 'workDate' => '2026-10-01'], $technician), $proof, $technician), $technician, 'RP2026-0701');
+            $hash = $historic['submittedSha256'];
+            $this->assertSame([null, 'submitted'], [$historic['orderId'], $historic['status']], 'Historische Rapporte ohne Auftrag bleiben gültig.');
+
+            // Korrektur eines historischen Rapports: Auftrag spätestens bei Einreichung.
+            $correction = $service->create(['correctionOf' => $historic['id']], $technician);
+            $this->assertSame(null, $correction['orderId']);
+            $this->assertThrows(OrderValidationException::class, fn () => $service->submit($correction['id'], ['version' => $correction['version']], $technician));
+            // Wird das Original inzwischen zugeordnet, übernimmt die Korrektur diesen Auftrag – kein zweiter Regieauftrag.
+            $regie = $orders->createRegie(['customerId' => $customer, 'title' => 'Bestand', 'orderDate' => '2026-10-01']);
+            $orders->changeStatus($regie['id'], 'open', 'in_progress');
+            $assigned = $service->assignOrder($historic['id'], ['version' => $historic['version'], 'orderId' => $regie['id']], $office);
+            $this->assertSame($hash, $assigned['submittedSha256'], 'Nachträgliche Zuordnung ändert die Prüfsumme nicht.');
+            $before = $count();
+            $submitted = $service->submit($correction['id'], ['version' => $correction['version'], 'createOrder' => true], $technician);
+            $this->assertSame([$regie['id'], null, $before], [$submitted['orderId'], $submitted['createdOrderNumber'], $count()]);
+
+            // Korrektur eines weiterhin unzugeordneten historischen Rapports: Regieauftrag wird angelegt.
+            $other = $this->legacySubmit($pdo, $service, $this->saveProof($service, $service->create(['customerId' => $customer, 'workDate' => '2026-10-02'], $technician), $proof, $technician), $technician, 'RP2026-0702');
+            $fix = $service->create(['correctionOf' => $other['id']], $technician);
+            $fix = $service->submit($fix['id'], ['version' => $fix['version'], 'createOrder' => true], $technician);
+            $this->assertSame($before + 1, $count());
+            $this->assertTrue($fix['orderId'] !== null && $fix['createdOrderNumber'] !== null);
+            $this->assertSame([null, $other['submittedSha256']], [$service->detail($other['id'], $office)['orderId'], $service->detail($other['id'], $office)['submittedSha256']], 'Original bleibt unverändert.');
         });
     }
 
@@ -379,7 +532,7 @@ final class WorkReportTest extends TestCase
             $test([
                 'pdo' => $pdo,
                 'customer' => $customer,
-                'service' => new WorkReportService($pdo, new WorkReportRepository($pdo), new OrderRepository($pdo), $numbers),
+                'service' => new WorkReportService($pdo, new WorkReportRepository($pdo), new OrderRepository($pdo), $numbers, new PriceCalculator(), null, $orders),
                 'orders' => $orders,
                 'regie' => $orders->createRegie(['customerId' => $customer, 'title' => 'Störung Heizung', 'orderDate' => '2026-11-12']),
                 'offerOrder' => $orders->createFromOffer($offerId),

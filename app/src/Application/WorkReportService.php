@@ -26,9 +26,11 @@ use Throwable;
  * Rapporte (Regieberichte): Leistungsnachweis durch den Monteur und davon
  * getrennte kaufmännische Abrechnungspositionen durch das Büro.
  *
- * Ein Rapport gehört zu einem Kunden (Pflicht); Auftrag und damit Projekt sind
- * optional. Das Büro kann einen eigenständigen Rapport nachträglich einem
- * Auftrag desselben Kunden zuordnen, ohne den Leistungsnachweis zu verändern.
+ * Ein Rapport gehört zu einem Kunden (Pflicht). Ein Entwurf darf ohne Auftrag
+ * begonnen werden; spätestens beim Einreichen wird ein Auftrag desselben Kunden
+ * zugeordnet oder ein Regieauftrag angelegt (submit). Historische eingereichte
+ * Rapporte ohne Auftrag bleiben gültig; das Büro kann sie nachträglich zuordnen,
+ * ohne den Leistungsnachweis zu verändern.
  *
  * Der Leistungsnachweis (Kopf, Stunden, Material) ist ab dem Einreichen
  * unveränderlich und per SHA-256 festgeschrieben. Preise und Beträge werden nur
@@ -38,6 +40,8 @@ final readonly class WorkReportService
 {
     public const BILLING_TYPES = ['labor' => 'Arbeitsstunden', 'material' => 'Material', 'travel' => 'Anfahrt/Fahrtkosten', 'external' => 'Fremdleistung', 'flat' => 'Pauschale', 'other' => 'Sonstige Leistung'];
     private const MAX_ROWS = 100;
+    /** Auftragsstatus, denen neue Rapporte zugeordnet werden dürfen (abgeschlossene/abgerechnete sind gesperrt). */
+    public const ASSIGNABLE_ORDER_STATUSES = ['open', 'in_progress'];
     private const MAX_SIGNATURE_BYTES = 600 * 1024;
     public const MAX_EVIDENCE_BYTES = 15 * 1024 * 1024;
     /** Zulässige Rücklaufdokumente, am Inhalt erkannt. */
@@ -50,6 +54,7 @@ final readonly class WorkReportService
         private NumberRangeRepository $numbers,
         private PriceCalculator $prices = new PriceCalculator(),
         private ?AttachmentStore $store = null,
+        private ?OrderService $orderService = null,
     ) {
     }
 
@@ -62,7 +67,8 @@ final readonly class WorkReportService
      */
     public function referenceData(array $actor): array
     {
-        $orders = array_values(array_filter($this->reports->ordersForSelection(), fn (array $order): bool => !$this->isTechnician($actor) || $order['status'] !== 'open'));
+        $orders = array_values(array_filter($this->reports->ordersForSelection(), fn (array $order): bool => in_array($order['status'], self::ASSIGNABLE_ORDER_STATUSES, true)
+            && (!$this->isTechnician($actor) || $order['status'] !== 'open')));
         return [
             'customers' => array_map(static fn (array $row): array => ['id' => $row['id'], 'customerNumber' => $row['customer_number'], 'name' => $row['name']], $this->reports->activeCustomers()),
             'orders' => array_map(static fn (array $order): array => ['id' => $order['id'], 'orderNumber' => $order['order_number'], 'title' => $order['title'], 'customerId' => $order['customer_id']], $orders),
@@ -93,7 +99,7 @@ final readonly class WorkReportService
 
     /**
      * Legt einen Entwurf an – für einen Kunden mit optionalem Auftrag oder als Korrektur eines
-     * eingereichten Rapports. Es wird nie automatisch ein Auftrag angelegt.
+     * eingereichten Rapports. Ein Auftrag wird hier nie angelegt (erst bei Bedarf in submit).
      *
      * @param array<string,mixed> $input customerId und/oder orderId | correctionOf, workDate
      * @param array<string,mixed> $actor
@@ -247,15 +253,28 @@ final readonly class WorkReportService
     }
 
     /**
-     * Reicht den Leistungsnachweis verbindlich ein: Nummer vergeben, Stand per Prüfsumme festschreiben.
+     * Reicht den Leistungsnachweis verbindlich ein: Auftrag festlegen, Nummer vergeben,
+     * Stand per Prüfsumme festschreiben.
      *
-     * @param array<string,mixed> $input version
+     * Auftrag (Pflicht für neue Einreichungen):
+     * - bereits zugeordnet → prüfen (Kunde, Status, Zugriff), nicht erneut abfragen;
+     * - Korrektur eines Rapports mit Auftrag → dessen Auftrag;
+     * - sonst orderId (bestehender Auftrag des Rapportkunden) oder createOrder = true
+     *   (Regieauftrag über OrderService::createRegie – auch für Monteure, aber nur hier und
+     *   nur für den eigenen bearbeitbaren Entwurf und dessen Kunden).
+     * Zuordnung, Auftragsanlage und Einreichung laufen in einer Transaktion (BEGIN IMMEDIATE +
+     * Versionsprüfung): entweder alles oder nichts, keine doppelten Aufträge bei Wiederholung.
+     * Die Auftragszuordnung erfolgt vor der Prüfsumme; der eingereichte Stand bleibt danach
+     * unverändert. PDFs werden erst beim Abruf archiviert (keine Dateioperation hier).
+     *
+     * @param array<string,mixed> $input version, orderId?, createOrder?
      * @param array<string,mixed> $actor
      * @return array<string,mixed>
      */
     public function submit(string $id, array $input, array $actor): array
     {
         $version = $this->version($input);
+        $createdOrder = null;
         $this->pdo->exec('BEGIN IMMEDIATE');
         try {
             $report = $this->editableDraft($id, $actor);
@@ -275,6 +294,16 @@ final readonly class WorkReportService
                 throw new OrderValidationException($errors);
             }
             $now = Clock::now();
+            if ($report['order_id'] === null) {
+                [$orderId, $createdOrder] = $this->orderForSubmission($report, $input, $actor);
+                if (!$this->reports->assignOrder($id, $version, $orderId, (string) $actor['id'], $now)) {
+                    throw new OrderValidationException(['Der Rapport wurde zwischenzeitlich geändert oder eingereicht. Bitte neu laden.']);
+                }
+                $version++;
+                $report = $this->reports->find($id) ?? throw new OrderValidationException(['Rapport wurde nicht gefunden.']);
+            } else {
+                $this->assignableOrder((string) $report['order_id'], $report, $actor);
+            }
             $number = $this->numbers->allocate('work_report', 'work_report', $id, Uuid::v4(), new DateTimeImmutable());
             if (!$this->reports->submit($id, $version, $number, (string) $actor['id'], $now, $this->proofHash($report, $labor, $materials))) {
                 throw new OrderValidationException(['Der Rapport wurde zwischenzeitlich geändert oder eingereicht. Bitte neu laden.']);
@@ -286,7 +315,77 @@ final readonly class WorkReportService
             }
             throw $exception;
         }
-        return $this->detail($id, $actor);
+        $result = $this->detail($id, $actor);
+        $result['createdOrderNumber'] = $createdOrder['orderNumber'] ?? null;
+        return $result;
+    }
+
+    /**
+     * Auftrag für die Einreichung eines Entwurfs ohne Auftrag (innerhalb der Transaktion).
+     *
+     * @param array<string,mixed> $report
+     * @param array<string,mixed> $input
+     * @param array<string,mixed> $actor
+     * @return array{0:string,1:array<string,mixed>|null} Auftrags-ID, neu angelegter Auftrag
+     */
+    private function orderForSubmission(array $report, array $input, array $actor): array
+    {
+        // Korrektur: Auftrag des korrigierten Rapports übernehmen, nie einen zweiten anlegen.
+        if ($report['correction_of_id'] !== null) {
+            $original = $this->reports->find((string) $report['correction_of_id']);
+            if ($original !== null && $original['order_id'] !== null) {
+                return [(string) $this->assignableOrder((string) $original['order_id'], $report, $actor, false)['id'], null];
+            }
+        }
+        $orderId = trim((string) ($input['orderId'] ?? ''));
+        if ($orderId !== '') {
+            return [(string) $this->assignableOrder($orderId, $report, $actor)['id'], null];
+        }
+        if (($input['createOrder'] ?? false) === true || ($input['createOrder'] ?? '') === '1') {
+            if ($this->orderService === null) {
+                throw new \LogicException('OrderService fehlt.');
+            }
+            if (!$this->customerIsActive((string) $report['customer_id'])) {
+                throw new OrderValidationException(['Für archivierte Kunden kann kein Regieauftrag angelegt werden.']);
+            }
+            // Bewusst ohne orders.write: auf genau diesen Entwurf und dessen Kunden beschränkt.
+            $order = $this->orderService->createRegie([
+                'customerId' => (string) $report['customer_id'],
+                'title' => self::regieTitle($report),
+                'description' => 'Automatisch beim Einreichen eines Rapports angelegt.',
+                'orderDate' => (string) $report['work_date'],
+            ]);
+            return [(string) $order['id'], $order];
+        }
+        throw new OrderValidationException(['Bitte einen Auftrag auswählen oder einen Regieauftrag anlegen lassen.']);
+    }
+
+    /** Standardbezeichnung eines automatisch angelegten Regieauftrags. @param array<string,mixed> $report */
+    public static function regieTitle(array $report): string
+    {
+        $location = trim((string) ($report['work_location'] ?? ''));
+        $suffix = $location !== '' ? $location : (new DateTimeImmutable((string) $report['work_date']))->format('d.m.Y');
+        return mb_substr('Regiearbeiten – ' . $suffix, 0, 200);
+    }
+
+    /**
+     * Prüft einen Auftrag für die Zuordnung eines Rapports: vorhanden, gleicher Kunde,
+     * nicht abgeschlossen/abgerechnet, für Monteure freigegeben (ohne Rechteausweitung).
+     *
+     * @param array<string,mixed> $report
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
+    private function assignableOrder(string $orderId, array $report, array $actor, bool $checkAccess = true): array
+    {
+        $order = $checkAccess ? $this->accessibleOrder($orderId, $actor) : ($this->orders->find($orderId) ?? throw new OrderValidationException(['Auftrag wurde nicht gefunden.']));
+        if ((string) $order['customer_id'] !== (string) $report['customer_id']) {
+            throw new OrderValidationException(['Der Auftrag gehört nicht zum Kunden des Rapports.']);
+        }
+        if (!in_array($order['status'], self::ASSIGNABLE_ORDER_STATUSES, true)) {
+            throw new OrderValidationException(['Der Auftrag ' . $order['order_number'] . ' ist abgeschlossen oder abgerechnet und nimmt keine neuen Rapporte auf.']);
+        }
+        return $order;
     }
 
     /**

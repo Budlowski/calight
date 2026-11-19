@@ -96,7 +96,7 @@ final readonly class Bootstrap
         $dailyReportService=new DailyReportService($this->pdo,$dailyReportRepository,$employeeRepository,new OrderRepository($this->pdo),$documentStore);
         $measurementRepository=new MeasurementRepository($this->pdo);
         $measurementService=new MeasurementService($this->pdo,$measurementRepository,new OrderRepository($this->pdo),$numberRanges);
-        $workReportService=new WorkReportService($this->pdo,new WorkReportRepository($this->pdo),new OrderRepository($this->pdo),$numberRanges,$priceCalculator,$documentStore);
+        $workReportService=new WorkReportService($this->pdo,new WorkReportRepository($this->pdo),new OrderRepository($this->pdo),$numberRanges,$priceCalculator,$documentStore,$orderService);
         $materialRequestService=new MaterialRequestService(new MaterialRequestRepository($this->pdo),new OrderRepository($this->pdo),$dailyReportRepository);
 
         return new Application(

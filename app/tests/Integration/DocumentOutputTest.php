@@ -76,7 +76,8 @@ final class DocumentOutputTest extends TestCase
             $this->assertTrue(str_contains($preview['pdf'], '(ENTWURF) Tj'), 'Entwürfe nur als Vorschau mit Wasserzeichen.');
             $this->assertSame(0, (int) $pdo->query('SELECT COUNT(*) FROM generated_documents')->fetchColumn(), 'Entwürfe werden nicht archiviert.');
 
-            $submitted = $service->submit($draft['id'], ['version' => $draft['version']], $technician);
+            // Historischer Rapport ohne Auftrag (vor der Auftragspflicht eingereicht).
+            $submitted = $this->legacySubmit($pdo, $service, $draft, $technician, 'RP2026-0801');
             $billed = $service->saveBilling($submitted['id'], ['version' => $submitted['version'], 'items' => [
                 ['type' => 'labor', 'description' => 'Monteurstunden', 'quantity' => '4.5', 'unit' => 'h', 'unitPrice' => '87.65', 'costItemId' => ''],
             ]], $office);
@@ -179,7 +180,7 @@ final class DocumentOutputTest extends TestCase
                 'labor' => [['employeeId' => $env['anna'], 'hours' => '5']],
                 'materials' => [['quantity' => '12', 'unit' => 'Stk.', 'description' => 'Leuchtmittel E27']],
             ], $technician);
-            $submitted = $service->submit($draft['id'], ['version' => $draft['version']], $technician);
+            $submitted = $service->submit($draft['id'], ['version' => $draft['version'], 'createOrder' => true], $technician);
             $pdf = $pdfService->pdf($submitted['id'], $office)['pdf'];
             $this->assertTrue(str_contains($pdf, '(Werk 2, Produktionshalle 4) Tj'), 'Einsatzort im PDF.');
             $this->assertTrue(str_contains($pdf, '(Einsatzort / Objekt) Tj'));
@@ -217,6 +218,23 @@ final class DocumentOutputTest extends TestCase
             $this->assertTrue(str_contains($signedPdf, '(Frau Mack) Tj') && str_contains($signedPdf, '/Subtype /Image'));
             $this->assertTrue(str_contains($signedPdf, (string) $submitted['submittedSha256']) && str_contains($signedPdf, '(Werk 2, Produktionshalle 4) Tj'));
         });
+    }
+
+    /**
+     * Simuliert einen vor der Auftragspflicht eingereichten Rapport ohne Auftrag (Bestandsdaten):
+     * gleicher Status, gleiche Prüfsummenbildung wie WorkReportService::submit, aber ohne Auftrag.
+     *
+     * @param array<string,mixed> $draft @param array<string,mixed> $actor @return array<string,mixed>
+     */
+    private function legacySubmit(PDO $pdo, WorkReportService $service, array $draft, array $actor, string $number): array
+    {
+        $repository = new WorkReportRepository($pdo);
+        $row = $repository->find($draft['id']);
+        $hash = (new \ReflectionMethod(WorkReportService::class, 'proofHash'))->invoke($service, $row, $repository->labor($draft['id']), $repository->materials($draft['id']));
+        $pdo->prepare("UPDATE work_reports SET status = 'submitted', report_number = :number, submitted_by_user_id = :user, submitted_at = :at, submitted_sha256 = :hash,
+            version = version + 1, updated_at = :at WHERE id = :id AND status = 'draft' AND order_id IS NULL")
+            ->execute(['number' => $number, 'user' => $actor['id'], 'at' => '2026-11-01T08:00:00Z', 'hash' => $hash, 'id' => $draft['id']]);
+        return $service->detail($draft['id'], $actor);
     }
 
     private function submitted(WorkReportService $service, array $target, array $actor, string $employee): array
@@ -260,7 +278,7 @@ final class DocumentOutputTest extends TestCase
             $offerService = new OfferService($pdo, new ProjectRepository($pdo), $offers, new OfferJsonStore($tmp . '/offers', $validator), new OfferCalculator(new PriceCalculator()), $numbers);
             $orders = new OrderService($pdo, new OrderRepository($pdo), $offers, $offerService, $numbers);
             $store = new AttachmentStore($tmp . '/documents');
-            $service = new WorkReportService($pdo, new WorkReportRepository($pdo), new OrderRepository($pdo), $numbers, new PriceCalculator(), $store);
+            $service = new WorkReportService($pdo, new WorkReportRepository($pdo), new OrderRepository($pdo), $numbers, new PriceCalculator(), $store, $orders);
             $test([
                 'pdo' => $pdo,
                 'tmp' => $tmp,

@@ -468,6 +468,40 @@
     return CalightModal.open({ title, content: box, actions: [{ label: "Abbrechen", value: false }, { label: confirmLabel, value: true, primary: true }], initialFocus: "[data-modal-primary]" });
   }
 
+  /**
+   * Auftrag für die Einreichung festlegen (Entwurf ohne Auftrag): bestehenden Auftrag des
+   * Rapportkunden wählen oder einen Regieauftrag anlegen lassen. Der Server prüft beides.
+   */
+  async function chooseOrderForSubmission() {
+    const candidates = reference.orders.filter((order) => order.customerId === report.customerId);
+    const form = document.createElement("form");
+    form.className = "form-stack";
+    form.innerHTML = `
+      <p>Jeder eingereichte Rapport gehört zu einem Auftrag von ${esc(report.customerName)}.</p>
+      <label class="check-inline"><input type="radio" name="mode" value="existing"${candidates.length ? " checked" : " disabled"}> <span>Bestehenden Auftrag auswählen${candidates.length ? "" : " (keiner verfügbar)"}</span></label>
+      <label data-existing${candidates.length ? "" : " hidden"}><span class="field-label">Auftrag</span>
+        <select name="orderId"><option value="">Auftrag auswählen …</option>${candidates
+          .map((order) => `<option value="${esc(order.id)}">${esc(order.orderNumber)} · ${esc(order.title)}</option>`).join("")}</select></label>
+      <label class="check-inline"><input type="radio" name="mode" value="create"${candidates.length ? "" : " checked"}> <span>Neuen Regieauftrag anlegen</span></label>
+      <small class="muted" data-create-hint>Calight legt einen Regieauftrag „Regiearbeiten – ${esc(report.workLocation || format.date(report.workDate))}“ mit eigener Auftragsnummer an und reicht den Rapport damit ein. Die Bezeichnung kann später im Auftrag geändert werden.</small>`;
+    const select = form.elements.orderId;
+    if (candidates.length) Calight.searchableSelect(select, { placeholder: "Auftragsnummer oder Bezeichnung …" });
+    const sync = () => {
+      form.querySelector("[data-existing]").hidden = form.elements.mode.value !== "existing" || !candidates.length;
+    };
+    form.addEventListener("change", sync);
+    sync();
+    const ok = await CalightModal.open({ title: "Auftrag für Rapport festlegen", content: form,
+      actions: [{ label: "Abbrechen", value: false }, { label: "Einreichen", value: true, primary: true, validate: true }], initialFocus: '[name="mode"]:checked' });
+    if (!ok) return null;
+    if (form.elements.mode.value !== "existing") return { createOrder: true };
+    if (!select.value) {
+      notify(message, "Bitte einen Auftrag auswählen oder „Neuen Regieauftrag anlegen“ wählen.", "warning");
+      return null;
+    }
+    return { orderId: select.value };
+  }
+
   const handlers = {
     "save-proof": () => saveProof(),
     "save-billing": () => saveBilling(),
@@ -478,8 +512,17 @@
         <p>Mit dem Einreichen wird der Leistungsnachweis verbindlich gespeichert und erhält eine Rapportnummer. Danach sind keine Änderungen mehr möglich; Korrekturen erfolgen über einen neuen Korrekturrapport.</p>
         ${summaryList([["Leistungsdatum", format.date(report.workDate)], ["Arbeitsstunden", `${display(exact.fromUnits(hours, 3), 2)} h`], ["Materialzeilen", String(report.materials.length)]])}`, "Verbindlich einreichen");
       if (!ok) return;
-      adopt(await api(`/api/work-reports/${encodeURIComponent(report.id)}/submit`, { method: "POST", body: { version: report.version } }));
-      notify(message, `Rapport ${report.reportNumber} wurde eingereicht.`, "success");
+      const body = { version: report.version };
+      if (!report.orderId) {
+        const choice = await chooseOrderForSubmission();
+        if (!choice) return;
+        Object.assign(body, choice);
+      }
+      const result = await api(`/api/work-reports/${encodeURIComponent(report.id)}/submit`, { method: "POST", body });
+      adopt(result);
+      notify(message, result.createdOrderNumber
+        ? `Rapport ${report.reportNumber} eingereicht. Regieauftrag ${result.createdOrderNumber} wurde angelegt.`
+        : `Rapport ${report.reportNumber} wurde eingereicht${report.orderNumber ? ` (Auftrag ${report.orderNumber})` : ""}.`, "success");
     },
     async delete() {
       const ok = await CalightModal.confirm({ title: "Entwurf löschen", content: "Der Rapportentwurf wird endgültig gelöscht.", confirmLabel: "Löschen", danger: true });

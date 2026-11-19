@@ -23,7 +23,7 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 | 3.2.1.x | Einheitliche Übersichts- und Detailseiten; serverseitige Pagination, Sortierung und URL-basierter Listenstatus | Implementiert (`0022`) |
 | 3.2.3 | Gemeinsamer Briefbogen, PDFs für Rapporte, Aufmaße und Bautagesberichte, digitale Kundenunterschrift, Rücklauf und Dokumentarchiv | Implementiert (`0027`); externe Ablage (NAS/SMB), E-Mail-Versand und Kundenportal geplant |
 | 3.3 | Aufmaße für vereinbarte Angebotsleistungen | Implementiert (`0024`), PDF seit Phase 3.2.3 |
-| 3.4 | Rapporte für Regieleistungen, auch eigenständig ohne Auftrag | Implementiert (`0025`, `0026`), PDF und Kundenbestätigung seit Phase 3.2.3, Einsatzort / Objekt (`0028`) |
+| 3.4 | Rapporte für Regieleistungen; Entwurf ohne Auftrag, Auftrag spätestens beim Einreichen | Implementiert (`0025`, `0026`), PDF und Kundenbestätigung seit Phase 3.2.3, Einsatzort / Objekt (`0028`), Auftragspflicht beim Einreichen (ohne Migration) |
 | 3.4.1 | Bestellungen mit PDF-Ausgabe (schlanke Materialbeschaffung) | Implementiert (`0029`); Versand per E-Mail und Bestellungen am Auftragsdetail geplant |
 | 3.4.1.1 | Bestellverwaltung als Vorgang: AB, Lieferungen, Belege, Zahlungen, Lieferantenanschrift | Implementiert (`0030`); Phase 3.4.1 damit abgeschlossen |
 | 3.4.2 | Zentrale Dokumentenübersicht und geschäftsbezogene Anhänge | Implementiert (`0031`) |
@@ -317,7 +317,7 @@ Aufmaße dokumentieren die **abrechenbaren ausgeführten Mengen vereinbarter Lei
 
 ## Phase 3.4 – Rapporte
 
-Rapporte dokumentieren **abrechenbare Regieleistungen** und entsprechen in ihrer Abrechnungsfunktion dem Aufmaß. Ein Rapport ist ein **eigenständiger Leistungsnachweis**: Pflicht ist nur der Kunde. Angebot, Projekt und Auftrag sind nicht erforderlich; ein Auftrag kann bei der Anlage gewählt oder später vom Büro zugeordnet werden. Es gibt keine Zuordnung zu Angebotspositionen.
+Rapporte dokumentieren **abrechenbare Regieleistungen** und entsprechen in ihrer Abrechnungsfunktion dem Aufmaß. Ein Rapport ist ein **eigenständiger Leistungsnachweis**: Für den Entwurf ist nur der Kunde Pflicht. **Ein Rapport darf ohne Auftrag begonnen werden. Spätestens bei der Einreichung muss ein Auftrag zugeordnet oder automatisch angelegt werden.** Historische, vor dieser Regel eingereichte Rapporte ohne Auftrag bleiben gültig und können vom Büro nachträglich zugeordnet werden. Es gibt keine Zuordnung zu Angebotspositionen.
 
 **Umgesetzt (Phase 3.4, Migration `0025`):**
 
@@ -325,7 +325,8 @@ Rapporte dokumentieren **abrechenbare Regieleistungen** und entsprechen in ihrer
 
 - **Status:** Entwurf → Eingereicht → Bearbeitet. Beim Einreichen erhält der Rapport seine Nummer (Nummernkreis „Rapporte“, `RP`), der Leistungsnachweis wird gesperrt und per SHA-256 festgeschrieben. „Bearbeitet“ schreibt den Nettobetrag fest und kann vom Büro wieder geöffnet werden; der Leistungsnachweis bleibt davon unberührt.
 
-- **Eigenständige Rapporte (Migration `0026`):** Monteure legen vor Ort für einen bestehenden Kunden einen Rapport an, ohne dass vorher ein Auftrag existieren muss; es wird nie automatisch ein Auftrag erzeugt. Wird ein Auftrag gewählt, muss er zum Kunden gehören. Das Büro kann einen eigenständigen Rapport nachträglich einem Auftrag desselben Kunden zuordnen (einmalig, mit Benutzer und Zeitpunkt); Leistungsnachweis, Prüfsumme, Kundenbestätigung und Abrechnungspositionen bleiben dabei unverändert. Die Übersicht filtert nach Kunde und „mit/ohne Auftrag“.
+- **Eigenständige Rapporte (Migration `0026`):** Monteure legen vor Ort für einen bestehenden Kunden einen Rapport an, ohne dass vorher ein Auftrag existieren muss; beim Anlegen wird kein Auftrag erzeugt. Wird ein Auftrag gewählt, muss er zum Kunden gehören.
+- **Auftragspflicht beim Einreichen:** Hat der Entwurf keinen Auftrag, fragt der Dialog „Auftrag für Rapport festlegen“: bestehenden Auftrag des Rapportkunden wählen (Suche über Nummer und Bezeichnung; nur offene oder laufende Aufträge, für Monteure nur freigegebene) oder einen neuen Regieauftrag anlegen lassen. Der Regieauftrag entsteht über die vorhandene Regieauftragslogik (reguläre Nummer, Status „offen“, Kunde, Bezeichnung „Regiearbeiten – Einsatzort“ bzw. „– Leistungsdatum“, Auftragsdatum = Leistungsdatum, ohne Angebot oder Positionen). Monteure dürfen das nur für ihren eigenen Entwurf; ein allgemeines Recht zur Auftragsanlage entsteht nicht. Zuordnung, Auftragsanlage und Einreichung sind eine Transaktion mit Versionsprüfung; wiederholte oder parallele Anfragen erzeugen keinen zweiten Auftrag. Der Auftrag ist Teil der Prüfsumme und wird vor ihr gesetzt; PDFs werden erst beim Abruf archiviert. Korrekturen übernehmen den Auftrag des Originals (auch einen nachträglich zugeordneten). Das Büro kann einen eigenständigen Rapport nachträglich einem Auftrag desselben Kunden zuordnen (einmalig, mit Benutzer und Zeitpunkt); Leistungsnachweis, Prüfsumme, Kundenbestätigung und Abrechnungspositionen bleiben dabei unverändert. Die Übersicht filtert nach Kunde und „mit/ohne Auftrag“.
 
 - **Korrekturen:** neuer Korrekturrapport mit Verweis auf das Original und dessen Stand als Ausgangspunkt; das Original und eine vorhandene Kundenbestätigung bleiben unverändert.
 

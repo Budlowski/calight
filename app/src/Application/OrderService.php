@@ -90,12 +90,14 @@ final readonly class OrderService
   if($project!==null){$p=$this->row('projects',$project);if(!$p||($p['customer_id']??null)!==$customer)throw new OrderValidationException(['Das Projekt gehört nicht zum ausgewählten Kunden.']);}
   if($title==='')throw new OrderValidationException(['Die Auftragsbezeichnung ist erforderlich.']);
   $parsed=DateTimeImmutable::createFromFormat('!Y-m-d',$date);if($parsed===false||$parsed->format('Y-m-d')!==$date)throw new OrderValidationException(['Das Auftragsdatum ist ungültig.']);
-  $id=Uuid::v4();$now=Clock::now();$this->pdo->exec('BEGIN IMMEDIATE');
+  $id=Uuid::v4();$now=Clock::now();
+  // Innerhalb einer laufenden Transaktion (z. B. Rapport-Einreichung) nicht selbst beginnen/abschließen: alles oder nichts.
+  $own=!$this->pdo->inTransaction();if($own)$this->pdo->exec('BEGIN IMMEDIATE');
   try{
    $number=$this->numbers->allocate('order','order',$id,Uuid::v4(),new DateTimeImmutable());
    $this->orders->insert(['id'=>$id,'order_number'=>$number,'customer_id'=>$customer,'project_id'=>$project,'source_offer_id'=>$source,'order_type'=>$type,'title'=>$title,'description'=>trim((string)($input['description']??'')),'order_date'=>$date,'status'=>'open','basis_json'=>$basis,'basis_sha256'=>$basis!==null?hash('sha256',$basis):null,'original_net_total'=>$this->basisNetTotal($basis),'created_at'=>$now,'updated_at'=>$now]);
-   $this->orders->addHistory($id,null,'open',Uuid::v4(),$now);$this->pdo->commit();return$this->detail($id);
-  }catch(Throwable $e){if($this->pdo->inTransaction())$this->pdo->rollBack();if(str_contains(strtolower($e->getMessage()),'unique'))throw new OrderValidationException(['Aus dieser Angebotsrevision wurde bereits ein Auftrag erstellt.']);throw$e;}
+   $this->orders->addHistory($id,null,'open',Uuid::v4(),$now);if($own)$this->pdo->commit();return$this->detail($id);
+  }catch(Throwable $e){if($own&&$this->pdo->inTransaction())$this->pdo->rollBack();if(str_contains(strtolower($e->getMessage()),'unique'))throw new OrderValidationException(['Aus dieser Angebotsrevision wurde bereits ein Auftrag erstellt.']);throw$e;}
  }
  public function changeStatus(string $id,string $expected,string $next):array{$allowed=['open'=>'in_progress','in_progress'=>'completed','completed'=>'invoiced'];if(($allowed[$expected]??null)!==$next)throw new OrderValidationException(['Dieser Statuswechsel ist nicht zulässig.']);$this->pdo->exec('BEGIN IMMEDIATE');try{if(!$this->orders->changeStatus($id,$expected,$next,Uuid::v4(),Clock::now()))throw new OrderValidationException(['Der Auftragsstatus wurde zwischenzeitlich geändert.']);$this->pdo->commit();return$this->detail($id);}catch(Throwable $e){if($this->pdo->inTransaction())$this->pdo->rollBack();throw$e;}}
  /** @return list<array<string,mixed>> */ private function changeOrders(string $orderId):array{$items=[];foreach($this->orders->changeOrders($orderId) as $row){$loaded=$this->offerService->loadDraft((string)$row['id']);$items[]=['id'=>$row['id'],'title'=>$loaded['offer']['title'],'offerNumber'=>$row['effective_offer_number'],'revision'=>(int)$row['revision_number'],'status'=>$row['status'],'netTotal'=>$loaded['offer']['calculation']['netTotal']??'0.00','accepted'=>$row['accepted_revision_id']!==null,'acceptedRevision'=>$row['accepted_revision_number']!==null?(int)$row['accepted_revision_number']:null,'acceptedNetTotal'=>$row['accepted_net_total'],'acceptedAt'=>$row['accepted_at']];}return$items;}
