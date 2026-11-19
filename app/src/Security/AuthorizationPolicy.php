@@ -28,6 +28,8 @@ final class AuthorizationPolicy
         // Materialanforderungen: Erfassen wie Berichte, Erledigen/Wiedereröffnen nur durch Büro/Admin.
         if (preg_match('#^/api/material-requests/[^/]+/status$#', $path) === 1) return ['reports.read', 'materials.manage'];
         if (str_starts_with($path, '/material-requests') || str_starts_with($path, '/api/material-requests')) return [$write ? 'reports.write' : 'reports.read'];
+        // Dokumente und Anhänge: Grundrecht documents.read; Schreib- und Objektrechte prüft DocumentService.
+        if ($path === '/documents' || str_starts_with($path, '/api/documents') || str_starts_with($path, '/api/attachments')) return ['documents.read'];
         // Bestellungen: Verwaltung durch Büro/Admin; Belege, Zahlungen, Ist-Kosten und Kostenverteilung zusätzlich nur mit costs.read.
         if (preg_match('#^/api/purchase-orders/[^/]+/(invoices|payments|actual-cost|allocations)$#', $path) === 1) return ['purchases.write', 'costs.read'];
         if (str_starts_with($path, '/purchase-orders') || str_starts_with($path, '/api/purchase-orders')) return [$write ? 'purchases.write' : 'purchases.read'];

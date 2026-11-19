@@ -18,6 +18,9 @@ use App\Http\DailyReportController;
 use App\Http\MaterialRequestController;
 use App\Http\MeasurementController;
 use App\Http\PurchaseOrderController;
+use App\Http\DocumentController;
+use App\Infrastructure\Persistence\AttachmentRepository;
+use App\Infrastructure\Persistence\DocumentRepository;
 use App\Http\WorkReportController;
 use App\Domain\Offer\OfferCalculator;
 use App\Http\Router;
@@ -117,6 +120,7 @@ final readonly class Bootstrap
             new MeasurementController($view,$measurementService,new MeasurementPdfService($measurementService,$measurementRepository,$documentSettingsRepository,$documentArchive)),
             new WorkReportController($view,$workReportService,new WorkReportPdfService($workReportService,$documentSettingsRepository,$documentArchive),$documentSettingsRepository),
             new PurchaseOrderController($view,new PurchaseOrderService($this->pdo,new PurchaseOrderRepository($this->pdo),$numberRanges,$documentStore,new PurchaseOrderPdfService($documentSettingsRepository)),$masterDataService),
+            new DocumentController($view,new DocumentService($this->pdo,new AttachmentRepository($this->pdo),new DocumentRepository($this->pdo),$documentStore)),
         );
     }
 }

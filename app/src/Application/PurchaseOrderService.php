@@ -133,7 +133,7 @@ final readonly class PurchaseOrderService
         $write = $this->can($actor, 'purchases.write');
         $placed = $this->placed($row);
         $items = $this->orders->items($id);
-        $documents = array_values(array_filter($this->orders->documents($id), static fn (array $document): bool => $costs || $document['kind'] !== 'invoice'));
+        $documents = array_values(array_filter($this->orders->documents($id), static fn (array $document): bool => $costs || !in_array($document['kind'], ['invoice', 'own_order'], true)));
         $documentNames = array_column($documents, 'original_name', 'id');
         // Verweis auf den Beleg eines Vorgangs (ohne Kostenrecht keine Rechnungsbelege).
         $documentRef = static fn (?string $documentId): ?array => $documentId !== null && isset($documentNames[$documentId])
@@ -718,7 +718,8 @@ final readonly class PurchaseOrderService
         $this->require($actor, 'purchases.read');
         $this->find($id);
         $document = $this->orders->document($id, $documentId) ?? throw new OrderValidationException(['Das Dokument wurde nicht gefunden.']);
-        if ($document['kind'] === 'invoice') {
+        // Rechnungsbelege und ausgegebene Bestell-PDFs (mit Preisen) nur mit Kostenrecht – wie pdf().
+        if (in_array($document['kind'], ['invoice', 'own_order'], true)) {
             $this->require($actor, 'costs.read');
         }
         return [

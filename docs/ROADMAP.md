@@ -26,8 +26,9 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 | 3.4 | Rapporte für Regieleistungen, auch eigenständig ohne Auftrag | Implementiert (`0025`, `0026`), PDF und Kundenbestätigung seit Phase 3.2.3, Einsatzort / Objekt (`0028`) |
 | 3.4.1 | Bestellungen mit PDF-Ausgabe (schlanke Materialbeschaffung) | Implementiert (`0029`); Versand per E-Mail und Bestellungen am Auftragsdetail geplant |
 | 3.4.1.1 | Bestellverwaltung als Vorgang: AB, Lieferungen, Belege, Zahlungen, Lieferantenanschrift | Implementiert (`0030`); Phase 3.4.1 damit abgeschlossen |
-| 3.4.2 | Lieferscheine mit PDF-Ausgabe (Liefernachweise) | Geplant |
-| 3.4.3 | Mitarbeiter-Zeiterfassung (übergreifende Arbeitszeiten) | Geplant |
+| 3.4.2 | Zentrale Dokumentenübersicht und geschäftsbezogene Anhänge | Implementiert (`0031`) |
+| 3.4.3 | Lieferscheine mit PDF-Ausgabe (Liefernachweise) | Geplant |
+| 3.4.4 | Mitarbeiter-Zeiterfassung (übergreifende Arbeitszeiten) | Geplant |
 | 3.5 | Nachkalkulation und Soll-Ist-Vergleich | Geplant |
 | 3.6 | Abrechnungstracking, ohne Rechnungsstellung | Geplant |
 | 4.1 | Ansprechpartnerverwaltung | Geplant |
@@ -390,7 +391,28 @@ Bestellungen sind **an Lieferanten gerichtete Beschaffungsdokumente**, keine Rec
 
 - Bestehende Materialbedarfslisten erhalten und bei Bedarf als Ausgangspunkt nutzen; keine doppelte Material- oder Preislogik schaffen.
 
-## Phase 3.4.2 – Lieferscheine und Liefernachweise (geplant)
+## Phase 3.4.2 – Zentrale Dokumentenübersicht und geschäftsbezogene Anhänge (implementiert, Migration `0031`)
+
+**Grundsatz:** Calight ist **kein Dokumentenmanagementsystem** und kein allgemeiner Datei- oder Projektdateimanager. Es gibt keine Ordner, Tags, Volltextsuche, Versionierung, Freigabe-Workflows, öffentliche Links oder DMS-Anbindung.
+
+**Architektur:**
+- Vorhandene Fachdokumente bleiben unverändert in ihren Modulen und Ablagen (Angebots-PDFs, Bestell-PDFs und Lieferantenbelege, Rapport-PDFs und Bestätigungsnachweise, Aufmaß-PDFs, Bautagesbericht-PDFs und -Anhänge). Die Übersicht ist eine **Leseprojektion** (`DocumentService`, `DocumentRepository`) und verlinkt auf die bestehenden, rechtegeprüften Download-Routen. Keine Kopien, keine Verschiebung, keine zweite Archivierung.
+- Neu sind nur **allgemeine Anhänge** (`attachments`) mit Zuordnungen (`attachment_links`) zu Kunde, Ansprechpartner, Projekt, Angebot und Auftrag. Eine Datei wird einmal gespeichert (`APP_DOCUMENTS_PATH/attachments/JJJJ/MM/<uuid>.<ext>`), Typ am Inhalt geprüft (PDF, Bilder), höchstens 15 MB.
+- Kontext: Dokumente erscheinen direkt beim zugeordneten Objekt und indirekt bei dessen Kunde/Projekt/Auftrag (z. B. Rapport-PDF beim Auftrag), je Liste nur einmal.
+
+**Oberfläche:**
+- „Allgemein → Dokumente“: reine Lese- und Downloadübersicht (Suche, Dokumentart, Sortierung, Seiten, Tabelle/Karten). Kein Hochladen, Bearbeiten oder Löschen.
+- Bereich „Dokumente“ bei Kunde, Projekt, Angebot und Auftrag: zugehörige Dokumente, „Dokument hochladen“ (Datei, optional Titel/Beschreibung; beim Kunden optional zusätzlich ein Ansprechpartner) und Entfernen eigener Anhänge.
+
+**Rechte:**
+- Übersicht und Dokumentbereiche setzen `documents.read` voraus (Büro/Admin). Techniker sehen ihre Dokumente weiterhin nur in den Fachmodulen.
+- Fachdokumente: Rechte des Fachmoduls (z. B. `offers.read`, `workreports.read`); Lieferantenrechnungen und ausgegebene Bestell-PDFs (mit Preisen) zusätzlich `costs.read`.
+- Allgemeine Anhänge: sichtbar nur, wenn der Benutzer **jedes** zugeordnete Objekt lesen darf (keine Rechteausweitung durch Mehrfachzuordnung). Hochladen/Zuordnen erfordert Schreibrecht auf jedes Ziel; Entfernen einer Zuordnung Schreibrecht auf dieses Objekt. Mit der letzten Zuordnung wird der Anhang samt Datei gelöscht; Fachdokumente sind über diesen Weg nie löschbar.
+- Zuordnungen auf nicht mehr vorhandene Objekte werden ignoriert.
+
+**Bewusst offen:** Filter nach Kunde/Projekt/Auftrag in der zentralen Übersicht nur über die Suche (Objektseiten filtern direkt); serverseitige SQL-Pagination der Projektion (derzeit Zusammenführung im Server, ausreichend für überschaubare Mengen); Upload-Ereignisse im fachlichen Verlauf der Objekte. Lieferscheine (Phase 3.4.3) werden als weitere Quelle der Projektion ergänzt.
+
+## Phase 3.4.3 – Lieferscheine und Liefernachweise (geplant)
 
 Lieferscheine dokumentieren **an Kunden oder Baustellen tatsächlich übergebene Materialien beziehungsweise Gegenstände**. Sie sind unabhängig von Bestellungen, Bautagesberichten, Aufmaßen und Rapporten.
 
@@ -408,7 +430,7 @@ Lieferscheine dokumentieren **an Kunden oder Baustellen tatsächlich übergebene
 
 - Kein automatischer Materialverbrauch, keine Lagerbuchung und keine Gleichsetzung gelieferter Mengen mit aufgemessenen oder abrechenbaren Mengen.
 
-## Phase 3.4.3 – Mitarbeiter-Zeiterfassung (geplant)
+## Phase 3.4.4 – Mitarbeiter-Zeiterfassung (geplant)
 
 Die Zeiterfassung dokumentiert die **tatsächlich geleistete Arbeitszeit eines Mitarbeiters über den gesamten Arbeitstag**. Sie ergänzt die bestehenden Bautagesberichte und Rapporte, ohne deren fachliche Aufgabe zu ersetzen. Die vorhandenen Zeiteinträge in Bautagesberichten (Phase 3.2) sind **keine vollständige Mitarbeiter-Zeiterfassung**.
 

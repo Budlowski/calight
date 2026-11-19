@@ -57,7 +57,8 @@ if ($showShell): ?>
                 . $navLink('/customers', 'users', 'Kunden', ['customers.read'])
                 . $navLink('/projects', 'folder-kanban', 'Projekte', ['projects.read'])
                 . $navLink('/offers', 'file-text', 'Angebote', ['offers.read'])
-                . $navLink('/orders', 'clipboard-list', 'Aufträge', ['orders.read'])) ?>
+                . $navLink('/orders', 'clipboard-list', 'Aufträge', ['orders.read'])
+                . $navLink('/documents', 'files', 'Dokumente', ['documents.read'])) ?>
             <?= $navGroup('Ausführung', $navLink('/daily-reports', 'calendar-days', 'Bautagesberichte', ['reports.read'])
                 . $navLink('/work-reports', 'clipboard-check', 'Rapporte', ['workreports.read'])
                 . $navLink('/measurements', 'ruler', 'Aufmaße', ['measurements.read'])

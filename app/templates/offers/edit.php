@@ -31,6 +31,7 @@ $documentName=$isChangeOrder?'Nachtrag':'Angebot';
             <div class="form-actions"><button class="button" type="submit" data-icon="save">In Artikelstamm speichern</button><button class="button button-light" type="button" data-dialog-close>Abbrechen</button></div>
         </form>
     </dialog>
+<?php $documentTarget = ['offer', (string) $offer['id']]; $documentWritePermission = 'offers.write'; require dirname(__DIR__) . '/partials/document-section.php'; ?>
 </div>
 <script src="/assets/offer-search.js?v=<?= $escape((string)filemtime(dirname(__DIR__,2).'/public/assets/offer-search.js')) ?>" defer></script>
 <script src="/assets/offer-status.js?v=<?= $escape((string)filemtime(dirname(__DIR__,2).'/public/assets/offer-status.js')) ?>" defer></script>

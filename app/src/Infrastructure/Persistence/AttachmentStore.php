@@ -21,8 +21,9 @@ final readonly class AttachmentStore
     /** Übernimmt eine (hochgeladene) Datei und liefert den relativen Speicherpfad. */
     public function store(string $sourcePath, string $folder, string $id, string $extension): string
     {
-        // Erlaubt: "<bereich>/<uuid>" bzw. "<bereich>/<uuid>/<uuid>", z. B. daily-reports/<bericht>/<anhang>.
-        if (preg_match('/^[a-z0-9-]+(\/[a-f0-9-]{36})?\/[a-f0-9-]{36}$/D', $folder . '/' . $id) !== 1 || preg_match('/^[a-z0-9]{1,5}$/D', $extension) !== 1) {
+        // Erlaubt: "<bereich>/<uuid>" bzw. "<bereich>/<uuid>/<uuid>", z. B. daily-reports/<bericht>/<anhang>,
+        // sowie allgemeine Anhänge "attachments/<JJJJ>/<MM>/<uuid>" (Phase 3.4.2).
+        if (preg_match('/^([a-z0-9-]+(\/[a-f0-9-]{36})?|attachments\/\d{4}\/(0[1-9]|1[0-2]))\/[a-f0-9-]{36}$/D', $folder . '/' . $id) !== 1 || preg_match('/^[a-z0-9]{1,5}$/D', $extension) !== 1) {
             throw new RuntimeException('Ungültiger Speicherort für den Anhang.');
         }
         $relative = $folder . '/' . $id . '.' . $extension;
@@ -72,7 +73,7 @@ final readonly class AttachmentStore
     {
         if ($relative === '' || str_contains($relative, '..') || str_starts_with($relative, '/')
             || str_contains($relative, '\\') || str_contains($relative, "\0")
-            || preg_match('#^[a-z0-9-]+(/[a-f0-9-]{36}){1,2}\.[a-z0-9]{1,5}$#D', $relative) !== 1) {
+            || preg_match('#^([a-z0-9-]+(/[a-f0-9-]{36}){1,2}|attachments/\d{4}/(0[1-9]|1[0-2])/[a-f0-9-]{36})\.[a-z0-9]{1,5}$#D', $relative) !== 1) {
             throw new RuntimeException('Ungültiger Anhangspfad.');
         }
         $path = rtrim($this->basePath, '/') . '/' . $relative;

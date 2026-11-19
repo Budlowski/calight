@@ -68,6 +68,8 @@ Reine Icon-Buttons brauchen `aria-label` und `title`.
 - Leere Listen zeigen einen Text statt einer leeren Tabelle.
 - Auf dem Smartphone steht die Suche über die volle Breite, Filter stehen zweispaltig.
 
+- **Dokumente:** Die zentrale Seite „Dokumente“ ist nur lesend (keine Upload- oder Löschaktionen). Hochladen geschieht im Bereich „Dokumente“ des Geschäftsobjekts (`templates/partials/document-section.php`, `document-section.js`); kein Ordner- oder Baumlayout.
+
 ## Status und Meldungen
 
 Status-Badges (`.status-badge`) nutzen eine gemeinsame Palette (`--status-*` in `app.css`) und immer eine Textbezeichnung, nie nur Farbe:

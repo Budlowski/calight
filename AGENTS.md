@@ -277,7 +277,13 @@ Keine zweite Nummernlogik in einem Controller oder Frontend anlegen.
 - Ausgegebene PDFs (`kind = own_order`) und Belege von Vorgängen nie überschreiben oder löschen.
 - Rechte: `purchases.read`/`purchases.write`; Beträge, Preise, Belege und Zahlungen zusätzlich `costs.read` (serverseitig gefiltert). Dateien unter `APP_DOCUMENTS_PATH/purchase-orders/<bestellung>/`.
 
-### 4.16 Fachliche Abgrenzung späterer Module
+### 4.16 Dokumente und Anhänge (Phase 3.4.2)
+
+- Calight ist kein DMS. Fachdokumente bleiben in ihren Modulen; `DocumentService` liefert nur eine Leseprojektion mit Links auf die Download-Routen der Module. Keine Kopien, keine Verschiebung bestehender Dateien.
+- Allgemeine Anhänge: `attachments` + `attachment_links` (Kunde, Ansprechpartner, Projekt, Angebot, Auftrag); Datei einmal unter `attachments/JJJJ/MM/<uuid>.<ext>`.
+- Rechte: `documents.read` für Übersicht und Dokumentbereiche; je Quelle zusätzlich das Leserecht des Fachmoduls (Lieferantenrechnungen und Bestell-PDFs `costs.read`). Anhänge nur sichtbar, wenn **alle** zugeordneten Objekte lesbar sind; Schreiben erfordert Schreibrecht auf jedes Ziel. Neue Dokumentquellen (z. B. Lieferscheine) als weitere Methode in `DocumentRepository`/`DocumentService` ergänzen.
+
+### 4.17 Fachliche Abgrenzung späterer Module
 
 Folgende Punkte sind Zielbild, soweit nicht durch aktuelle Migrationen/Code implementiert:
 

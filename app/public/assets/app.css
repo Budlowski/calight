@@ -96,6 +96,7 @@ textarea { min-height: 58px; resize: vertical; }
 .icon-users { --icon-url: url('/assets/icons/lucide/users.svg'); }
 .icon-folder-kanban { --icon-url: url('/assets/icons/lucide/folder-kanban.svg'); }
 .icon-file-text { --icon-url: url('/assets/icons/lucide/file-text.svg'); }
+.icon-files { --icon-url: url('/assets/icons/lucide/files.svg'); }
 .icon-square-pen { --icon-url: url('/assets/icons/lucide/square-pen.svg'); }
 .icon-clipboard-list { --icon-url: url('/assets/icons/lucide/clipboard-list.svg'); }
 .icon-calendar-days { --icon-url: url('/assets/icons/lucide/calendar-days.svg'); }
@@ -1332,3 +1333,15 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 .master-table .cell-actions { width: 110px; }
 .master-table .cell-actions .icon-button { vertical-align: middle; }
 .master-category-indent { padding-left: calc(var(--depth, 0) * 18px); }
+
+/* Dokumente (Phase 3.4.2): zentrale Übersicht und Bereich bei Geschäftsobjekten. */
+.document-title { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-weight: 650; overflow-wrap: anywhere; }
+.overview-table .document-cell-title { width: 280px; }
+.overview-table .document-cell-objects { width: 300px; font-weight: 400; }
+.document-section { margin-top: var(--space-3); }
+.document-list { display: grid; margin: 0; padding: 0; list-style: none; border: 1px solid var(--border); border-radius: var(--radius); }
+.document-list-item { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.document-list-item:last-child { border-bottom: 0; }
+.document-list-main { display: grid; gap: 2px; min-width: 0; }
+.document-list-main small { font-size: var(--font-small); }
+.document-section .empty-state { padding: var(--space-1) 0; text-align: left; }

@@ -81,5 +81,6 @@ $projectUrl = '/projects/' . rawurlencode($project['id']);
             </form>
         </template>
     <?php endif; ?>
+<?php $documentTarget = ['project', (string) $project['id']]; $documentWritePermission = 'projects.write'; require dirname(__DIR__) . '/partials/document-section.php'; ?>
 </div>
 <script src="/assets/project-detail.js?v=<?= $escape((string) filemtime(dirname(__DIR__, 2) . '/public/assets/project-detail.js')) ?>" defer></script>

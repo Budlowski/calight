@@ -118,6 +118,7 @@ $money=static function(?string $value):string{
     </section>
 
     <section class="card order-history-card"><div class="section-heading"><div><h2>Statusverlauf</h2><span class="muted">Neuester Eintrag zuerst</span></div></div><div class="order-status-history"><?php foreach($order['history'] as $history): ?><div class="order-status-entry"><span class="status-badge status-<?= $escape($history['new_status']) ?>"><?= $escape($labels[$history['new_status']]??$history['new_status']) ?></span><span><?= $history['previous_status']===null?'Auftrag angelegt':$escape(($labels[$history['previous_status']]??$history['previous_status']).' → '.($labels[$history['new_status']]??$history['new_status'])) ?></span><time datetime="<?= $escape($history['changed_at']) ?>"><?= $escape((new DateTimeImmutable($history['changed_at']))->format('d.m.Y H:i')) ?></time></div><?php endforeach; ?></div></section>
+<?php $documentTarget = ['order', (string) $order['id']]; $documentWritePermission = 'orders.write'; require dirname(__DIR__) . '/partials/document-section.php'; ?>
 </div>
 <script src="/assets/material-requests.js?v=<?= $escape((string)filemtime(dirname(__DIR__,2).'/public/assets/material-requests.js')) ?>" defer></script>
 <script src="/assets/measurements.js?v=<?= $escape((string)filemtime(dirname(__DIR__,2).'/public/assets/measurements.js')) ?>" defer></script>

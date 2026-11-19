@@ -25,8 +25,10 @@ use App\Http\DailyReportController;
 use App\Http\MaterialRequestController;
 use App\Http\MeasurementController;
 use App\Http\PurchaseOrderController;
+use App\Http\DocumentController;
 use App\Http\WorkReportController;
 use App\Domain\Order\OrderValidationException;
+use App\Domain\Document\DocumentValidationException;
 use App\Domain\DocumentLockException;
 use App\Infrastructure\Persistence\OfferConflictException;
 use App\Infrastructure\Persistence\OfferRepository;
@@ -64,6 +66,7 @@ final readonly class Application
         private MeasurementController $measurementController,
         private WorkReportController $workReportController,
         private PurchaseOrderController $purchaseOrderController,
+        private DocumentController $documentController,
     ) {
         $this->registerRoutes();
     }
@@ -95,6 +98,8 @@ final readonly class Application
             return Response::json(['error' => 'Validierung fehlgeschlagen.', 'details' => $exception->errors], 422);
         } catch (OrderValidationException $exception) {
             return Response::json(['error'=>'Validierung fehlgeschlagen.','details'=>$exception->errors],422);
+        } catch (DocumentValidationException $exception) {
+            return Response::json(['error' => 'Validierung fehlgeschlagen.', 'details' => $exception->errors], 422);
         } catch (CsrfException $exception) {
             return new Response('Sicherheitsprüfung fehlgeschlagen.', 419, ['Content-Type' => 'text/plain; charset=utf-8']);
         } catch (Throwable $exception) {
@@ -118,6 +123,7 @@ final readonly class Application
         $this->measurementController->register($this->router);
         $this->workReportController->register($this->router);
         $this->purchaseOrderController->register($this->router);
+        $this->documentController->register($this->router);
 
         $this->router->add('GET', '/', fn (): Response => Session::user() === null
             ? Response::redirect('/login')
