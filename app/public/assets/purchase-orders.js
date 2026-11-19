@@ -1,18 +1,125 @@
-// Bestellungen: zentrale Übersicht und Anlegen (neue interne Bestellung, externe Bestellung aufnehmen).
+// Bestellungen: Übersicht, Anlegen (neue Bestellung, externe Bestellung aufnehmen) und
+// gemeinsame Helfer für die Detailseite (Statusanzeige, Lieferanten-Schnellanlage, Uploads).
 (() => {
   "use strict";
 
   const { esc, api, format, notify } = Calight;
   const href = (order) => `/purchase-orders/${encodeURIComponent(order.id)}`;
   const badge = (kind, value, label) => `<span class="status-badge status-po-${kind}-${esc(value)}">${esc(label)}</span>`;
-  const statusBadges = (order) => [
-    order.origin === "external" ? '<span class="status-badge status-po-origin">Extern</span>' : "",
-    order.status !== "ordered" ? badge("status", order.status, order.statusLabel) : "",
+  const originBadge = (order) => (order.origin === "external" ? '<span class="status-badge status-po-origin">Extern</span>' : "");
+  // Drei getrennte Status: Bestellung, Lieferung, Zahlung. Liefer-/Zahlungsstatus erst nach dem Bestellen.
+  const statusBadges = (order, { prefix = false } = {}) => [
+    badge("status", order.status, order.statusLabel),
+    order.status === "draft" && !order.placed ? "" : badge("delivery", order.deliveryStatus, prefix ? `Lieferung: ${order.deliveryLabel}` : order.deliveryLabel),
+    order.status === "draft" && !order.placed ? "" : badge("payment", order.paymentStatus, prefix ? `Zahlung: ${order.paymentLabel}` : order.paymentLabel),
   ].join("");
   const jobLabel = (order) => (order.orderId ? `${order.jobNumber} · ${order.jobTitle}` : "Ohne Auftrag");
-  const money = (value) => (value === null || value === undefined ? "–" : format.money(value));
+  const money = (value) => (value === null || value === undefined || value === "" ? "–" : format.money(value));
+  const today = () => {
+    const now = new Date();
+    return new Date(now - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  };
+  const supplierLabel = (supplier) => (supplier.number ? `${supplier.number} · ${supplier.name}` : supplier.name);
 
-  globalThis.CalightPurchaseOrders = Object.freeze({ href, badge, statusBadges, jobLabel });
+  /** Fehlertext aus einer API-Antwort (gleiches Format wie Calight.api). */
+  const errorText = (result, status) => (Array.isArray(result.details) ? result.details.join(" ") : "") || result.error || `Anfrage fehlgeschlagen (HTTP ${status}).`;
+
+  /** Vorgang mit optionaler Datei als multipart/form-data senden. */
+  async function postForm(path, fields, file, csrf) {
+    const data = new FormData();
+    for (const [key, value] of Object.entries(fields)) {
+      if (value !== undefined && value !== null) data.append(key, typeof value === "boolean" ? (value ? "1" : "0") : String(value));
+    }
+    if (file) data.append("file", file);
+    const response = await fetch(path, { method: "POST", credentials: "same-origin", headers: { "X-CSRF-Token": csrf, Accept: "application/json" }, body: data });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(errorText(result, response.status));
+    return result.data;
+  }
+
+  /**
+   * Lieferantenauswahl mit Schnellanlage im selben Dialog: Die Suche bleibt erhalten; „Neuen
+   * Lieferanten anlegen“ öffnet einen kleinen Bereich (Name Pflicht, Rest optional). Nach dem
+   * Speichern wird der neue Lieferant ausgewählt. Vorhandene Lieferanten werden nie geändert.
+   */
+  function supplierPicker(select, suppliers, { onCreated = null } = {}) {
+    const picker = Calight.searchableSelect(select, { placeholder: "Lieferantennummer oder Name eingeben …" });
+    const label = select.closest("label");
+    const panel = document.createElement("div");
+    panel.className = "purchase-supplier-create";
+    panel.innerHTML = `
+      <button class="button button-light button-small" type="button" data-supplier-toggle data-icon="plus" aria-expanded="false">Neuen Lieferanten anlegen</button>
+      <fieldset class="purchase-supplier-fields" data-supplier-fields hidden>
+        <legend>Neuer Lieferant</legend>
+        <div class="dialog-form-grid">
+          <label class="span-all"><span class="field-label">Name <span aria-hidden="true">*</span></span><input data-supplier-field="name" maxlength="200" autocomplete="off"></label>
+          <label><span class="field-label">Straße</span><input data-supplier-field="street" maxlength="200" autocomplete="off"></label>
+          <label><span class="field-label">Hausnummer</span><input data-supplier-field="houseNumber" maxlength="30" autocomplete="off"></label>
+          <label><span class="field-label">PLZ</span><input data-supplier-field="postalCode" maxlength="20" autocomplete="off"></label>
+          <label><span class="field-label">Ort</span><input data-supplier-field="city" maxlength="120" autocomplete="off"></label>
+          <label><span class="field-label">Land</span><input data-supplier-field="country" maxlength="100" autocomplete="off"></label>
+          <label><span class="field-label">Unsere Kundennummer</span><input data-supplier-field="customerNumber" maxlength="100" autocomplete="off"></label>
+          <label class="span-all"><span class="field-label">Kontakt (optional)</span><input data-supplier-field="contact" maxlength="2000" autocomplete="off" placeholder="Telefon, E-Mail, Ansprechpartner"></label>
+        </div>
+        <p class="field-error" data-supplier-error hidden></p>
+        <div class="form-actions">
+          <button class="button button-light button-small" type="button" data-supplier-cancel>Abbrechen</button>
+          <button class="button button-small" type="button" data-supplier-save data-icon="save">Lieferant speichern</button>
+        </div>
+      </fieldset>`;
+    (label || select).after(panel);
+    const fields = panel.querySelector("[data-supplier-fields]");
+    const toggle = panel.querySelector("[data-supplier-toggle]");
+    const error = panel.querySelector("[data-supplier-error]");
+    const show = (open) => {
+      fields.hidden = !open;
+      toggle.hidden = open;
+      toggle.setAttribute("aria-expanded", String(open));
+      error.hidden = true;
+      if (open) {
+        // Bereits getippten Suchtext als Namen vorschlagen.
+        const typed = label?.querySelector(".suggest-select input")?.value.trim() || "";
+        const name = panel.querySelector('[data-supplier-field="name"]');
+        if (!name.value && !select.value) name.value = typed;
+        name.focus();
+      } else {
+        toggle.focus();
+      }
+    };
+    toggle.addEventListener("click", () => show(true));
+    panel.querySelector("[data-supplier-cancel]").addEventListener("click", () => show(false));
+    panel.querySelector("[data-supplier-save]").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      const body = Object.fromEntries([...panel.querySelectorAll("[data-supplier-field]")].map((input) => [input.dataset.supplierField, input.value.trim()]));
+      if (!body.name) {
+        error.textContent = "Bitte einen Namen angeben.";
+        error.hidden = false;
+        panel.querySelector('[data-supplier-field="name"]').focus();
+        return;
+      }
+      button.disabled = true;
+      try {
+        const supplier = await api("/api/purchase-orders/suppliers", { method: "POST", body });
+        const entry = { id: supplier.id, number: supplier.supplierNumber, name: supplier.name };
+        suppliers.push(entry);
+        select.add(new Option(supplierLabel(entry), entry.id));
+        select.value = entry.id;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        picker?.refresh();
+        for (const input of panel.querySelectorAll("[data-supplier-field]")) input.value = "";
+        show(false);
+        onCreated?.(entry);
+      } catch (exception) {
+        error.textContent = exception.message;
+        error.hidden = false;
+      } finally {
+        button.disabled = false;
+      }
+    });
+    return picker;
+  }
+
+  globalThis.CalightPurchaseOrders = Object.freeze({ href, badge, originBadge, statusBadges, jobLabel, money, today, supplierLabel, postForm, supplierPicker });
 
   const root = document.querySelector("#purchase-orders-app");
   if (!root) return;
@@ -21,37 +128,44 @@
   const canCosts = root.dataset.canCosts === "1";
   const supplierFilter = root.querySelector("[data-supplier-filter]");
   const orderFilter = root.querySelector("[data-order-filter]");
-  let reference = { suppliers: [], orders: [], materialRequests: [] };
+  let reference = { suppliers: [], orders: [] };
+
+  // Bestellwert mit aktuell bestätigtem Wert darunter, wenn er abweicht (spart eine Spalte).
+  const orderedValue = (order) => {
+    const confirmed = order.confirmedNetTotal !== null && order.confirmedNetTotal !== undefined && order.confirmedNetTotal !== order.expectedNetTotal
+      ? `<small class="purchase-confirmed-value">bestätigt ${money(order.confirmedNetTotal)}</small>` : "";
+    return `${money(order.expectedNetTotal)}${confirmed}`;
+  };
+  const rowClass = (order) => (order.status === "cancelled" ? " purchase-cancelled" : "");
 
   const renderCard = (order) => `
-    <article class="overview-card" tabindex="0" data-href="${href(order)}">
-      <div class="management-card-head"><span class="service-number">${esc(order.orderNumber)}</span><span class="management-card-badges">${statusBadges(order)}</span></div>
+    <article class="overview-card${rowClass(order)}" tabindex="0" data-href="${href(order)}">
+      <div class="management-card-head"><span class="service-number">${esc(order.orderNumber)}</span><span class="management-card-badges">${originBadge(order)}</span></div>
       <div class="overview-card-title" title="${esc(order.supplierName)}">${esc(order.supplierName)}</div>
       <div class="overview-card-meta">
         <span>${esc(jobLabel(order))}</span>
         <span>${order.orderDate ? format.date(order.orderDate) : "Noch nicht bestellt"}</span>
         ${order.externalReference ? `<span>Ref. ${esc(order.externalReference)}</span>` : ""}
-        ${canCosts ? `<span>Erwartet ${money(order.expectedNetTotal)} · Ist ${money(order.actualNetTotal)}</span>` : ""}
+        ${canCosts ? `<span>Bestellt ${money(order.expectedNetTotal)}${order.confirmedNetTotal ? ` · bestätigt ${money(order.confirmedNetTotal)}` : ""} · Ist ${money(order.actualNetTotal)}</span>` : ""}
       </div>
-      <div class="management-card-badges">${badge("delivery", order.deliveryStatus, order.deliveryLabel)}${badge("payment", order.paymentStatus, order.paymentLabel)}</div>
+      <div class="management-card-badges">${statusBadges(order)}</div>
     </article>`;
 
   const renderTable = (items, header) => `
     <thead><tr>
       ${header("number", "Bestellnummer", "cell-number")}${header("supplier", "Lieferant", "cell-text")}${header("date", "Datum", "cell-date")}
       ${header("order", "Auftrag", "cell-number")}
-      ${canCosts ? `${header("expected", "Erwartet netto", "cell-money")}${header("actual", "Ist netto", "cell-money")}` : ""}
-      <th class="cell-status">Lieferung</th><th class="cell-status">Zahlung</th>
+      <th class="cell-status">Status</th>
+      ${canCosts ? `${header("expected", "Bestellwert netto", "cell-money")}${header("actual", "Ist netto", "cell-money")}` : ""}
     </tr></thead>
     <tbody>${items.map((order) => `
-      <tr tabindex="0" data-href="${href(order)}">
-        <td class="cell-number">${esc(order.orderNumber)} ${statusBadges(order)}</td>
+      <tr tabindex="0" data-href="${href(order)}" class="${rowClass(order).trim()}">
+        <td class="cell-number">${esc(order.orderNumber)} ${originBadge(order)}</td>
         <td class="cell-text" title="${esc(order.supplierName)}">${esc(order.supplierName)}${order.externalReference ? `<small class="muted"> · ${esc(order.externalReference)}</small>` : ""}</td>
-        <td class="cell-date">${order.orderDate ? format.date(order.orderDate) : '<span class="muted">Entwurf</span>'}</td>
+        <td class="cell-date">${order.orderDate ? format.date(order.orderDate) : '<span class="muted">–</span>'}</td>
         <td class="cell-number" title="${esc(jobLabel(order))}">${order.orderId ? esc(order.jobNumber) : '<span class="muted">–</span>'}</td>
-        ${canCosts ? `<td class="cell-money">${money(order.expectedNetTotal)}</td><td class="cell-money">${money(order.actualNetTotal)}</td>` : ""}
-        <td class="cell-status">${badge("delivery", order.deliveryStatus, order.deliveryLabel)}</td>
-        <td class="cell-status">${badge("payment", order.paymentStatus, order.paymentLabel)}</td>
+        <td class="cell-status"><span class="purchase-status-stack">${statusBadges(order)}</span></td>
+        ${canCosts ? `<td class="cell-money">${orderedValue(order)}</td><td class="cell-money">${money(order.actualNetTotal)}</td>` : ""}
       </tr>`).join("")}</tbody>`;
 
   const sorts = {
@@ -62,8 +176,9 @@
     order: { label: "Auftrag", dir: "asc" },
   };
   if (canCosts) {
-    sorts.expected = { label: "Erwarteter Betrag", type: "number", dir: "desc" };
-    sorts.actual = { label: "Tatsächlicher Betrag", type: "number", dir: "desc" };
+    sorts.expected = { label: "Bestellwert", type: "number", dir: "desc" };
+    sorts.confirmed = { label: "Bestätigter Wert", type: "number", dir: "desc" };
+    sorts.actual = { label: "Tatsächliche Kosten", type: "number", dir: "desc" };
   }
 
   const list = CalightListView.createListPage({
@@ -93,12 +208,8 @@
     renderCard,
   });
 
-  const supplierOptions = () => reference.suppliers.map((supplier) => `<option value="${esc(supplier.id)}">${esc(supplier.number ? `${supplier.number} · ${supplier.name}` : supplier.name)}</option>`).join("");
+  const supplierOptions = () => reference.suppliers.map((supplier) => `<option value="${esc(supplier.id)}">${esc(supplierLabel(supplier))}</option>`).join("");
   const orderOptions = () => reference.orders.map((order) => `<option value="${esc(order.id)}">${esc(order.orderNumber)} · ${esc(order.title)}</option>`).join("");
-  const today = () => {
-    const now = new Date();
-    return new Date(now - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-  };
 
   /** Anlegen: getrennte Dialoge für neue (interne) und extern bereits ausgelöste Bestellungen. */
   function newOrder(external) {
@@ -108,16 +219,19 @@
     form.innerHTML = `
       <label><span class="field-label">Lieferant <span aria-hidden="true">*</span></span>
         <select name="supplierId" required><option value="">Lieferant auswählen …</option>${supplierOptions()}</select></label>
-      ${external ? `<div class="form-grid">
-        <label><span class="field-label">Externe Bestellnummer (optional)</span><input name="externalReference" maxlength="100" autocomplete="off"></label>
+      ${external ? `<div class="dialog-form-grid">
+        <label><span class="field-label">Externe Bestellnummer (optional)</span><input name="externalReference" maxlength="100" autocomplete="off" placeholder="z. B. Bestellnr. des Webshops"></label>
         <label><span class="field-label">Bestelldatum</span><input name="orderDate" type="date" value="${today()}"></label>
         ${canCosts ? '<label><span class="field-label">Bestellwert netto (optional)</span><input name="expectedNetTotal" inputmode="decimal" placeholder="0,00"></label>' : ""}
-        <label><span class="field-label">Bestätigung als Datei (optional)</span><input name="file" type="file" accept="application/pdf,image/*"></label>
+        <label${canCosts ? "" : ' class="span-all"'}><span class="field-label">Bestellung oder Bestätigung (optional)</span><input name="file" type="file" accept="application/pdf,image/*"></label>
       </div>` : ""}
       <label><span class="field-label">Auftrag (optional)</span>
         <select name="orderId"><option value="">Ohne Auftrag</option>${orderOptions()}</select></label>
+      ${external ? "" : '<p class="muted">Positionen und Lieferanschrift erfassen Sie anschließend auf der Bestellseite.</p>'}
       <p class="field-error" data-dialog-error hidden></p>`;
-    Calight.searchableSelect(form.elements.supplierId, { placeholder: "Lieferantennummer oder Name eingeben …" });
+    supplierPicker(form.elements.supplierId, reference.suppliers, {
+      onCreated: () => { supplierFilter.innerHTML = '<option value="">Alle Lieferanten</option>' + supplierOptions(); },
+    });
     Calight.searchableSelect(form.elements.orderId, { placeholder: "Auftragsnummer oder Bezeichnung …" });
 
     Calight.createDialog({
@@ -127,6 +241,7 @@
       discardMessage: "Das Anlegen abbrechen?",
       initialFocus: ".suggest-select input",
       submit: async () => {
+        if (!form.elements.supplierId.value) throw new Error("Bitte einen Lieferanten auswählen oder neu anlegen.");
         const body = { supplierId: form.elements.supplierId.value, orderId: form.elements.orderId.value };
         if (external) {
           Object.assign(body, {
@@ -138,21 +253,21 @@
         }
         const order = await api("/api/purchase-orders", { method: "POST", body });
         const file = external ? form.elements.file.files[0] : null;
-        if (file) await uploadDocument(order.id, file, "supplier_confirmation");
+        if (file) {
+          try {
+            await postForm(`/api/purchase-orders/${encodeURIComponent(order.id)}/documents`, { kind: "supplier_confirmation" }, file, root.dataset.csrf);
+          } catch (exception) {
+            // Die Bestellung ist angelegt; die Datei lässt sich auf der Bestellseite erneut hochladen.
+            try {
+              sessionStorage.setItem("calight-purchase-notice", `Die Bestellung wurde angelegt, die Datei aber nicht übernommen: ${exception.message}`);
+            } catch {
+              // Ohne Speicher entfällt nur der Hinweis.
+            }
+          }
+        }
         location.assign(href(order));
       },
     });
-  }
-
-  async function uploadDocument(id, file, kind) {
-    const data = new FormData();
-    data.append("file", file);
-    data.append("kind", kind);
-    const response = await fetch(`/api/purchase-orders/${encodeURIComponent(id)}/documents`, {
-      method: "POST", credentials: "same-origin", headers: { "X-CSRF-Token": root.dataset.csrf, Accept: "application/json" }, body: data,
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error((Array.isArray(result.details) ? result.details.join(" ") : "") || result.error || `Hochladen fehlgeschlagen (HTTP ${response.status}).`);
   }
 
   async function init() {

@@ -163,8 +163,8 @@ final readonly class MasterDataRepository
     public function createSupplier(array $data): void
     {
         $this->execute(
-            'INSERT INTO suppliers (id, supplier_number, name, contact, created_at, updated_at)
-             VALUES (:id, :supplier_number, :name, :contact, :created_at, :updated_at)',
+            'INSERT INTO suppliers (id, supplier_number, name, contact, street, house_number, postal_code, city, country, customer_number, created_at, updated_at)
+             VALUES (:id, :supplier_number, :name, :contact, :street, :house_number, :postal_code, :city, :country, :customer_number, :created_at, :updated_at)',
             $data,
         );
     }
@@ -174,7 +174,8 @@ final readonly class MasterDataRepository
     {
         return $this->execute(
             'UPDATE suppliers SET supplier_number = :supplier_number, name = :name, contact = :contact,
-             updated_at = :updated_at WHERE id = :id',
+             street = :street, house_number = :house_number, postal_code = :postal_code, city = :city, country = :country,
+             customer_number = :customer_number, updated_at = :updated_at WHERE id = :id',
             $data,
         ) === 1;
     }
@@ -183,12 +184,22 @@ final readonly class MasterDataRepository
     public function upsertSupplier(array $data): void
     {
         $this->execute(
-            'INSERT INTO suppliers (id, supplier_number, name, contact, active, created_at, updated_at)
-             VALUES (:id, :supplier_number, :name, :contact, :active, :created_at, :updated_at)
+            'INSERT INTO suppliers (id, supplier_number, name, contact, street, house_number, postal_code, city, country, customer_number, active, created_at, updated_at)
+             VALUES (:id, :supplier_number, :name, :contact, :street, :house_number, :postal_code, :city, :country, :customer_number, :active, :created_at, :updated_at)
              ON CONFLICT(id) DO UPDATE SET supplier_number=excluded.supplier_number, name=excluded.name,
-             contact=excluded.contact, active=excluded.active, updated_at=excluded.updated_at',
+             contact=excluded.contact, street=excluded.street, house_number=excluded.house_number, postal_code=excluded.postal_code,
+             city=excluded.city, country=excluded.country, customer_number=excluded.customer_number,
+             active=excluded.active, updated_at=excluded.updated_at',
             $data,
         );
+    }
+
+    /** Aktiver Lieferant mit gleichem Namen (Groß-/Kleinschreibung egal), um Doppelanlagen zu vermeiden. */
+    public function activeSupplierNamed(string $name): ?array
+    {
+        $statement = $this->pdo->prepare('SELECT * FROM suppliers WHERE active = 1 AND calight_fold(name) = calight_fold(:name) LIMIT 1');
+        $statement->execute(['name' => $name]);
+        return $statement->fetch() ?: null;
     }
 
     public function supplierHasActiveItems(string $id): bool

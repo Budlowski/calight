@@ -237,10 +237,10 @@
 
     function renderSuppliers() {
         const query = document.querySelector('#supplier-search').value.trim().toLocaleLowerCase('de');
-        const items = state.suppliers.filter(visible).filter((item) => !query || `${item.supplierNumber || ''} ${item.name} ${item.contact}`.toLocaleLowerCase('de').includes(query));
+        const items = state.suppliers.filter(visible).filter((item) => !query || `${item.supplierNumber || ''} ${item.name} ${item.contact} ${supplierPlace(item)} ${item.customerNumber || ''}`.toLocaleLowerCase('de').includes(query));
         document.querySelector('#suppliers-body').innerHTML = items.length ? items.map((item) => `
-            <tr class="${activeClass(item)}"><td>${escapeHtml(item.supplierNumber || '–')}</td><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.contact || '–')}</td>
-            <td class="actions"><button type="button" class="table-action" data-supplier-edit="${item.id}">Bearbeiten</button><button type="button" class="table-action" data-supplier-archive="${item.id}">${item.active ? 'Archivieren' : 'Reaktivieren'}</button></td></tr>`).join('') : '<tr><td colspan="4" class="muted">Keine Lieferanten gefunden.</td></tr>';
+            <tr class="${activeClass(item)}"><td>${escapeHtml(item.supplierNumber || '–')}</td><td>${escapeHtml(item.name)}</td><td>${escapeHtml(supplierPlace(item) || '–')}</td><td>${escapeHtml(item.contact || '–')}</td>
+            <td class="actions"><button type="button" class="table-action" data-supplier-edit="${item.id}">Bearbeiten</button><button type="button" class="table-action" data-supplier-archive="${item.id}">${item.active ? 'Archivieren' : 'Reaktivieren'}</button></td></tr>`).join('') : '<tr><td colspan="5" class="muted">Keine Lieferanten gefunden.</td></tr>';
     }
 
     document.querySelector('#supplier-search').addEventListener('input', renderSuppliers);
@@ -255,12 +255,17 @@
         }
     });
 
+    // Anschrift und eigene Kundennummer beim Lieferanten (optional, erscheinen auf Bestellungen).
+    const supplierAddressFields = ['street', 'houseNumber', 'postalCode', 'city', 'country', 'customerNumber'];
+    const supplierPlace = (item) => [[item.street, item.houseNumber].filter(Boolean).join(' '), [item.postalCode, item.city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+
     function openSupplier(item = null) {
         supplierForm.reset();
         supplierForm.elements.id.value = item?.id || '';
         supplierForm.elements.supplierNumber.value = item?.supplierNumber || '';
         supplierForm.elements.name.value = item?.name || '';
         supplierForm.elements.contact.value = item?.contact || '';
+        for (const key of supplierAddressFields) supplierForm.elements[key].value = item?.[key] || '';
         supplierForm.hidden = false;
         dirty = false;
         supplierForm.elements.name.focus();
@@ -273,6 +278,7 @@
             supplierNumber: supplierForm.elements.supplierNumber.value || null,
             name: supplierForm.elements.name.value,
             contact: supplierForm.elements.contact.value,
+            ...Object.fromEntries(supplierAddressFields.map((key) => [key, supplierForm.elements[key].value])),
         }, id ? 'Lieferant gespeichert.' : 'Lieferant angelegt.', id ? 'PUT' : 'POST');
         if (!saved) return;
         dirty = false;

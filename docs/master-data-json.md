@@ -5,7 +5,7 @@ Calight exportiert und importiert Stammdaten immer vollständig je Bereich:
 - Artikelstamm (`cost-items`)
 - Positionsstamm (`services`)
 - Kategorien einschließlich Hierarchie (`categories`)
-- Lieferanten (`suppliers`)
+- Lieferanten (`suppliers`) – seit Phase 3.4.1.1 mit optionalen Feldern `street`, `houseNumber`, `postalCode`, `city`, `country` und `customerNumber` (eigene Kundennummer beim Lieferanten). Fehlen diese Felder in einer älteren Datei, bleiben vorhandene Werte beim Import erhalten.
 - Schlepptexte (`trailing-texts`)
 
 Jede Datei enthält `format`, `schemaVersion`, `scope`, `exportedAt` und die vollständige Liste `items`. Archivierte Datensätze sind enthalten. Kategorien werden als verschachtelter Baum über `children` ausgegeben. Berechnete Anzeigewerte werden nicht exportiert; sie werden nach dem Import erneut aus den Kosten- und Zuschlagswerten berechnet.

@@ -1185,41 +1185,75 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 }
 
 
-/* Bestellungen (Phase 3.4.1) */
-.purchase-kind-choice { display: grid; gap: var(--space-2); margin: 0; padding: 0; border: 0; }
-.purchase-kind-choice > label, .purchase-request { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); font-weight: 400; cursor: pointer; }
-.purchase-kind-choice > label:has(input:checked), .purchase-request:has(input:checked) { border-color: var(--primary); background: #edf4f8; }
-.purchase-kind-choice input, .purchase-request input { width: auto; min-height: 0; margin-top: 3px; }
-.purchase-kind-choice span, .purchase-request span { display: grid; gap: 2px; }
-.purchase-kind-choice small, .purchase-request small { color: var(--muted); font-size: var(--font-small); }
-.purchase-request-list { display: grid; gap: var(--space-2); max-height: 260px; overflow-y: auto; }
+/* Bestellungen (Phase 3.4.1, vorgangsorientiert seit 3.4.1.1) */
 .purchase-head-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .purchase-item-row { grid-template-columns: 90px 80px 120px minmax(200px, 2fr) 110px 110px auto; }
 .purchase-item-row.no-prices { grid-template-columns: 90px 80px 120px minmax(200px, 2fr) auto; }
 .purchase-item-row .purchase-item-notes { grid-column: 1 / -2; }
 .purchase-items-table td { vertical-align: top; }
-.purchase-tracking { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
-.purchase-tracking-block { display: grid; gap: var(--space-2); }
-.purchase-tracking-form { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.purchase-tracking-form select { width: auto; flex: 0 1 170px; }
-.purchase-tracking-form input { flex: 1 1 160px; width: auto; }
+.purchase-items-table tfoot td { font-weight: 700; }
+.purchase-items-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .purchase-subheading { margin: var(--space-3) 0 0; font-size: var(--font-base); }
-.purchase-inline-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-2); }
-.purchase-inline-form > label { flex: 0 1 140px; }
-.purchase-inline-form > .purchase-inline-wide { flex: 1 1 240px; }
+.purchase-items-toolbar .purchase-subheading { margin: 0; }
+.purchase-detail .step-section-actions { flex-wrap: wrap; justify-content: flex-end; }
+.purchase-detail > .card { min-width: 0; }
+.purchase-detail [data-order-view], .purchase-detail [data-order-edit] { min-width: 0; max-width: 100%; }
+.purchase-detail .measurement-table-wrap { max-width: 100%; overflow-x: auto; }
+.purchase-detail .step-section-heading > div { min-width: 0; }
+.purchase-detail .step-section-heading small { white-space: normal; }
+.purchase-facts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.purchase-order-facts { padding-top: 0; border-top: 0; }
+/* Vorgangslisten: Hauptangaben links, Betrag/Status/Aktion rechts. */
+.purchase-events { display: grid; margin: 0; padding: 0; list-style: none; border: 1px solid var(--border); border-radius: var(--radius); }
+.purchase-event { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--space-2) var(--space-4); padding: 9px 11px; border-bottom: 1px solid var(--border); }
+.purchase-event:last-child { border-bottom: 0; }
+.purchase-event-main { display: grid; flex: 1 1 320px; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.purchase-event-main .status-badge { justify-self: start; }
+.purchase-event-meta { color: var(--muted); font-size: var(--font-small); }
+.purchase-event-side { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+.purchase-amount { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.purchase-amount.is-negative { color: #8a3b12; }
+.purchase-doc-link { display: inline-flex; align-items: center; gap: 4px; }
+.purchase-invoice-totals { margin: 0; text-align: right; }
+.purchase-allocation-summary { display: grid; gap: 4px; }
+.purchase-cost-summary { margin-bottom: var(--space-1); }
+.status-po-confirmation-current { background-color: var(--status-success-bg); color: var(--status-success-fg); }
+.status-po-confirmation-previous { background-color: var(--status-muted-bg); color: var(--status-muted-fg); }
+/* Dokumente und Verlauf: einklappbar. */
+.purchase-archive > summary { cursor: pointer; list-style: none; }
+.purchase-archive > summary::-webkit-details-marker { display: none; }
+.purchase-archive > summary::after { content: "▸"; margin-left: auto; color: var(--muted); }
+.purchase-archive[open] > summary::after { content: "▾"; }
+.purchase-archive[open] > summary { margin-bottom: var(--space-3); }
 .purchase-documents { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
 .purchase-documents li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: 6px 0; border-bottom: 1px solid #e5eaed; }
-.purchase-documents li > a { display: inline-flex; align-items: center; gap: 6px; overflow-wrap: anywhere; }
+.purchase-documents li > a { overflow-wrap: anywhere; }
 .purchase-allocation-row { display: grid; grid-template-columns: minmax(200px, 1fr) 140px auto; gap: var(--space-2); align-items: center; margin-bottom: var(--space-2); }
-.purchase-request-links { padding-top: var(--space-2); border-top: 1px solid var(--border); }
+.purchase-request-links { margin: 0; padding-top: var(--space-2); border-top: 1px solid var(--border); }
+.purchase-final-mode { display: grid; gap: 6px; margin: 0; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); }
+.purchase-final-mode .check-inline { font-weight: 400; }
+/* Lieferanten-Schnellanlage im Bestelldialog. */
+.purchase-supplier-create { display: grid; justify-items: start; gap: var(--space-2); margin-top: calc(var(--space-2) * -1); }
+.purchase-supplier-fields { display: grid; gap: var(--space-2); justify-self: stretch; margin: 0; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); background: #f6f8fa; }
+.purchase-supplier-fields legend { padding: 0 4px; font-weight: 700; }
+/* Übersicht: drei Status kompakt, stornierte Bestellungen deutlich gekennzeichnet. */
+.purchase-status-stack { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.purchase-confirmed-value { display: block; color: var(--muted); font-size: var(--font-small); white-space: nowrap; }
+tr.purchase-cancelled > td, .overview-card.purchase-cancelled { color: var(--muted); background: #f4f5f6; }
 @media (max-width: 1100px) {
     .purchase-item-row, .purchase-item-row.no-prices { grid-template-columns: 1fr 1fr; }
     .purchase-item-row .work-report-wide, .purchase-item-row .purchase-item-notes { grid-column: 1 / -1; }
+    .purchase-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 800px) {
-    .purchase-head-grid, .purchase-tracking { grid-template-columns: 1fr; }
+    .purchase-head-grid { grid-template-columns: 1fr; }
     .purchase-allocation-row { grid-template-columns: 1fr auto; }
     .purchase-allocation-row select { grid-column: 1 / -1; }
+    .purchase-event-side { justify-content: flex-start; }
+    .purchase-invoice-totals { text-align: left; }
+}
+@media (max-width: 480px) {
+    .purchase-facts { grid-template-columns: 1fr; }
 }
 
 /* ==========================================================================
@@ -1260,7 +1294,7 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 .status-po-status-ordered, .status-po-origin { background-color: var(--status-info-bg); color: var(--status-info-fg); }
 .status-po-delivery-partial, .status-po-payment-partial { background-color: var(--status-warning-bg); color: var(--status-warning-fg); }
 .status-po-delivery-delivered, .status-po-payment-paid { background-color: var(--status-success-bg); color: var(--status-success-fg); }
-.status-po-status-cancelled { background-color: var(--status-muted-bg); color: var(--status-muted-fg); text-decoration: line-through; }
+.status-po-status-cancelled { background-color: var(--status-muted-bg); color: var(--status-muted-fg); font-weight: 700; }
 
 /* Suchvorschläge (Calight.suggest / Calight.searchableSelect). */
 .suggest-select, .work-report-catalog { position: relative; }

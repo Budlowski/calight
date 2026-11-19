@@ -6,6 +6,7 @@ namespace App\Application;
 
 use App\Domain\Calculation\Decimal;
 use App\Domain\Order\OrderValidationException;
+use App\Domain\Purchase\PurchaseCostCalculator;
 use App\Http\AccessDeniedException;
 use App\Infrastructure\Persistence\AttachmentStore;
 use App\Infrastructure\Persistence\NumberRangeRepository;
@@ -21,17 +22,22 @@ use PDO;
 use Throwable;
 
 /**
- * Bestellungen (Phase 3.4.1): interne Bestellungen mit Bestell-PDF und extern bereits
- * aufgegebene Bestellungen in einer gemeinsamen Verwaltung.
+ * Bestellungen (Phase 3.4.1, vorgangsorientiert seit 3.4.1.1): interne Bestellungen mit
+ * Bestell-PDF und extern bereits aufgegebene Bestellungen in einer gemeinsamen Verwaltung.
  *
  * Fachliche Regeln:
- * - Bestell-, Liefer- und Zahlungsstatus sind unabhängig; jede Änderung wird protokolliert.
  * - Interne Bestellungen werden erst mit „Bestellen“ verbindlich: Lieferanten-Snapshot,
  *   unveränderliches PDF je Fassung. Änderungen danach nur über eine neue Fassung.
- * - Ist-Kosten haben genau eine Quelle: direkt erfasster Betrag ODER Summe der Rechnungen.
- *   Beides gleichzeitig wird abgelehnt; der erwartete Bestellwert ist nie Ist-Kosten.
+ * - Nach dem Bestellen folgen unabhängige, unveränderliche Ereignisse in beliebiger Reihenfolge:
+ *   Auftragsbestätigungen, Lieferungen/Rücksendungen, Lieferantenbelege und Zahlungsvermerke.
+ *   Liefer- und Zahlungsstatus ergeben sich aus dem zuletzt erfassten Ereignis.
+ * - Drei Beträge bleiben getrennt: ursprünglicher Bestellwert (expected_net_total), aktuell
+ *   bestätigter Wert (aktuelle AB) und tatsächliche Nettokosten.
+ * - Ist-Kosten haben genau eine Quelle: direkt erfasster Betrag ODER Kostenwirkung der Belege
+ *   (PurchaseCostCalculator). Die Umstellung auf Belege ersetzt den direkten Betrag ausdrücklich.
+ * - Belege werden nie gelöscht; Korrekturen über Gutschrift oder Stornobeleg.
  * - Kostenverteilung auf Aufträge über feste Beträge, höchstens bis zu den Ist-Kosten.
- * - Beträge, Preise und Rechnungen nur mit costs.read (serverseitig gefiltert).
+ * - Beträge, Preise und Belege nur mit costs.read (serverseitig gefiltert).
  */
 final readonly class PurchaseOrderService
 {
@@ -52,6 +58,10 @@ final readonly class PurchaseOrderService
         'image/gif' => 'gif', 'image/heic' => 'heic', 'image/heif' => 'heif',
     ];
     public const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
+    public const DELIVERY_KINDS = ['partial' => 'Teillieferung', 'complete' => 'Vollständige Lieferung', 'return' => 'Rücksendung', 'correction' => 'Lieferkorrektur'];
+    public const PAYMENT_KINDS = ['payment' => 'Zahlung', 'refund' => 'Rückerstattung', 'correction' => 'Statuskorrektur'];
+    public const INVOICE_KINDS = ['invoice' => 'Rechnung', 'partial' => 'Teilrechnung', 'final' => 'Schlussrechnung', 'credit' => 'Gutschrift', 'reversal' => 'Stornobeleg'];
+    public const FINAL_MODES = ['additional' => 'Zusätzlicher Rechnungsbetrag', 'total' => 'Gesamtrechnung einschließlich bisheriger Teilrechnungen'];
     private const MAX_DOCUMENTS = 50;
     private const MAX_ITEMS = 200;
     private const FOLDER = 'purchase-orders';
@@ -86,22 +96,20 @@ final readonly class PurchaseOrderService
         return array_map(fn (array $row): array => $this->summary($row, $actor), $this->orders->forOrder($orderId));
     }
 
-    /** Auswahllisten für Filter und Anlegen. @param array<string,mixed> $actor @return array<string,mixed> */
+    /** Auswahllisten für Filter, Anlegen und Vorgangsdialoge. @param array<string,mixed> $actor @return array<string,mixed> */
     public function referenceData(array $actor): array
     {
         $this->require($actor, 'purchases.read');
-        $requests = $this->can($actor, 'purchases.write') ? $this->orders->openMaterialRequests() : [];
         return [
             'suppliers' => array_map(static fn (array $row): array => ['id' => $row['id'], 'number' => $row['supplier_number'], 'name' => $row['name']], $this->orders->activeSuppliers()),
             'orders' => array_map(static fn (array $row): array => ['id' => $row['id'], 'orderNumber' => $row['order_number'], 'title' => $row['title']], $this->orders->orders()),
-            'materialRequests' => array_map(static fn (array $row): array => [
-                'id' => $row['id'], 'orderId' => $row['order_id'], 'orderNumber' => $row['order_number'], 'orderTitle' => $row['order_title'],
-                'description' => $row['description'], 'notes' => $row['notes'], 'neededBy' => $row['needed_by'], 'createdAt' => $row['created_at'],
-                'alreadyOrdered' => (int) $row['order_count'] > 0,
-            ], $requests),
             'statusLabels' => self::STATUS_LABELS,
             'deliveryLabels' => self::DELIVERY_LABELS,
             'paymentLabels' => self::PAYMENT_LABELS,
+            'deliveryKinds' => self::DELIVERY_KINDS,
+            'paymentKinds' => self::PAYMENT_KINDS,
+            'invoiceKinds' => self::INVOICE_KINDS,
+            'finalModes' => self::FINAL_MODES,
             'documentKinds' => array_diff_key(self::DOCUMENT_KINDS, ['own_order' => true]),
             'canWrite' => $this->can($actor, 'purchases.write'),
             'canCosts' => $this->canCosts($actor),
@@ -132,9 +140,14 @@ final readonly class PurchaseOrderService
         $row = $this->find($id);
         $costs = $this->canCosts($actor);
         $write = $this->can($actor, 'purchases.write');
+        $placed = $this->placed($row);
         $items = $this->orders->items($id);
-        $invoices = $costs ? $this->orders->invoices($id) : [];
         $documents = array_values(array_filter($this->orders->documents($id), static fn (array $document): bool => $costs || $document['kind'] !== 'invoice'));
+        $documentNames = array_column($documents, 'original_name', 'id');
+        // Verweis auf den Beleg eines Vorgangs (ohne Kostenrecht keine Rechnungsbelege).
+        $documentRef = static fn (?string $documentId): ?array => $documentId !== null && isset($documentNames[$documentId])
+            ? ['id' => $documentId, 'name' => $documentNames[$documentId]] : null;
+        $payments = $this->orders->payments($id);
         $result = $this->summary($row, $actor) + [
             'version' => (int) $row['version'],
             'title' => $row['title'],
@@ -149,20 +162,42 @@ final readonly class PurchaseOrderService
             'updatedAt' => $row['updated_at'],
             'supplierSnapshot' => $row['supplier_snapshot'] !== null ? json_decode((string) $row['supplier_snapshot'], true) : null,
             'items' => array_map(fn (array $item): array => $this->item($item, $costs), $items),
+            // Bestandsverknüpfungen aus Phase 3.4.1; neue Übernahmen gibt es nicht mehr.
             'materialRequests' => array_map(static fn (array $request): array => [
-                'id' => $request['id'], 'description' => $request['description'], 'notes' => $request['notes'],
-                'status' => $request['status'], 'neededBy' => $request['needed_by'], 'orderNumber' => $request['order_number'],
+                'id' => $request['id'], 'description' => $request['description'], 'status' => $request['status'], 'orderNumber' => $request['order_number'],
             ], $this->orders->materialRequests($id)),
-            'documents' => array_map(static fn (array $document): array => [
+            'confirmations' => array_map(static fn (array $confirmation): array => [
+                'id' => $confirmation['id'], 'number' => $confirmation['confirmation_number'], 'date' => $confirmation['confirmation_date'],
+                'confirmedNetTotal' => $costs ? $confirmation['confirmed_net_total'] : null,
+                'confirmedDeliveryDate' => $confirmation['confirmed_delivery_date'], 'notes' => $confirmation['notes'],
+                'current' => (bool) $confirmation['is_current'], 'document' => $documentRef($confirmation['document_id']),
+                'createdByName' => $confirmation['created_by_name'], 'createdAt' => $confirmation['created_at'],
+            ], $this->orders->confirmations($id)),
+            'deliveries' => array_map(static fn (array $delivery): array => [
+                'id' => $delivery['id'], 'kind' => $delivery['kind'], 'kindLabel' => self::DELIVERY_KINDS[$delivery['kind']] ?? $delivery['kind'],
+                'date' => $delivery['delivery_date'], 'deliveryNoteNumber' => $delivery['delivery_note_number'], 'notes' => $delivery['notes'],
+                'resultingStatus' => $delivery['resulting_status'], 'resultingLabel' => self::DELIVERY_LABELS[$delivery['resulting_status']] ?? '',
+                'document' => $documentRef($delivery['document_id']), 'createdByName' => $delivery['created_by_name'], 'createdAt' => $delivery['created_at'],
+            ], $this->orders->deliveries($id)),
+            'payments' => array_map(static fn (array $payment): array => [
+                'id' => $payment['id'], 'kind' => $payment['kind'], 'kindLabel' => self::PAYMENT_KINDS[$payment['kind']] ?? $payment['kind'],
+                'date' => $payment['payment_date'], 'amount' => $costs ? $payment['amount'] : null, 'notes' => $payment['notes'],
+                'resultingStatus' => $payment['resulting_status'], 'resultingLabel' => self::PAYMENT_LABELS[$payment['resulting_status']] ?? '',
+                'createdByName' => $payment['created_by_name'], 'createdAt' => $payment['created_at'],
+            ], $payments),
+            'documents' => array_map(fn (array $document): array => [
                 'id' => $document['id'], 'kind' => $document['kind'], 'kindLabel' => self::DOCUMENT_KINDS[$document['kind']] ?? $document['kind'],
                 'revision' => $document['revision'] !== null ? (int) $document['revision'] : null, 'name' => $document['original_name'],
                 'mimeType' => $document['mime_type'], 'size' => (int) $document['size_bytes'], 'uploadedByName' => $document['uploaded_by_name'],
-                'createdAt' => $document['created_at'], 'canDelete' => $write && $document['kind'] !== 'own_order',
+                'createdAt' => $document['created_at'],
+                // Eigene Bestell-PDFs und Belege von Vorgängen bleiben erhalten.
+                'canDelete' => $write && $document['kind'] !== 'own_order' && !$this->orders->documentInUse((string) $document['id']),
             ], $documents),
-            'history' => array_map(fn (array $entry): array => [
+            // Kosteneinträge im Verlauf nur mit Kostenrecht.
+            'history' => array_values(array_map(fn (array $entry): array => [
                 'field' => $entry['field'], 'oldValue' => $entry['old_value'], 'newValue' => $entry['new_value'],
                 'label' => $this->historyLabel($entry), 'note' => $entry['note'], 'userName' => $entry['user_name'], 'createdAt' => $entry['created_at'],
-            ], $this->orders->history($id)),
+            ], array_filter($this->orders->history($id), static fn (array $entry): bool => $costs || !in_array($entry['field'], ['invoice', 'cost', 'allocation'], true)))),
             'permissions' => [
                 'edit' => $write && $row['status'] !== 'cancelled',
                 'editItems' => $write && $row['status'] === 'draft',
@@ -170,19 +205,41 @@ final readonly class PurchaseOrderService
                 'newRevision' => $write && $row['origin'] === 'internal' && $row['status'] === 'ordered',
                 'cancel' => $write && $row['status'] !== 'cancelled',
                 'delete' => $write && $this->deletable($row),
-                'changeDelivery' => $write && $row['status'] !== 'draft',
-                'changePayment' => $write && $row['status'] !== 'draft',
+                // Vorgänge bleiben auch nach einer Stornierung möglich (z. B. Gutschrift nach Rücksendung).
+                'events' => $write && $placed,
                 'documents' => $write,
-                'costs' => $write && $costs,
+                'costs' => $write && $costs && $placed,
             ],
         ];
         if ($costs) {
+            $invoices = $this->orders->invoices($id);
+            $calculation = PurchaseCostCalculator::calculate($this->costDocuments($invoices));
+            $numbers = array_column($invoices, 'invoice_number', 'id');
             $result['invoices'] = array_map(static fn (array $invoice): array => [
-                'id' => $invoice['id'], 'invoiceNumber' => $invoice['invoice_number'], 'invoiceDate' => $invoice['invoice_date'],
+                'id' => $invoice['id'], 'kind' => $invoice['kind'], 'kindLabel' => self::INVOICE_KINDS[$invoice['kind']] ?? $invoice['kind'],
+                'finalMode' => $invoice['final_mode'], 'finalModeLabel' => $invoice['final_mode'] !== null ? (self::FINAL_MODES[$invoice['final_mode']] ?? '') : null,
+                'invoiceNumber' => $invoice['invoice_number'], 'invoiceDate' => $invoice['invoice_date'],
                 'netAmount' => $invoice['net_amount'], 'vatAmount' => $invoice['vat_amount'], 'grossAmount' => $invoice['gross_amount'],
-                'documentId' => $invoice['document_id'], 'notes' => $invoice['notes'],
+                'relatedInvoiceId' => $invoice['related_invoice_id'],
+                'relatedNumber' => $invoice['related_invoice_id'] !== null ? ($numbers[$invoice['related_invoice_id']] ?? '') : null,
+                'effect' => $calculation['effects'][$invoice['id']] ?? null,
+                'remaining' => $calculation['remaining'][$invoice['id']] ?? null,
+                'document' => $documentRef($invoice['document_id']), 'notes' => $invoice['notes'],
+                'createdByName' => $invoice['created_by_name'], 'createdAt' => $invoice['created_at'],
             ], $invoices);
+            $result['invoicedNetTotal'] = $calculation['total'];
+            $result['invoicedGrossTotal'] = $calculation['grossTotal'];
+            $result['hasTotalFinal'] = $calculation['activeTotalFinalId'] !== null;
             $result['directActualNetTotal'] = $row['actual_net_total'];
+            $paid = BigDecimal::zero();
+            foreach ($payments as $payment) {
+                if ($payment['amount'] !== null) {
+                    $paid = $payment['kind'] === 'refund' ? $paid->minus((string) $payment['amount']) : $paid->plus((string) $payment['amount']);
+                }
+            }
+            $result['paidTotal'] = Decimal::money($paid);
+            // Offener Betrag nur, wenn alle Belege einen Bruttobetrag haben (Zahlungen sind brutto).
+            $result['openGrossTotal'] = $calculation['grossTotal'] !== null ? Decimal::money(BigDecimal::of($calculation['grossTotal'])->minus($paid)) : null;
             $result['allocations'] = array_map(static fn (array $allocation): array => [
                 'orderId' => $allocation['order_id'], 'orderNumber' => $allocation['order_number'], 'orderTitle' => $allocation['order_title'], 'amount' => $allocation['amount'],
             ], $this->orders->allocations($id));
@@ -199,9 +256,10 @@ final readonly class PurchaseOrderService
     // -------------------------------------------------------------------------
 
     /**
-     * Interne Bestellung als Entwurf – leer oder aus Materialanforderungen.
+     * Interne Bestellung als Entwurf. Positionen folgen auf der Detailseite (manuell oder aus
+     * dem Artikelstamm). Eine Übernahme aus Materialanforderungen gibt es bewusst nicht mehr.
      *
-     * @param array<string,mixed> $input supplierId, orderId?, materialRequestIds?, title?, deliveryAddress?, notes?
+     * @param array<string,mixed> $input supplierId, orderId?, title?, deliveryAddress?, notes?
      * @param array<string,mixed> $actor
      * @return array<string,mixed>
      */
@@ -210,21 +268,9 @@ final readonly class PurchaseOrderService
         $this->require($actor, 'purchases.write');
         $supplier = $this->supplier($input['supplierId'] ?? '');
         $orderId = $this->optionalOrder($input['orderId'] ?? '');
-        $requestIds = array_values(array_unique(array_filter(array_map('strval', is_array($input['materialRequestIds'] ?? null) ? $input['materialRequestIds'] : []))));
-        $requests = [];
-        foreach ($requestIds as $requestId) {
-            $request = $this->orders->materialRequest($requestId) ?? throw new OrderValidationException(['Die Materialanforderung wurde nicht gefunden.']);
-            $requests[] = $request;
-        }
-        // Ohne ausdrückliche Auswahl übernimmt die Bestellung den gemeinsamen Auftrag der Anforderungen.
-        if ($orderId === null && $requests !== []) {
-            $requestOrders = array_values(array_unique(array_column($requests, 'order_id')));
-            $orderId = count($requestOrders) === 1 ? (string) $requestOrders[0] : null;
-        }
         $id = Uuid::v4();
         $now = Clock::now();
-        $this->pdo->exec('BEGIN IMMEDIATE');
-        try {
+        $this->transaction(function () use ($id, $now, $supplier, $orderId, $input, $actor): void {
             $number = $this->numbers->allocate('purchase_order', 'purchase_order', $id, Uuid::v4(), new DateTimeImmutable($now));
             $this->orders->insert([
                 'id' => $id, 'order_number' => $number, 'origin' => 'internal', 'status' => 'draft',
@@ -234,23 +280,8 @@ final readonly class PurchaseOrderService
                 'notes' => $this->text($input['notes'] ?? '', 5000, 'Bemerkung'),
                 'created_by_user_id' => (string) $actor['id'], 'created_at' => $now, 'updated_at' => $now,
             ]);
-            // Materialanforderungen schlagen Positionen vor; Menge ergänzt das Büro (Freitext enthält oft schon die Menge).
-            $items = [];
-            foreach ($requests as $index => $request) {
-                $items[] = [
-                    'id' => Uuid::v4(), 'position' => $index + 1, 'cost_item_id' => null, 'article_number' => '',
-                    'description' => mb_substr((string) $request['description'], 0, 500), 'quantity' => null, 'unit' => '',
-                    'unit_price' => null, 'line_total' => null, 'notes' => mb_substr((string) $request['notes'], 0, 1000),
-                ];
-                $this->orders->linkMaterialRequest($id, (string) $request['id']);
-            }
-            $this->orders->replaceItems($id, $items);
-            $this->orders->addHistory($id, Uuid::v4(), 'status', null, 'draft', $requests !== [] ? 'Aus ' . count($requests) . ' Materialanforderung(en) angelegt.' : '', (string) $actor['id'], $now);
-            $this->pdo->commit();
-        } catch (Throwable $exception) {
-            $this->rollBack();
-            throw $exception;
-        }
+            $this->orders->addHistory($id, Uuid::v4(), 'status', null, 'draft', '', (string) $actor['id'], $now);
+        });
         return $this->detail($id, $actor);
     }
 
@@ -341,6 +372,7 @@ final readonly class PurchaseOrderService
             }
         }
         $now = Clock::now();
+        $changed = $this->changedFields($row, $fields, $items);
         $this->pdo->exec('BEGIN IMMEDIATE');
         try {
             if (!$this->orders->update($id, $this->version($input), $fields, $now)) {
@@ -348,6 +380,10 @@ final readonly class PurchaseOrderService
             }
             if ($items !== null) {
                 $this->orders->replaceItems($id, $items);
+            }
+            // Nachvollziehbarkeit: welche Angaben geändert wurden (ohne Beträge im Text).
+            if ($changed !== []) {
+                $this->orders->addHistory($id, Uuid::v4(), 'edit', null, 'updated', implode(', ', $changed), (string) $actor['id'], $now);
             }
             $this->pdo->commit();
         } catch (Throwable $exception) {
@@ -500,60 +536,184 @@ final readonly class PurchaseOrderService
         return $this->detail($id, $actor);
     }
 
-    /** @param array<string,mixed> $input version, status, note? @param array<string,mixed> $actor @return array<string,mixed> */
-    public function setDeliveryStatus(string $id, array $input, array $actor): array
+    // -------------------------------------------------------------------------
+    // Vorgänge: Auftragsbestätigungen, Lieferungen, Zahlungen
+    // -------------------------------------------------------------------------
+
+    /**
+     * Auftragsbestätigung (AB) erfassen. Mehrere Fassungen sind möglich; vorherige bleiben
+     * erhalten. Die erste AB wird automatisch aktuell, weitere auf Wunsch (Standard: ja).
+     *
+     * @param array<string,mixed> $input version, confirmationNumber?, confirmationDate, confirmedNetTotal?, confirmedDeliveryDate?, notes?, makeCurrent?
+     * @param array{path:string,name:string}|null $upload
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
+    public function addConfirmation(string $id, array $input, ?array $upload, array $actor): array
     {
-        return $this->setTrackingStatus($id, $input, $actor, 'delivery', 'delivery_status', self::DELIVERY_LABELS);
+        $this->require($actor, 'purchases.write');
+        $row = $this->placedOrder($id);
+        $date = $this->date($input['confirmationDate'] ?? '', 'Bestätigungsdatum') ?? throw new OrderValidationException(['Bitte das Bestätigungsdatum angeben.']);
+        $net = $this->canCosts($actor) ? $this->money($input['confirmedNetTotal'] ?? '', 'Bestätigter Nettobetrag') : null;
+        if ($net !== null && BigDecimal::of($net)->isNegative()) {
+            throw new OrderValidationException(['Der bestätigte Nettobetrag darf nicht negativ sein.']);
+        }
+        $existing = $this->orders->confirmations($id);
+        $makeCurrent = $existing === [] || filter_var($input['makeCurrent'] ?? true, FILTER_VALIDATE_BOOL);
+        $number = $this->text($input['confirmationNumber'] ?? '', 100, 'AB-Nummer');
+        $confirmationId = Uuid::v4();
+        $now = Clock::now();
+        $this->withEvent($id, $input, $upload, 'order_confirmation', $actor, function (?string $documentId) use ($id, $input, $confirmationId, $number, $date, $net, $makeCurrent, $existing, $actor, $now): void {
+            $this->orders->insertConfirmation([
+                'id' => $confirmationId, 'purchase_order_id' => $id, 'confirmation_number' => $number, 'confirmation_date' => $date,
+                'confirmed_net_total' => $net, 'confirmed_delivery_date' => $this->date($input['confirmedDeliveryDate'] ?? '', 'Bestätigter Liefertermin'),
+                'document_id' => $documentId, 'notes' => $this->text($input['notes'] ?? '', 1000, 'Bemerkung'), 'is_current' => 0,
+                'created_by_user_id' => (string) $actor['id'], 'created_at' => $now,
+            ]);
+            if ($makeCurrent) {
+                $this->orders->markCurrentConfirmation($id, $confirmationId);
+            }
+            $label = $number !== '' ? 'AB ' . $number : 'AB vom ' . (new DateTimeImmutable($date))->format('d.m.Y');
+            $this->orders->addHistory($id, Uuid::v4(), 'confirmation', null, $existing === [] ? 'added' : 'corrected',
+                $label . ($makeCurrent ? ' (aktuell)' : ''), (string) $actor['id'], $now);
+        });
+        return $this->detail($id, $actor);
     }
 
-    /** @param array<string,mixed> $input version, status, note? @param array<string,mixed> $actor @return array<string,mixed> */
-    public function setPaymentStatus(string $id, array $input, array $actor): array
+    /** Eine frühere oder korrigierte AB ausdrücklich als aktuell markieren. @param array<string,mixed> $input version @param array<string,mixed> $actor @return array<string,mixed> */
+    public function markCurrentConfirmation(string $id, string $confirmationId, array $input, array $actor): array
     {
-        return $this->setTrackingStatus($id, $input, $actor, 'payment', 'payment_status', self::PAYMENT_LABELS);
+        $this->require($actor, 'purchases.write');
+        $this->placedOrder($id);
+        $confirmation = null;
+        foreach ($this->orders->confirmations($id) as $candidate) {
+            if ($candidate['id'] === $confirmationId) {
+                $confirmation = $candidate;
+            }
+        }
+        if ($confirmation === null) {
+            throw new OrderValidationException(['Die Auftragsbestätigung wurde nicht gefunden.']);
+        }
+        if ((bool) $confirmation['is_current']) {
+            throw new OrderValidationException(['Diese Auftragsbestätigung ist bereits aktuell.']);
+        }
+        $now = Clock::now();
+        $this->transaction(function () use ($id, $input, $confirmationId, $confirmation, $actor, $now): void {
+            if (!$this->orders->update($id, $this->version($input), [], $now)) {
+                throw $this->conflict();
+            }
+            $this->orders->markCurrentConfirmation($id, $confirmationId);
+            $label = $confirmation['confirmation_number'] !== '' ? 'AB ' . $confirmation['confirmation_number'] : 'AB vom ' . (new DateTimeImmutable((string) $confirmation['confirmation_date']))->format('d.m.Y');
+            $this->orders->addHistory($id, Uuid::v4(), 'confirmation', null, 'current', $label, (string) $actor['id'], $now);
+        });
+        return $this->detail($id, $actor);
+    }
+
+    /**
+     * Lieferung, Teillieferung, Rücksendung oder Lieferkorrektur. Der Lieferstatus ergibt sich
+     * aus dem Ereignis: Teillieferung → teilgeliefert, vollständige Lieferung → geliefert
+     * (ohne Mengenabgleich je Position); bei Rücksendung und Korrektur wird er ausdrücklich gewählt.
+     * Kosten ändern sich dadurch nie – eine Gutschrift ist ein eigener Beleg.
+     *
+     * @param array<string,mixed> $input version, kind, deliveryDate, deliveryNoteNumber?, notes?, resultingStatus?
+     * @param array{path:string,name:string}|null $upload
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
+    public function addDelivery(string $id, array $input, ?array $upload, array $actor): array
+    {
+        $this->require($actor, 'purchases.write');
+        $row = $this->placedOrder($id);
+        $kind = (string) ($input['kind'] ?? '');
+        if (!array_key_exists($kind, self::DELIVERY_KINDS)) {
+            throw new OrderValidationException(['Bitte die Art der Lieferung wählen.']);
+        }
+        $date = $this->date($input['deliveryDate'] ?? '', 'Lieferdatum') ?? throw new OrderValidationException(['Bitte das Lieferdatum angeben.']);
+        $status = match ($kind) {
+            'partial' => 'partial',
+            'complete' => 'delivered',
+            default => $this->choice($input['resultingStatus'] ?? '', self::DELIVERY_LABELS, 'Bitte den Lieferstatus nach der ' . self::DELIVERY_KINDS[$kind] . ' wählen.'),
+        };
+        $noteNumber = $this->text($input['deliveryNoteNumber'] ?? '', 100, 'Lieferscheinnummer');
+        $notes = $this->text($input['notes'] ?? '', 1000, 'Bemerkung');
+        $now = Clock::now();
+        $this->withEvent($id, $input, $upload, 'delivery_note', $actor, function (?string $documentId) use ($id, $row, $kind, $date, $status, $noteNumber, $notes, $actor, $now): void {
+            $this->orders->insertDelivery([
+                'id' => Uuid::v4(), 'purchase_order_id' => $id, 'kind' => $kind, 'delivery_date' => $date,
+                'delivery_note_number' => $noteNumber, 'document_id' => $documentId, 'notes' => $notes,
+                'resulting_status' => $status, 'created_by_user_id' => (string) $actor['id'], 'created_at' => $now,
+            ]);
+            $this->orders->addHistory($id, Uuid::v4(), 'delivery', (string) $row['delivery_status'], $status,
+                trim(self::DELIVERY_KINDS[$kind] . ' vom ' . (new DateTimeImmutable($date))->format('d.m.Y') . ($noteNumber !== '' ? ' · LS ' . $noteNumber : '')), (string) $actor['id'], $now);
+        }, ['delivery_status' => $status]);
+        return $this->detail($id, $actor);
+    }
+
+    /**
+     * Zahlungsvermerk: Zahlung, Rückerstattung oder reine Statuskorrektur. Zahlungen verändern
+     * die Ist-Kosten nicht. Zahlung: „vollständig bezahlt“ → bezahlt, sonst teilbezahlt;
+     * Rückerstattung und Korrektur nennen den Zahlungsstatus danach ausdrücklich.
+     *
+     * @param array<string,mixed> $input version, kind, paymentDate, amount?, complete?, resultingStatus?, notes?
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
+    public function addPayment(string $id, array $input, array $actor): array
+    {
+        $this->requireCosts($actor);
+        $row = $this->placedOrder($id);
+        $kind = (string) ($input['kind'] ?? '');
+        if (!array_key_exists($kind, self::PAYMENT_KINDS)) {
+            throw new OrderValidationException(['Bitte die Art des Zahlungsvermerks wählen.']);
+        }
+        $date = $this->date($input['paymentDate'] ?? '', 'Zahlungsdatum') ?? throw new OrderValidationException(['Bitte das Datum angeben.']);
+        $amount = null;
+        if ($kind !== 'correction') {
+            $amount = $this->money($input['amount'] ?? '', 'Betrag');
+            if ($amount === null || !BigDecimal::of($amount)->isPositive()) {
+                throw new OrderValidationException(['Bitte einen Betrag größer 0 angeben.']);
+            }
+        }
+        $status = $kind === 'payment'
+            ? (filter_var($input['complete'] ?? false, FILTER_VALIDATE_BOOL) ? 'paid' : 'partial')
+            : $this->choice($input['resultingStatus'] ?? '', self::PAYMENT_LABELS, 'Bitte den Zahlungsstatus danach wählen.');
+        $notes = $this->text($input['notes'] ?? '', 1000, 'Bemerkung');
+        $now = Clock::now();
+        $this->transaction(function () use ($id, $input, $row, $kind, $date, $amount, $status, $notes, $actor, $now): void {
+            if (!$this->orders->update($id, $this->version($input), ['payment_status' => $status], $now)) {
+                throw $this->conflict();
+            }
+            $this->orders->insertPayment([
+                'id' => Uuid::v4(), 'purchase_order_id' => $id, 'kind' => $kind, 'payment_date' => $date, 'amount' => $amount,
+                'notes' => $notes, 'resulting_status' => $status, 'created_by_user_id' => (string) $actor['id'], 'created_at' => $now,
+            ]);
+            // Keine Beträge im Verlaufstext (Verlauf ist auch ohne Kostenrecht sichtbar).
+            $this->orders->addHistory($id, Uuid::v4(), 'payment', (string) $row['payment_status'], $status,
+                self::PAYMENT_KINDS[$kind] . ' vom ' . (new DateTimeImmutable($date))->format('d.m.Y'), (string) $actor['id'], $now);
+        });
+        return $this->detail($id, $actor);
     }
 
     // -------------------------------------------------------------------------
     // Dokumente
     // -------------------------------------------------------------------------
 
-    /** @param array<string,mixed> $actor @return array<string,mixed> */
+    /** Sonstige Dokumente hochladen (Belege zu AB, Lieferung, Rechnung entstehen mit dem Vorgang). @param array<string,mixed> $actor @return array<string,mixed> */
     public function addDocument(string $id, string $sourcePath, string $originalName, string $kind, array $actor): array
     {
         $this->require($actor, 'purchases.write');
-        $row = $this->find($id);
+        $this->find($id);
         if (!array_key_exists($kind, self::DOCUMENT_KINDS) || $kind === 'own_order') {
             throw new OrderValidationException(['Bitte eine gültige Dokumentart wählen.']);
         }
         if ($kind === 'invoice') {
             $this->require($actor, 'costs.read');
         }
-        if (count($this->orders->documents($id)) >= self::MAX_DOCUMENTS) {
-            throw new OrderValidationException(['Eine Bestellung kann höchstens ' . self::MAX_DOCUMENTS . ' Dokumente enthalten.']);
-        }
-        $size = is_file($sourcePath) ? (int) filesize($sourcePath) : 0;
-        if ($size <= 0) {
-            throw new OrderValidationException(['Die Datei ist leer oder fehlt.']);
-        }
-        if ($size > self::MAX_ATTACHMENT_BYTES) {
-            throw new OrderValidationException(['Dokumente dürfen höchstens 15 MB groß sein.']);
-        }
-        // Der Typ wird am Inhalt erkannt, nicht an Dateiname oder Browserangabe.
-        $mime = (string) (new \finfo(FILEINFO_MIME_TYPE))->file($sourcePath);
-        $extension = self::ATTACHMENT_TYPES[$mime] ?? null;
-        if ($extension === null) {
-            throw new OrderValidationException(['Dieser Dateityp wird nicht unterstützt. Erlaubt sind PDF und Bilder (JPG, PNG, WebP, GIF, HEIC).']);
-        }
-        $documentId = Uuid::v4();
-        $sha256 = (string) hash_file('sha256', $sourcePath);
-        $path = $this->store->store($sourcePath, self::FOLDER . '/' . $row['id'], $documentId, $extension);
+        $document = $this->acceptUpload($id, $sourcePath, $originalName, $kind, $actor);
         try {
-            $this->orders->insertDocument([
-                'id' => $documentId, 'purchase_order_id' => $id, 'kind' => $kind, 'revision' => null,
-                'original_name' => $this->fileName($originalName, $extension), 'mime_type' => $mime, 'size_bytes' => $size,
-                'sha256' => $sha256, 'storage_path' => $path, 'uploaded_by_user_id' => (string) $actor['id'], 'created_at' => Clock::now(),
-            ]);
+            $this->orders->insertDocument($document);
         } catch (Throwable $exception) {
-            $this->discard($path);
+            $this->discard((string) $document['storage_path']);
             throw $exception;
         }
         // Bewusst keine automatische Statusänderung durch den Upload.
@@ -585,6 +745,9 @@ final readonly class PurchaseOrderService
         $document = $this->orders->document($id, $documentId) ?? throw new OrderValidationException(['Das Dokument wurde nicht gefunden.']);
         if ($document['kind'] === 'own_order') {
             throw new OrderValidationException(['Ausgegebene Bestell-PDFs sind archiviert und können nicht gelöscht werden.']);
+        }
+        if ($this->orders->documentInUse($documentId)) {
+            throw new OrderValidationException(['Das Dokument ist Beleg einer Auftragsbestätigung, Lieferung oder Rechnung und bleibt erhalten.']);
         }
         if ($document['kind'] === 'invoice') {
             $this->require($actor, 'costs.read');
@@ -636,22 +799,36 @@ final readonly class PurchaseOrderService
     // Rechnungen, Ist-Kosten, Kostenverteilung (nur mit costs.read)
     // -------------------------------------------------------------------------
 
-    /** @param array<string,mixed> $input invoiceNumber, invoiceDate, netAmount, vatAmount?, grossAmount?, documentId?, notes? @param array<string,mixed> $actor @return array<string,mixed> */
-    public function addInvoice(string $id, array $input, array $actor): array
+    /**
+     * Lieferantenbeleg erfassen: Rechnung, Teilrechnung, Schlussrechnung, Gutschrift oder Stornobeleg.
+     * Beträge werden positiv erfasst; die Kostenwirkung berechnet PurchaseCostCalculator.
+     * Belege werden nie gelöscht – eine Rechnung wird über einen Stornobeleg neutralisiert.
+     *
+     * Ist bereits ein direkter Ist-Betrag erfasst, ersetzt der Beleg ihn nur mit
+     * replaceDirectCost = true (kontrollierte Umstellung, keine Doppelzählung).
+     *
+     * @param array<string,mixed> $input version, kind, invoiceNumber, invoiceDate, netAmount, vatAmount?, grossAmount?,
+     *   finalMode?, relatedInvoiceId?, documentId?, notes?, replaceDirectCost?
+     * @param array{path:string,name:string}|null $upload
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
+    public function addInvoice(string $id, array $input, ?array $upload, array $actor): array
     {
         $this->requireCosts($actor);
-        $row = $this->find($id);
-        if ($row['status'] === 'draft') {
-            throw new OrderValidationException(['Rechnungen können erst nach dem Bestellen erfasst werden.']);
+        $row = $this->placedOrder($id, 'Belege können erst nach dem Bestellen erfasst werden.');
+        $kind = (string) ($input['kind'] ?? 'invoice');
+        if (!array_key_exists($kind, self::INVOICE_KINDS)) {
+            throw new OrderValidationException(['Bitte eine gültige Belegart wählen.']);
         }
-        if ($row['actual_net_total'] !== null) {
-            throw new OrderValidationException(['Für diese Bestellung ist bereits ein tatsächlicher Betrag direkt erfasst. Bitte diesen zuerst entfernen, damit Kosten nicht doppelt gezählt werden.']);
-        }
-        $number = $this->text($input['invoiceNumber'] ?? '', 100, 'Rechnungsnummer');
-        $date = $this->date($input['invoiceDate'] ?? '', 'Rechnungsdatum');
+        $number = $this->text($input['invoiceNumber'] ?? '', 100, 'Belegnummer');
+        $date = $this->date($input['invoiceDate'] ?? '', 'Belegdatum');
         $net = $this->money($input['netAmount'] ?? '', 'Nettobetrag');
-        if ($number === '' || $date === null || $net === null) {
-            throw new OrderValidationException(['Bitte Rechnungsnummer, Rechnungsdatum und Nettobetrag angeben.']);
+        if (($number === '' && $kind !== 'reversal') || $date === null || $net === null) {
+            throw new OrderValidationException([$kind === 'reversal' ? 'Bitte Belegdatum und Nettobetrag angeben.' : 'Bitte Belegnummer, Belegdatum und Nettobetrag angeben.']);
+        }
+        if (!BigDecimal::of($net)->isPositive()) {
+            throw new OrderValidationException(['Bitte den Nettobetrag positiv angeben – Gutschriften und Stornos mindern die Kosten automatisch.']);
         }
         $vat = $this->money($input['vatAmount'] ?? '', 'Umsatzsteuer');
         $gross = $this->money($input['grossAmount'] ?? '', 'Bruttobetrag');
@@ -661,54 +838,76 @@ final readonly class PurchaseOrderService
         if ($vat !== null && $gross !== null && !BigDecimal::of($net)->plus($vat)->isEqualTo($gross)) {
             throw new OrderValidationException(['Nettobetrag und Umsatzsteuer ergeben nicht den Bruttobetrag.']);
         }
-        $documentId = trim((string) ($input['documentId'] ?? ''));
-        if ($documentId !== '' && $this->orders->document($id, $documentId) === null) {
+        if ($gross !== null && BigDecimal::of($gross)->isNegative()) {
+            throw new OrderValidationException(['Der Bruttobetrag darf nicht negativ sein.']);
+        }
+        $finalMode = null;
+        if ($kind === 'final') {
+            $finalMode = (string) ($input['finalMode'] ?? '');
+            if (!array_key_exists($finalMode, self::FINAL_MODES)) {
+                throw new OrderValidationException(['Bitte angeben, ob die Schlussrechnung einen zusätzlichen Betrag oder den Gesamtbetrag einschließlich der Teilrechnungen ausweist.']);
+            }
+        }
+
+        $invoices = $this->orders->invoices($id);
+        $byId = array_column($invoices, null, 'id');
+        $current = PurchaseCostCalculator::calculate($this->costDocuments($invoices));
+        $relatedId = trim((string) ($input['relatedInvoiceId'] ?? ''));
+        $related = $relatedId !== '' ? ($byId[$relatedId] ?? throw new OrderValidationException(['Der Originalbeleg gehört nicht zu dieser Bestellung.'])) : null;
+        if ($kind === 'reversal' && $related === null) {
+            throw new OrderValidationException(['Ein Stornobeleg braucht den zugehörigen Originalbeleg.']);
+        }
+        if ($related !== null && !in_array($kind, ['reversal', 'credit'], true)) {
+            $related = null; // Bezug nur bei Storno und Gutschrift.
+        }
+        if ($related !== null && $related['kind'] === 'reversal') {
+            throw new OrderValidationException(['Ein Stornobeleg kann nicht selbst storniert oder gutgeschrieben werden.']);
+        }
+        if ($kind === 'reversal' && BigDecimal::of($net)->isGreaterThan($current['remaining'][$related['id']] ?? '0')) {
+            throw new OrderValidationException(['Der Stornobetrag übersteigt den noch nicht stornierten Betrag des Originalbelegs (' . $current['remaining'][$related['id']] . ' €).']);
+        }
+        if ($current['activeTotalFinalId'] !== null && ($kind === 'partial' || ($kind === 'final' && $finalMode === 'total'))) {
+            throw new OrderValidationException([$kind === 'partial'
+                ? 'Es gibt bereits eine Gesamt-Schlussrechnung. Weitere Teilrechnungen würden doppelt zählen – bitte die Schlussrechnung zuerst stornieren.'
+                : 'Es gibt bereits eine Gesamt-Schlussrechnung. Bitte diese zuerst stornieren.']);
+        }
+        $invoiceId = Uuid::v4();
+        $record = [
+            'id' => $invoiceId, 'purchase_order_id' => $id, 'kind' => $kind, 'final_mode' => $finalMode,
+            'related_invoice_id' => $related['id'] ?? null, 'invoice_number' => $number, 'invoice_date' => $date,
+            'net_amount' => $net, 'vat_amount' => $vat, 'gross_amount' => $gross,
+            'notes' => $this->text($input['notes'] ?? '', 1000, 'Bemerkung'),
+            'created_by_user_id' => (string) $actor['id'], 'created_at' => Clock::now(),
+        ];
+        $after = PurchaseCostCalculator::calculate($this->costDocuments([...$invoices, $record]));
+        if (BigDecimal::of((string) $after['total'])->isNegative()) {
+            throw new OrderValidationException(['Gutschriften und Stornos würden die Kosten unter 0 senken. Bitte die Beträge prüfen.']);
+        }
+        $replaceDirect = $row['actual_net_total'] !== null;
+        if ($replaceDirect && !filter_var($input['replaceDirectCost'] ?? false, FILTER_VALIDATE_BOOL)) {
+            throw new OrderValidationException(['Für diese Bestellung sind die Ist-Kosten direkt erfasst. Bitte die Umstellung auf Belege ausdrücklich bestätigen, damit Kosten nicht doppelt zählen.']);
+        }
+        $existingDocument = trim((string) ($input['documentId'] ?? ''));
+        if ($upload === null && $existingDocument !== '' && $this->orders->document($id, $existingDocument) === null) {
             throw new OrderValidationException(['Das zugeordnete Dokument gehört nicht zu dieser Bestellung.']);
         }
-        $this->pdo->exec('BEGIN IMMEDIATE');
-        try {
-            if (!$this->orders->update($id, $this->version($input), [], Clock::now())) {
-                throw $this->conflict();
+        $fields = ['invoiced_net_total' => $after['total']] + ($replaceDirect ? ['actual_net_total' => null] : []);
+        $now = (string) $record['created_at'];
+        $this->withEvent($id, $input, $upload, 'invoice', $actor, function (?string $documentId) use ($id, $record, $existingDocument, $replaceDirect, $kind, $number, $related, $actor, $now): void {
+            $this->orders->insertInvoice([...$record, 'document_id' => $documentId ?? ($existingDocument !== '' ? $existingDocument : null)]);
+            if ($replaceDirect) {
+                $this->orders->addHistory($id, Uuid::v4(), 'cost', 'direct', 'invoices', 'Direkt erfasste Ist-Kosten durch Belege ersetzt.', (string) $actor['id'], $now);
             }
-            $this->orders->insertInvoice([
-                'id' => Uuid::v4(), 'purchase_order_id' => $id, 'invoice_number' => $number, 'invoice_date' => $date,
-                'net_amount' => $net, 'vat_amount' => $vat, 'gross_amount' => $gross, 'document_id' => $documentId !== '' ? $documentId : null,
-                'notes' => $this->text($input['notes'] ?? '', 1000, 'Bemerkung'), 'created_by_user_id' => (string) $actor['id'], 'created_at' => Clock::now(),
-            ]);
+            $this->orders->addHistory($id, Uuid::v4(), 'invoice', null, $kind,
+                trim(($number !== '' ? 'Nr. ' . $number : '') . ($related !== null ? ' zu ' . $related['invoice_number'] : '')), (string) $actor['id'], $now);
             $this->assertAllocationsCovered($id);
-            $this->pdo->commit();
-        } catch (Throwable $exception) {
-            $this->rollBack();
-            throw $exception;
-        }
-        return $this->detail($id, $actor);
-    }
-
-    /** @param array<string,mixed> $input version @param array<string,mixed> $actor @return array<string,mixed> */
-    public function deleteInvoice(string $id, string $invoiceId, array $input, array $actor): array
-    {
-        $this->requireCosts($actor);
-        $this->find($id);
-        $this->pdo->exec('BEGIN IMMEDIATE');
-        try {
-            if (!$this->orders->update($id, $this->version($input), [], Clock::now())) {
-                throw $this->conflict();
-            }
-            if (!$this->orders->deleteInvoice($id, $invoiceId)) {
-                throw new OrderValidationException(['Die Rechnung wurde nicht gefunden.']);
-            }
-            $this->assertAllocationsCovered($id);
-            $this->pdo->commit();
-        } catch (Throwable $exception) {
-            $this->rollBack();
-            throw $exception;
-        }
+        }, $fields);
         return $this->detail($id, $actor);
     }
 
     /**
-     * Direkt erfasster tatsächlicher Nettobetrag (einfache externe Käufe) – nur ohne Rechnungen.
-     * Leerer Wert entfernt den Betrag.
+     * Direkt erfasster tatsächlicher Nettobetrag (einfache Käufe ohne Belegerfassung) – nur
+     * solange keine Belege erfasst sind. Leerer Wert entfernt den Betrag.
      *
      * @param array<string,mixed> $input version, amount
      * @param array<string,mixed> $actor
@@ -717,25 +916,26 @@ final readonly class PurchaseOrderService
     public function setActualCost(string $id, array $input, array $actor): array
     {
         $this->requireCosts($actor);
-        $row = $this->find($id);
-        if ($row['status'] === 'draft') {
-            throw new OrderValidationException(['Tatsächliche Kosten können erst nach dem Bestellen erfasst werden.']);
-        }
+        $row = $this->placedOrder($id, 'Tatsächliche Kosten können erst nach dem Bestellen erfasst werden.');
         $amount = $this->money($input['amount'] ?? '', 'Tatsächlicher Nettobetrag');
-        if ($amount !== null && $this->orders->invoices($id) !== []) {
-            throw new OrderValidationException(['Es sind bereits Lieferantenrechnungen erfasst; deren Summe ist der tatsächliche Betrag. Ein zusätzlicher direkter Betrag würde Kosten doppelt zählen.']);
+        if ($amount !== null && BigDecimal::of($amount)->isNegative()) {
+            throw new OrderValidationException(['Der tatsächliche Nettobetrag darf nicht negativ sein.']);
         }
-        $this->pdo->exec('BEGIN IMMEDIATE');
-        try {
-            if (!$this->orders->update($id, $this->version($input), ['actual_net_total' => $amount], Clock::now())) {
+        if ($this->orders->invoices($id) !== []) {
+            throw new OrderValidationException(['Es sind bereits Lieferantenbelege erfasst; deren Kostenwirkung ist der tatsächliche Betrag. Ein direkter Betrag würde Kosten doppelt zählen.']);
+        }
+        if ($amount === $row['actual_net_total']) {
+            return $this->detail($id, $actor);
+        }
+        $now = Clock::now();
+        $this->transaction(function () use ($id, $input, $amount, $row, $actor, $now): void {
+            if (!$this->orders->update($id, $this->version($input), ['actual_net_total' => $amount], $now)) {
                 throw $this->conflict();
             }
+            $this->orders->addHistory($id, Uuid::v4(), 'cost', $row['actual_net_total'] !== null ? 'direct' : null, $amount !== null ? 'direct' : 'none',
+                $amount === null ? 'Direkt erfasste Ist-Kosten entfernt.' : ($row['actual_net_total'] === null ? 'Ist-Kosten direkt erfasst.' : 'Direkt erfasste Ist-Kosten geändert.'), (string) $actor['id'], $now);
             $this->assertAllocationsCovered($id);
-            $this->pdo->commit();
-        } catch (Throwable $exception) {
-            $this->rollBack();
-            throw $exception;
-        }
+        });
         return $this->detail($id, $actor);
     }
 
@@ -750,7 +950,7 @@ final readonly class PurchaseOrderService
     public function saveAllocations(string $id, array $input, array $actor): array
     {
         $this->requireCosts($actor);
-        $row = $this->find($id);
+        $row = $this->placedOrder($id, 'Die Kostenverteilung ist erst nach dem Bestellen möglich.');
         $raw = $input['allocations'] ?? [];
         if (!is_array($raw) || count($raw) > 50) {
             throw new OrderValidationException(['Die Kostenverteilung muss als Liste mit höchstens 50 Einträgen übergeben werden.']);
@@ -777,17 +977,14 @@ final readonly class PurchaseOrderService
             }
         }
         $now = Clock::now();
-        $this->pdo->exec('BEGIN IMMEDIATE');
-        try {
+        $this->transaction(function () use ($id, $input, $allocations, $actor, $now): void {
             if (!$this->orders->update($id, $this->version($input), [], $now)) {
                 throw $this->conflict();
             }
             $this->orders->replaceAllocations($id, array_values($allocations), $now);
-            $this->pdo->commit();
-        } catch (Throwable $exception) {
-            $this->rollBack();
-            throw $exception;
-        }
+            $this->orders->addHistory($id, Uuid::v4(), 'allocation', null, $allocations === [] ? 'removed' : 'saved',
+                $allocations === [] ? 'Kostenverteilung entfernt.' : 'Kostenverteilung auf ' . count($allocations) . ' Auftrag/Aufträge gespeichert.', (string) $actor['id'], $now);
+        });
         return $this->detail($id, $actor);
     }
 
@@ -834,6 +1031,7 @@ final readonly class PurchaseOrderService
             'orderNumber' => $row['order_number'],
             'origin' => $row['origin'],
             'status' => $row['status'],
+            'placed' => $this->placed($row),
             'statusLabel' => self::STATUS_LABELS[$row['status']] ?? $row['status'],
             'deliveryStatus' => $row['delivery_status'],
             'deliveryLabel' => self::DELIVERY_LABELS[$row['delivery_status']] ?? $row['delivery_status'],
@@ -851,7 +1049,9 @@ final readonly class PurchaseOrderService
             'jobTitle' => $row['order_id'] !== null ? $row['job_title'] : null,
             'itemCount' => (int) ($row['item_count'] ?? 0),
             'creatorName' => $row['creator_name'],
+            // Drei getrennte Beträge: ursprünglich bestellt, aktuell bestätigt, tatsächlich berechnet.
             'expectedNetTotal' => $costs ? $row['expected_net_total'] : null,
+            'confirmedNetTotal' => $costs ? ($row['confirmed_net_total'] ?? null) : null,
             'actualNetTotal' => $costs ? $actual : null,
             'costSource' => $costs ? ($row['actual_net_total'] !== null ? 'direct' : ($actual !== null ? 'invoices' : null)) : null,
         ];
@@ -868,7 +1068,8 @@ final readonly class PurchaseOrderService
     }
 
     /**
-     * Ist-Kosten: direkt erfasster Betrag oder Summe der Rechnungen (nie beides).
+     * Ist-Kosten: direkt erfasster Betrag oder Kostenwirkung der Belege (nie beides).
+     * invoiced_net_total wird bei jeder Belegerfassung über PurchaseCostCalculator neu gesetzt.
      *
      * @param array<string,mixed> $row
      */
@@ -877,8 +1078,7 @@ final readonly class PurchaseOrderService
         if ($row['actual_net_total'] !== null) {
             return (string) $row['actual_net_total'];
         }
-        $amounts = array_filter(explode('|', (string) ($row['invoice_amounts'] ?? '')), static fn (string $value): bool => $value !== '');
-        return $amounts === [] ? null : $this->sum($amounts);
+        return $row['invoiced_net_total'] !== null ? (string) $row['invoiced_net_total'] : null;
     }
 
     /** Nach Änderungen an Ist-Kosten dürfen bestehende Verteilungen sie nicht übersteigen. */
@@ -894,35 +1094,147 @@ final readonly class PurchaseOrderService
         }
     }
 
-    /** @param array<string,mixed> $input @param array<string,mixed> $actor @param array<string,string> $labels @return array<string,mixed> */
-    private function setTrackingStatus(string $id, array $input, array $actor, string $field, string $column, array $labels): array
+    /**
+     * Gemeinsamer Ablauf für Vorgänge mit optionalem Beleg: Datei prüfen und ablegen, dann in
+     * einer Transaktion Version prüfen, Dokument und Vorgang speichern. Fehler räumen die Datei auf.
+     *
+     * @param array<string,mixed> $input
+     * @param array{path:string,name:string}|null $upload
+     * @param array<string,mixed> $actor
+     * @param callable(?string):void $store erhält die ID des neuen Dokuments (oder null)
+     * @param array<string,mixed> $fields zusätzliche Spalten der Bestellung (z. B. abgeleiteter Status)
+     */
+    private function withEvent(string $id, array $input, ?array $upload, string $documentKind, array $actor, callable $store, array $fields = []): void
     {
-        $this->require($actor, 'purchases.write');
-        $row = $this->find($id);
-        if ($row['status'] === 'draft') {
-            throw new OrderValidationException(['Liefer- und Zahlungsstatus sind erst nach dem Bestellen verfügbar.']);
-        }
-        $status = (string) ($input['status'] ?? '');
-        if (!array_key_exists($status, $labels)) {
-            throw new OrderValidationException(['Ungültiger Status.']);
-        }
-        if ($status === $row[$column]) {
-            throw new OrderValidationException(['Der Status ist bereits gesetzt.']);
-        }
-        $note = $this->text($input['note'] ?? '', 500, 'Bemerkung');
+        $document = $upload !== null ? $this->acceptUpload($id, $upload['path'], $upload['name'], $documentKind, $actor) : null;
         $now = Clock::now();
+        try {
+            $this->transaction(function () use ($id, $input, $fields, $document, $store, $now): void {
+                if (!$this->orders->update($id, $this->version($input), $fields, $now)) {
+                    throw $this->conflict();
+                }
+                if ($document !== null) {
+                    $this->orders->insertDocument($document);
+                }
+                $store($document['id'] ?? null);
+            });
+        } catch (Throwable $exception) {
+            if ($document !== null) {
+                $this->discard((string) $document['storage_path']);
+            }
+            throw $exception;
+        }
+    }
+
+    /**
+     * Prüft eine hochgeladene Datei (Typ am Inhalt, Größe, Anzahl) und legt sie ab.
+     * Liefert die Dokumentzeile; das Einfügen in die Datenbank übernimmt der Aufrufer.
+     *
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
+    private function acceptUpload(string $id, string $sourcePath, string $originalName, string $kind, array $actor): array
+    {
+        if (count($this->orders->documents($id)) >= self::MAX_DOCUMENTS) {
+            throw new OrderValidationException(['Eine Bestellung kann höchstens ' . self::MAX_DOCUMENTS . ' Dokumente enthalten.']);
+        }
+        $size = is_file($sourcePath) ? (int) filesize($sourcePath) : 0;
+        if ($size <= 0) {
+            throw new OrderValidationException(['Die Datei ist leer oder fehlt.']);
+        }
+        if ($size > self::MAX_ATTACHMENT_BYTES) {
+            throw new OrderValidationException(['Dokumente dürfen höchstens 15 MB groß sein.']);
+        }
+        // Der Typ wird am Inhalt erkannt, nicht an Dateiname oder Browserangabe.
+        $mime = (string) (new \finfo(FILEINFO_MIME_TYPE))->file($sourcePath);
+        $extension = self::ATTACHMENT_TYPES[$mime] ?? null;
+        if ($extension === null) {
+            throw new OrderValidationException(['Dieser Dateityp wird nicht unterstützt. Erlaubt sind PDF und Bilder (JPG, PNG, WebP, GIF, HEIC).']);
+        }
+        $documentId = Uuid::v4();
+        $sha256 = (string) hash_file('sha256', $sourcePath);
+        $path = $this->store->store($sourcePath, self::FOLDER . '/' . $id, $documentId, $extension);
+        return [
+            'id' => $documentId, 'purchase_order_id' => $id, 'kind' => $kind, 'revision' => null,
+            'original_name' => $this->fileName($originalName, $extension), 'mime_type' => $mime, 'size_bytes' => $size,
+            'sha256' => $sha256, 'storage_path' => $path, 'uploaded_by_user_id' => (string) $actor['id'], 'created_at' => Clock::now(),
+        ];
+    }
+
+    /** @param callable():void $operation */
+    private function transaction(callable $operation): void
+    {
         $this->pdo->exec('BEGIN IMMEDIATE');
         try {
-            if (!$this->orders->update($id, $this->version($input), [$column => $status], $now)) {
-                throw $this->conflict();
-            }
-            $this->orders->addHistory($id, Uuid::v4(), $field, (string) $row[$column], $status, $note, (string) $actor['id'], $now);
+            $operation();
             $this->pdo->commit();
         } catch (Throwable $exception) {
             $this->rollBack();
             throw $exception;
         }
-        return $this->detail($id, $actor);
+    }
+
+    /** Bereits bestellt (auch storniert oder für eine neue Fassung geöffnet)? @param array<string,mixed> $row */
+    private function placed(array $row): bool
+    {
+        return $row['status'] !== 'draft' || (int) $row['revision'] > 0;
+    }
+
+    /** @return array<string,mixed> */
+    private function placedOrder(string $id, string $message = 'Vorgänge können erst nach dem Bestellen erfasst werden.'): array
+    {
+        $row = $this->find($id);
+        if (!$this->placed($row)) {
+            throw new OrderValidationException([$message]);
+        }
+        return $row;
+    }
+
+    /** @param array<string,string> $allowed */
+    private function choice(mixed $value, array $allowed, string $message): string
+    {
+        $value = (string) $value;
+        return array_key_exists($value, $allowed) ? $value : throw new OrderValidationException([$message]);
+    }
+
+    /**
+     * @param list<array<string,mixed>> $invoices
+     * @return list<array{id:string,kind:string,final_mode:?string,related_invoice_id:?string,net_amount:string,gross_amount:?string}>
+     */
+    private function costDocuments(array $invoices): array
+    {
+        return array_map(static fn (array $invoice): array => [
+            'id' => (string) $invoice['id'], 'kind' => (string) $invoice['kind'], 'final_mode' => $invoice['final_mode'] ?? null,
+            'related_invoice_id' => $invoice['related_invoice_id'] ?? null, 'net_amount' => (string) $invoice['net_amount'],
+            'gross_amount' => $invoice['gross_amount'] ?? null,
+        ], $invoices);
+    }
+
+    /**
+     * Bezeichnungen der geänderten Angaben für den Verlauf (keine Beträge im Text).
+     *
+     * @param array<string,mixed> $row
+     * @param array<string,mixed> $fields
+     * @param list<array<string,mixed>>|null $items
+     * @return list<string>
+     */
+    private function changedFields(array $row, array $fields, ?array $items): array
+    {
+        $labels = [
+            'title' => 'Bezeichnung', 'external_reference' => 'Externe Bestellnummer', 'expected_delivery_date' => 'Liefertermin',
+            'order_id' => 'Auftrag', 'notes' => 'Bemerkung', 'supplier_id' => 'Lieferant', 'delivery_address' => 'Lieferanschrift',
+            'order_date' => 'Bestelldatum', 'expected_net_total' => 'Bestellwert',
+        ];
+        $changed = [];
+        foreach ($labels as $column => $label) {
+            if (array_key_exists($column, $fields) && (string) ($fields[$column] ?? '') !== (string) ($row[$column] ?? '')) {
+                $changed[] = $label;
+            }
+        }
+        if ($items !== null) {
+            $changed[] = 'Positionen';
+        }
+        return $changed;
     }
 
     /** @return list<array<string,mixed>> */
@@ -1017,18 +1329,24 @@ final readonly class PurchaseOrderService
     /** @param array<string,mixed> $entry */
     private function historyLabel(array $entry): string
     {
-        $labels = match ($entry['field']) {
-            'status' => self::STATUS_LABELS,
-            'delivery' => self::DELIVERY_LABELS,
-            'payment' => self::PAYMENT_LABELS,
-            default => [],
+        $new = (string) $entry['new_value'];
+        $old = $entry['old_value'];
+        return match ($entry['field']) {
+            'status' => 'Bestellstatus: ' . ($old !== null ? (self::STATUS_LABELS[$old] ?? $old) . ' → ' : '') . (self::STATUS_LABELS[$new] ?? $new),
+            'delivery' => 'Lieferstatus: ' . ($old !== null ? (self::DELIVERY_LABELS[$old] ?? $old) . ' → ' : '') . (self::DELIVERY_LABELS[$new] ?? $new),
+            'payment' => 'Zahlungsstatus: ' . ($old !== null ? (self::PAYMENT_LABELS[$old] ?? $old) . ' → ' : '') . (self::PAYMENT_LABELS[$new] ?? $new),
+            'revision' => 'Neue Fassung ' . $new . ' geöffnet',
+            'confirmation' => match ($new) {
+                'current' => 'Auftragsbestätigung als aktuell markiert',
+                'corrected' => 'Weitere Auftragsbestätigung erfasst',
+                default => 'Auftragsbestätigung erfasst',
+            },
+            'invoice' => (self::INVOICE_KINDS[$new] ?? 'Beleg') . ' erfasst',
+            'cost' => 'Ist-Kosten',
+            'allocation' => 'Kostenverteilung',
+            'edit' => 'Angaben geändert',
+            default => (string) $entry['field'],
         };
-        $prefix = ['status' => 'Bestellstatus', 'delivery' => 'Lieferstatus', 'payment' => 'Zahlungsstatus', 'revision' => 'Neue Fassung'][$entry['field']] ?? $entry['field'];
-        if ($entry['field'] === 'revision') {
-            return 'Neue Fassung ' . $entry['new_value'] . ' geöffnet';
-        }
-        $from = $entry['old_value'] !== null ? ($labels[$entry['old_value']] ?? $entry['old_value']) . ' → ' : '';
-        return $prefix . ': ' . $from . ($labels[$entry['new_value']] ?? $entry['new_value']);
     }
 
     /** @return array<string,mixed> */
@@ -1051,11 +1369,16 @@ final readonly class PurchaseOrderService
         return $this->orders->supplier($id) ?? throw new OrderValidationException(['Der Lieferant wurde nicht gefunden.']);
     }
 
-    /** @param array<string,mixed> $supplier */
+    /** Lieferanten- und Adressdaten zum Zeitpunkt der Bestellung. @param array<string,mixed> $supplier */
     private function snapshot(array $supplier): string
     {
-        return json_encode(['id' => $supplier['id'], 'number' => (string) ($supplier['supplier_number'] ?? ''), 'name' => (string) $supplier['name'],
-            'contact' => (string) ($supplier['contact'] ?? '')], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        return json_encode([
+            'id' => $supplier['id'], 'number' => (string) ($supplier['supplier_number'] ?? ''), 'name' => (string) $supplier['name'],
+            'contact' => (string) ($supplier['contact'] ?? ''),
+            'street' => (string) ($supplier['street'] ?? ''), 'houseNumber' => (string) ($supplier['house_number'] ?? ''),
+            'postalCode' => (string) ($supplier['postal_code'] ?? ''), 'city' => (string) ($supplier['city'] ?? ''),
+            'country' => (string) ($supplier['country'] ?? ''), 'customerNumber' => (string) ($supplier['customer_number'] ?? ''),
+        ], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
     }
 
     private function optionalOrder(mixed $id): ?string

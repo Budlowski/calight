@@ -37,10 +37,12 @@ final readonly class PurchaseOrderPdfService
         $pdf->begin(
             'Bestellung',
             'Nr. ' . $order['order_number'] . ($revision > 1 ? ' · Fassung ' . $revision . ' (ersetzt frühere Fassungen)' : ''),
-            array_values(array_filter([(string) $supplier['name'], ...preg_split('/\R/u', (string) ($supplier['contact'] ?? '')) ?: []], static fn (string $line): bool => trim($line) !== '')),
+            self::recipient($supplier),
             [
                 ['Bestellnummer', (string) $order['order_number']],
                 ['Bestelldatum', self::date((string) ($order['order_date'] ?? ''))],
+                // Eigene Kundennummer beim Lieferanten, damit er die Bestellung zuordnen kann.
+                ['Unsere Kundennr.', (string) ($supplier['customerNumber'] ?? '')],
                 ['Lieferantennummer', (string) ($supplier['number'] ?? '')],
                 ['Gewünschte Lieferung', self::date((string) ($order['expected_delivery_date'] ?? ''))],
                 ['Auftrag', (string) ($order['order_reference'] ?? '')],
@@ -102,6 +104,23 @@ final readonly class PurchaseOrderPdfService
         }
         $pdf->paragraph('Bitte geben Sie bei Auftragsbestätigung, Lieferschein und Rechnung unsere Bestellnummer ' . $order['order_number'] . ' an.', null, false, '.35 .4 .45');
         return $pdf->output();
+    }
+
+    /**
+     * Empfängerzeilen aus dem Snapshot: strukturierte Anschrift; ältere Snapshots ohne Anschrift
+     * verwenden wie bisher das Kontaktfeld.
+     *
+     * @param array<string,mixed> $supplier
+     * @return list<string>
+     */
+    private static function recipient(array $supplier): array
+    {
+        $street = trim((string) ($supplier['street'] ?? '') . ' ' . (string) ($supplier['houseNumber'] ?? ''));
+        $place = trim((string) ($supplier['postalCode'] ?? '') . ' ' . (string) ($supplier['city'] ?? ''));
+        $lines = $street !== '' || $place !== ''
+            ? [(string) $supplier['name'], $street, $place, (string) ($supplier['country'] ?? '')]
+            : [(string) $supplier['name'], ...(preg_split('/\R/u', (string) ($supplier['contact'] ?? '')) ?: [])];
+        return array_values(array_filter($lines, static fn (string $line): bool => trim($line) !== ''));
     }
 
     private static function date(string $value): string

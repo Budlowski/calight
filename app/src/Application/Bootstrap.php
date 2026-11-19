@@ -116,7 +116,7 @@ final readonly class Bootstrap
             new MaterialRequestController($view,$materialRequestService),
             new MeasurementController($view,$measurementService,new MeasurementPdfService($measurementService,$measurementRepository,$documentSettingsRepository,$documentArchive)),
             new WorkReportController($view,$workReportService,new WorkReportPdfService($workReportService,$documentSettingsRepository,$documentArchive),$documentSettingsRepository),
-            new PurchaseOrderController($view,new PurchaseOrderService($this->pdo,new PurchaseOrderRepository($this->pdo),$numberRanges,$documentStore,new PurchaseOrderPdfService($documentSettingsRepository))),
+            new PurchaseOrderController($view,new PurchaseOrderService($this->pdo,new PurchaseOrderRepository($this->pdo),$numberRanges,$documentStore,new PurchaseOrderPdfService($documentSettingsRepository)),$masterDataService),
         );
     }
 }

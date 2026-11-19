@@ -7,20 +7,21 @@ namespace App\Infrastructure\Persistence;
 use App\Support\ListQuery;
 use PDO;
 
-/** Datenzugriff für Bestellungen (Phase 3.4.1). Geldwerte bleiben Dezimalstrings. */
+/** Datenzugriff für Bestellungen (Phase 3.4.1/3.4.1.1). Geldwerte bleiben Dezimalstrings. */
 final readonly class PurchaseOrderRepository
 {
-    public const LIST_SORTS = ['updated' => 'desc', 'date' => 'desc', 'number' => 'asc', 'supplier' => 'asc', 'order' => 'asc', 'expected' => 'desc', 'actual' => 'desc'];
+    public const LIST_SORTS = ['updated' => 'desc', 'date' => 'desc', 'number' => 'asc', 'supplier' => 'asc', 'order' => 'asc', 'expected' => 'desc', 'confirmed' => 'desc', 'actual' => 'desc'];
     public const LIST_FILTERS = ['supplier', 'order', 'origin', 'status', 'delivery', 'payment'];
 
     private const SELECT = "p.*, s.name AS supplier_name, s.supplier_number, o.order_number AS job_number, o.title AS job_title,
         u.display_name AS creator_name, iu.display_name AS issued_by_name,
-        (SELECT group_concat(i.net_amount, '|') FROM purchase_order_invoices i WHERE i.purchase_order_id = p.id) AS invoice_amounts,
+        (SELECT c.confirmed_net_total FROM purchase_order_confirmations c WHERE c.purchase_order_id = p.id AND c.is_current = 1) AS confirmed_net_total,
         (SELECT COUNT(*) FROM purchase_order_items it WHERE it.purchase_order_id = p.id) AS item_count";
     private const FROM = 'purchase_orders p JOIN suppliers s ON s.id = p.supplier_id LEFT JOIN orders o ON o.id = p.order_id
         JOIN users u ON u.id = p.created_by_user_id LEFT JOIN users iu ON iu.id = p.issued_by_user_id';
-    // Nur zum Sortieren: Ist-Kosten aus direkt erfasstem Betrag oder Rechnungssumme (nie beides).
-    private const ACTUAL_SORT = 'CAST(COALESCE(p.actual_net_total, (SELECT SUM(CAST(i.net_amount AS REAL)) FROM purchase_order_invoices i WHERE i.purchase_order_id = p.id)) AS REAL)';
+    // Nur zum Sortieren: Ist-Kosten aus direkt erfasstem Betrag oder Belegsumme (nie beides).
+    private const ACTUAL_SORT = 'CAST(COALESCE(p.actual_net_total, p.invoiced_net_total) AS REAL)';
+    private const CONFIRMED_SORT = 'CAST((SELECT c.confirmed_net_total FROM purchase_order_confirmations c WHERE c.purchase_order_id = p.id AND c.is_current = 1) AS REAL)';
 
     public function __construct(private PDO $pdo)
     {
@@ -54,6 +55,7 @@ final readonly class PurchaseOrderRepository
             'supplier' => 's.name COLLATE NOCASE',
             'order' => 'o.order_number COLLATE NOCASE',
             'expected' => $amountSort ? 'CAST(p.expected_net_total AS REAL)' : 'p.updated_at',
+            'confirmed' => $amountSort ? self::CONFIRMED_SORT : 'p.updated_at',
             'actual' => $amountSort ? self::ACTUAL_SORT : 'p.updated_at',
         ];
         return $page->fetch(self::SELECT, self::FROM, $sorts, 'p.id', $query);
@@ -70,8 +72,18 @@ final readonly class PurchaseOrderRepository
     /** @param array<string,mixed> $data */
     public function insert(array $data): void
     {
+        $this->insertRow('purchase_orders', $data);
+    }
+
+    /**
+     * Einfügen mit festen Tabellennamen; Spaltennamen stammen ausschließlich aus dem Service.
+     *
+     * @param array<string,mixed> $data
+     */
+    private function insertRow(string $table, array $data): void
+    {
         $columns = array_keys($data);
-        $this->pdo->prepare(sprintf('INSERT INTO purchase_orders (%s) VALUES (%s)', implode(', ', $columns), implode(', ', array_map(static fn (string $column): string => ':' . $column, $columns))))
+        $this->pdo->prepare(sprintf('INSERT INTO %s (%s) VALUES (%s)', $table, implode(', ', $columns), implode(', ', array_map(static fn (string $column): string => ':' . $column, $columns))))
             ->execute($data);
     }
 
@@ -113,7 +125,7 @@ final readonly class PurchaseOrderRepository
         }
     }
 
-    /** @return list<array<string,mixed>> */
+    /** Bestandsverknüpfungen aus Phase 3.4.1 (nur noch lesend angezeigt). @return list<array<string,mixed>> */
     public function materialRequests(string $id): array
     {
         $statement = $this->pdo->prepare('SELECT r.id, r.description, r.notes, r.status, r.needed_by, o.order_number
@@ -121,28 +133,6 @@ final readonly class PurchaseOrderRepository
             LEFT JOIN orders o ON o.id = r.order_id WHERE l.purchase_order_id = :id ORDER BY r.created_at');
         $statement->execute(['id' => $id]);
         return $statement->fetchAll();
-    }
-
-    public function linkMaterialRequest(string $id, string $requestId): void
-    {
-        $this->pdo->prepare('INSERT OR IGNORE INTO purchase_order_material_requests (purchase_order_id, material_request_id) VALUES (:id, :request)')
-            ->execute(['id' => $id, 'request' => $requestId]);
-    }
-
-    /** Offene Materialanforderungen als Grundlage neuer Bestellungen. @return list<array<string,mixed>> */
-    public function openMaterialRequests(): array
-    {
-        return $this->pdo->query("SELECT r.id, r.order_id, r.description, r.notes, r.needed_by, r.created_at, o.order_number, o.title AS order_title,
-                (SELECT COUNT(*) FROM purchase_order_material_requests l WHERE l.material_request_id = r.id) AS order_count
-            FROM material_requests r JOIN orders o ON o.id = r.order_id WHERE r.status = 'open' ORDER BY r.created_at DESC LIMIT 200")->fetchAll();
-    }
-
-    /** @return array<string,mixed>|null */
-    public function materialRequest(string $id): ?array
-    {
-        $statement = $this->pdo->prepare('SELECT * FROM material_requests WHERE id = :id');
-        $statement->execute(['id' => $id]);
-        return $statement->fetch() ?: null;
     }
 
     /** @return list<array<string,mixed>> */
@@ -165,8 +155,7 @@ final readonly class PurchaseOrderRepository
     /** @param array<string,mixed> $data */
     public function insertDocument(array $data): void
     {
-        $this->pdo->prepare('INSERT INTO purchase_order_documents (id, purchase_order_id, kind, revision, original_name, mime_type, size_bytes, sha256, storage_path, uploaded_by_user_id, created_at)
-            VALUES (:id, :purchase_order_id, :kind, :revision, :original_name, :mime_type, :size_bytes, :sha256, :storage_path, :uploaded_by_user_id, :created_at)')->execute($data);
+        $this->insertRow('purchase_order_documents', $data);
     }
 
     public function deleteDocument(string $documentId): void
@@ -174,10 +163,11 @@ final readonly class PurchaseOrderRepository
         $this->pdo->prepare('DELETE FROM purchase_order_documents WHERE id = :id')->execute(['id' => $documentId]);
     }
 
-    /** @return list<array<string,mixed>> */
+    /** Lieferantenbelege in Erfassungsreihenfolge. @return list<array<string,mixed>> */
     public function invoices(string $id): array
     {
-        $statement = $this->pdo->prepare('SELECT * FROM purchase_order_invoices WHERE purchase_order_id = :id ORDER BY invoice_date, created_at');
+        $statement = $this->pdo->prepare('SELECT i.*, u.display_name AS created_by_name FROM purchase_order_invoices i
+            JOIN users u ON u.id = i.created_by_user_id WHERE i.purchase_order_id = :id ORDER BY i.created_at, i.rowid');
         $statement->execute(['id' => $id]);
         return $statement->fetchAll();
     }
@@ -185,15 +175,71 @@ final readonly class PurchaseOrderRepository
     /** @param array<string,mixed> $data */
     public function insertInvoice(array $data): void
     {
-        $this->pdo->prepare('INSERT INTO purchase_order_invoices (id, purchase_order_id, invoice_number, invoice_date, net_amount, vat_amount, gross_amount, document_id, notes, created_by_user_id, created_at)
-            VALUES (:id, :purchase_order_id, :invoice_number, :invoice_date, :net_amount, :vat_amount, :gross_amount, :document_id, :notes, :created_by_user_id, :created_at)')->execute($data);
+        $this->insertRow('purchase_order_invoices', $data);
     }
 
-    public function deleteInvoice(string $id, string $invoiceId): bool
+    /** @return list<array<string,mixed>> */
+    public function confirmations(string $id): array
     {
-        $statement = $this->pdo->prepare('DELETE FROM purchase_order_invoices WHERE id = :invoice AND purchase_order_id = :id');
-        $statement->execute(['invoice' => $invoiceId, 'id' => $id]);
+        $statement = $this->pdo->prepare('SELECT c.*, u.display_name AS created_by_name FROM purchase_order_confirmations c
+            JOIN users u ON u.id = c.created_by_user_id WHERE c.purchase_order_id = :id ORDER BY c.created_at DESC, c.rowid DESC');
+        $statement->execute(['id' => $id]);
+        return $statement->fetchAll();
+    }
+
+    /** @param array<string,mixed> $data */
+    public function insertConfirmation(array $data): void
+    {
+        $this->insertRow('purchase_order_confirmations', $data);
+    }
+
+    /** Markiert genau eine Bestätigung als aktuell (vorher alle zurücksetzen, wegen des eindeutigen Index). */
+    public function markCurrentConfirmation(string $id, string $confirmationId): bool
+    {
+        $this->pdo->prepare('UPDATE purchase_order_confirmations SET is_current = 0 WHERE purchase_order_id = :id AND is_current = 1')->execute(['id' => $id]);
+        $statement = $this->pdo->prepare('UPDATE purchase_order_confirmations SET is_current = 1 WHERE id = :confirmation AND purchase_order_id = :id');
+        $statement->execute(['confirmation' => $confirmationId, 'id' => $id]);
         return $statement->rowCount() === 1;
+    }
+
+    /** @return list<array<string,mixed>> */
+    public function deliveries(string $id): array
+    {
+        $statement = $this->pdo->prepare('SELECT d.*, u.display_name AS created_by_name FROM purchase_order_deliveries d
+            JOIN users u ON u.id = d.created_by_user_id WHERE d.purchase_order_id = :id ORDER BY d.created_at DESC, d.rowid DESC');
+        $statement->execute(['id' => $id]);
+        return $statement->fetchAll();
+    }
+
+    /** @param array<string,mixed> $data */
+    public function insertDelivery(array $data): void
+    {
+        $this->insertRow('purchase_order_deliveries', $data);
+    }
+
+    /** @return list<array<string,mixed>> */
+    public function payments(string $id): array
+    {
+        $statement = $this->pdo->prepare('SELECT p.*, u.display_name AS created_by_name FROM purchase_order_payments p
+            JOIN users u ON u.id = p.created_by_user_id WHERE p.purchase_order_id = :id ORDER BY p.created_at DESC, p.rowid DESC');
+        $statement->execute(['id' => $id]);
+        return $statement->fetchAll();
+    }
+
+    /** @param array<string,mixed> $data */
+    public function insertPayment(array $data): void
+    {
+        $this->insertRow('purchase_order_payments', $data);
+    }
+
+    /** Ist ein Dokument Beleg eines Vorgangs (AB, Lieferung, Rechnung)? Dann bleibt es erhalten. */
+    public function documentInUse(string $documentId): bool
+    {
+        $statement = $this->pdo->prepare('SELECT EXISTS(SELECT 1 FROM purchase_order_confirmations WHERE document_id = :a)
+            OR EXISTS(SELECT 1 FROM purchase_order_deliveries WHERE document_id = :b)
+            OR EXISTS(SELECT 1 FROM purchase_order_invoices WHERE document_id = :c)');
+        $statement->execute(['a' => $documentId, 'b' => $documentId, 'c' => $documentId]);
+        return (bool) $statement->fetchColumn();
     }
 
     /** @return list<array<string,mixed>> */
@@ -232,19 +278,18 @@ final readonly class PurchaseOrderRepository
     }
 
     /**
-     * Grundlage der Kostenauswertung je Auftrag (Phase 3.5): alle nicht als Entwurf geführten
-     * Bestellungen mit Bezug zum Auftrag – direkt oder über eine Kostenverteilung.
+     * Grundlage der Kostenauswertung je Auftrag (Phase 3.5): alle bereits bestellten (auch
+     * stornierten oder für eine neue Fassung geöffneten) Bestellungen mit Bezug zum Auftrag – direkt oder über eine Kostenverteilung.
      *
      * @return list<array<string,mixed>>
      */
     public function forCostEvaluation(string $orderId): array
     {
-        $statement = $this->pdo->prepare("SELECT p.id, p.order_number, p.order_id, p.actual_net_total, p.status,
-                (SELECT group_concat(i.net_amount, '|') FROM purchase_order_invoices i WHERE i.purchase_order_id = p.id) AS invoice_amounts,
+        $statement = $this->pdo->prepare("SELECT p.id, p.order_number, p.order_id, p.actual_net_total, p.invoiced_net_total, p.status,
                 (SELECT a.amount FROM purchase_order_allocations a WHERE a.purchase_order_id = p.id AND a.order_id = :order_a) AS allocated_amount,
                 (SELECT COUNT(*) FROM purchase_order_allocations a WHERE a.purchase_order_id = p.id) AS allocation_count
             FROM purchase_orders p
-            WHERE p.status <> 'draft' AND (p.order_id = :order_b OR EXISTS (SELECT 1 FROM purchase_order_allocations a WHERE a.purchase_order_id = p.id AND a.order_id = :order_c))
+            WHERE (p.status <> 'draft' OR p.revision > 0) AND (p.order_id = :order_b OR EXISTS (SELECT 1 FROM purchase_order_allocations a WHERE a.purchase_order_id = p.id AND a.order_id = :order_c))
             ORDER BY p.order_number");
         $statement->execute(['order_a' => $orderId, 'order_b' => $orderId, 'order_c' => $orderId]);
         return $statement->fetchAll();

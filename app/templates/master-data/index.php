@@ -120,13 +120,21 @@ $contentClass = 'content-wide';
     <section class="tab-panel" data-panel="suppliers" hidden>
         <div class="master-toolbar"><input id="supplier-search" type="search" placeholder="Lieferanten durchsuchen"><div class="master-exchange-actions"><button class="button" type="button" id="new-supplier">Lieferant anlegen</button><details class="context-menu"><summary class="button button-light" data-icon="menu">Weitere Aktionen</summary><div class="context-menu-panel"><button type="button" data-icon="file-down" data-master-export="suppliers">JSON exportieren</button><button type="button" data-icon="file-up" data-master-import="suppliers">JSON importieren</button></div></details></div></div>
         <div class="master-split">
-            <div class="table-wrap"><table><thead><tr><th>Nummer</th><th>Name</th><th>Kontakt</th><th></th></tr></thead><tbody id="suppliers-body"></tbody></table></div>
+            <div class="table-wrap"><table><thead><tr><th>Nummer</th><th>Name</th><th>Anschrift</th><th>Kontakt</th><th></th></tr></thead><tbody id="suppliers-body"></tbody></table></div>
             <form id="supplier-form" class="card form-stack master-editor" hidden>
                 <input type="hidden" name="id">
                 <div class="editor-heading"><h2>Lieferant</h2></div>
                 <label>Lieferantennummer<input name="supplierNumber" maxlength="80"></label>
                 <label>Name<input name="name" maxlength="200" required></label>
-                <label>Kontakt und Bemerkungen<textarea name="contact" rows="5" maxlength="2000"></textarea></label>
+                <div class="address-grid">
+                    <label>Straße<input name="street" maxlength="200"></label>
+                    <label>Hausnummer<input name="houseNumber" maxlength="30"></label>
+                    <label>PLZ<input name="postalCode" maxlength="20"></label>
+                    <label>Ort<input name="city" maxlength="120"></label>
+                    <label>Land<input name="country" maxlength="100"></label>
+                </div>
+                <label>Unsere Kundennummer beim Lieferanten<input name="customerNumber" maxlength="100"></label>
+                <label>Kontakt und Bemerkungen<textarea name="contact" rows="4" maxlength="2000"></textarea></label>
                 <div class="form-actions"><button class="button" type="submit">Speichern</button><button class="button button-light" type="button" data-close-form>Abbrechen</button></div>
             </form>
         </div>

@@ -18,6 +18,11 @@ use Throwable;
 final readonly class MasterDataService
 {
     private const TYPES = ['material', 'labor', 'external', 'other'];
+    /** Lieferantenanschrift und eigene Kundennummer: API-Schlüssel => [Spalte, Maximallänge]. */
+    private const SUPPLIER_ADDRESS_FIELDS = [
+        'street' => ['street', 200], 'houseNumber' => ['house_number', 30], 'postalCode' => ['postal_code', 20],
+        'city' => ['city', 120], 'country' => ['country', 100], 'customerNumber' => ['customer_number', 100],
+    ];
     private const EXCHANGE_SCOPES = ['cost-items', 'services', 'categories', 'suppliers', 'trailing-texts'];
 
     public function __construct(
@@ -129,7 +134,7 @@ final readonly class MasterDataService
             $data=$this->trailingTextData($item)+['id'=>$id,'created_at'=>$now,'updated_at'=>$now];$this->repository->upsertTrailingText($data);return;
         }
         if($scope==='suppliers'){
-            $data=$this->supplierData($item)+['id'=>$id,'active'=>$active?1:0,'created_at'=>$now,'updated_at'=>$now];$this->repository->upsertSupplier($data);return;
+            $data=$this->supplierData($item,$this->repository->supplier($id))+['id'=>$id,'active'=>$active?1:0,'created_at'=>$now,'updated_at'=>$now];$this->repository->upsertSupplier($data);return;
         }
         if($scope==='categories'){
             $parentId=$this->nullableUuid($item['parentId']??null,'Übergeordnete Kategorie');
@@ -322,10 +327,17 @@ final readonly class MasterDataService
         return $this->mapCategory($this->requireCategory($id));
     }
 
-    /** @param array<string,mixed> $input */
-    public function createSupplier(array $input): array
+    /**
+     * @param array<string,mixed> $input
+     * @param bool $rejectDuplicateName Schnellanlage (z. B. aus einer Bestellung): vorhandene aktive
+     *   Lieferanten gleichen Namens werden nicht doppelt angelegt und nie überschrieben.
+     */
+    public function createSupplier(array $input, bool $rejectDuplicateName = false): array
     {
         $data = $this->supplierData($input);
+        if ($rejectDuplicateName && $this->repository->activeSupplierNamed($data['name']) !== null) {
+            throw new MasterDataValidationException(['Ein Lieferant mit diesem Namen ist bereits vorhanden. Bitte ihn in der Suche auswählen.']);
+        }
         $data['id'] = Uuid::v4();
         $data['created_at'] = $data['updated_at'] = Clock::now();
         $this->write(fn () => $this->repository->createSupplier($data));
@@ -335,8 +347,8 @@ final readonly class MasterDataService
     /** @param array<string,mixed> $input */
     public function updateSupplier(string $id, array $input): array
     {
-        $this->requireSupplier($id);
-        $data = $this->supplierData($input);
+        $existing = $this->requireSupplier($id);
+        $data = $this->supplierData($input, $existing);
         $data['id'] = $id;
         $data['updated_at'] = Clock::now();
         $this->write(fn () => $this->repository->updateSupplier($data));
@@ -532,14 +544,27 @@ final readonly class MasterDataService
         ];
     }
 
-    /** @param array<string,mixed> $input @return array<string,mixed> */
-    private function supplierData(array $input): array
+    /**
+     * Anschrift und eigene Kundennummer sind optional. Fehlen diese Schlüssel (z. B. in älteren
+     * JSON-Exporten), bleiben vorhandene Werte erhalten statt geleert zu werden.
+     *
+     * @param array<string,mixed> $input
+     * @param array<string,mixed>|null $existing
+     * @return array<string,mixed>
+     */
+    private function supplierData(array $input, ?array $existing = null): array
     {
-        return [
+        $data = [
             'supplier_number' => $this->nullableText($input, 'supplierNumber', 80),
             'name' => $this->requiredText($input, 'name', 'Name', 200),
             'contact' => $this->optionalText($input, 'contact', 2000),
         ];
+        foreach (self::SUPPLIER_ADDRESS_FIELDS as $key => [$column, $maximum]) {
+            $data[$column] = $existing !== null && !array_key_exists($key, $input)
+                ? (string) ($existing[$column] ?? '')
+                : $this->optionalText($input, $key, $maximum);
+        }
+        return $data;
     }
 
     /** @param array<string,mixed> $input @return array<string,mixed> */
@@ -667,7 +692,9 @@ final readonly class MasterDataService
     {
         return [
             'id' => $row['id'], 'supplierNumber' => $row['supplier_number'], 'name' => $row['name'],
-            'contact' => $row['contact'], 'active' => (bool) $row['active'],
+            'contact' => $row['contact'], 'street' => (string) ($row['street'] ?? ''), 'houseNumber' => (string) ($row['house_number'] ?? ''),
+            'postalCode' => (string) ($row['postal_code'] ?? ''), 'city' => (string) ($row['city'] ?? ''), 'country' => (string) ($row['country'] ?? ''),
+            'customerNumber' => (string) ($row['customer_number'] ?? ''), 'active' => (bool) $row['active'],
         ];
     }
 

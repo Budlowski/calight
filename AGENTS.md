@@ -269,12 +269,13 @@ Keine zweite Nummernlogik in einem Controller oder Frontend anlegen.
 - Bestätigungsarten von Rapporten: `signature` (Unterschriftsbild), `returned_document` (hochgeladenes Original), `manual` (ohne Nachweis, ausdrücklich gekennzeichnet). Eine Unterschrift wird nur mit passender `submittedSha256` angenommen; jede Bestätigung ist einmalig und per CHECK an `submitted_sha256` gebunden. „Versendet“ (`confirmation_requested_*`) ist keine Bestätigung.
 - Nachweise und archivierte PDFs liegen unter `APP_DOCUMENTS_PATH/work-reports/<rapport>/` bzw. `measurements/<aufmaß>/`, Auslieferung nur über geschützte Routen (`FileResponse`). Rücklauf-Upload und „versendet“ erfordern `workreports.process`; Unterschrift erfassen dürfen Ersteller und Büro.
 
-### 4.15 Bestellungen (Phase 3.4.1)
+### 4.15 Bestellungen (Phase 3.4.1, vorgangsorientiert seit 3.4.1.1)
 
-- Eine Bestellung ist Beschaffung beim Lieferanten: intern (Entwurf → „Bestellen“ mit archiviertem PDF je Fassung) oder extern erfasst (sofort „Bestellt“, ohne Pflicht zu Positionen, ohne eigenen Calight-Beleg). Die Übersicht bietet zwei getrennte Dialoge („Neue Bestellung“, „Externe Bestellung aufnehmen“). Materialanforderungen bleiben eigenständig; die nur per API vorhandene Übernahme schlägt Positionen vor und erledigt sie nicht.
-- Bestell-, Liefer- und Zahlungsstatus sind unabhängig und werden in `purchase_order_history` protokolliert. Nach dem Bestellen sind Lieferant (Snapshot) und Positionen gesperrt; Änderungen nur über „Neue Fassung“. Ausgegebene PDFs (`purchase_order_documents`, `kind = own_order`) nie überschreiben oder löschen.
-- Ist-Kosten haben genau eine Quelle: `purchase_orders.actual_net_total` **oder** die Summe von `purchase_order_invoices` – nie beides. Erwarteter Bestellwert ist keine Ist-Kosten. Kosten je Auftrag ausschließlich über `PurchaseOrderService::costsByOrder` auswerten (Verteilung schlägt Auftragsbezug).
-- Rechte: `purchases.read`/`purchases.write`; Beträge, Preise, Rechnungen und Rechnungsbelege zusätzlich `costs.read` (serverseitig gefiltert). Dateien unter `APP_DOCUMENTS_PATH/purchase-orders/<bestellung>/`.
+- Eine Bestellung ist Beschaffung beim Lieferanten: intern (Entwurf → „Bestellen“ mit archiviertem PDF je Fassung) oder extern erfasst (sofort „Bestellt“, ohne Pflicht zu Positionen). Zwei getrennte Anlegedialoge; Lieferanten können darin mit demselben Stammdatenmodell (`MasterDataService::createSupplier`, keine Doppelanlage gleichen Namens) angelegt werden. Eine Übernahme aus Materialanforderungen ist bewusst gestrichen und darf nicht wieder eingeführt werden.
+- Nach dem Bestellen folgen unveränderliche Ereignisse: `purchase_order_confirmations` (genau eine `is_current`), `purchase_order_deliveries`, `purchase_order_invoices` (Belegarten), `purchase_order_payments`. `delivery_status`/`payment_status` sind abgeleitet (Status des zuletzt erfassten Ereignisses); `invoiced_net_total` ist abgeleitet. Alles wird in `purchase_order_history` protokolliert, ohne Beträge im Text.
+- Kostenwirkung der Belege ausschließlich über `Domain\Purchase\PurchaseCostCalculator`; Belege nie löschen (Korrektur über Gutschrift/Stornobeleg). Ist-Kosten: `actual_net_total` **oder** Belege – nie beides. Ursprünglicher Bestellwert, bestätigter Wert und Ist-Kosten bleiben getrennt. Kosten je Auftrag nur über `PurchaseOrderService::costsByOrder`; jede Kostenänderung prüft die Verteilung erneut.
+- Ausgegebene PDFs (`kind = own_order`) und Belege von Vorgängen nie überschreiben oder löschen.
+- Rechte: `purchases.read`/`purchases.write`; Beträge, Preise, Belege und Zahlungen zusätzlich `costs.read` (serverseitig gefiltert). Dateien unter `APP_DOCUMENTS_PATH/purchase-orders/<bestellung>/`.
 
 ### 4.16 Fachliche Abgrenzung späterer Module
 

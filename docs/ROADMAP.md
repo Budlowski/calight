@@ -25,6 +25,7 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 | 3.3 | Aufmaße für vereinbarte Angebotsleistungen | Implementiert (`0024`), PDF seit Phase 3.2.3 |
 | 3.4 | Rapporte für Regieleistungen, auch eigenständig ohne Auftrag | Implementiert (`0025`, `0026`), PDF und Kundenbestätigung seit Phase 3.2.3, Einsatzort / Objekt (`0028`) |
 | 3.4.1 | Bestellungen mit PDF-Ausgabe (schlanke Materialbeschaffung) | Implementiert (`0029`); Versand per E-Mail und Bestellungen am Auftragsdetail geplant |
+| 3.4.1.1 | Bestellverwaltung als Vorgang: AB, Lieferungen, Belege, Zahlungen, Lieferantenanschrift | Implementiert (`0030`) |
 | 3.4.2 | Lieferscheine mit PDF-Ausgabe (Liefernachweise) | Geplant |
 | 3.4.3 | Mitarbeiter-Zeiterfassung (übergreifende Arbeitszeiten) | Geplant |
 | 3.5 | Nachkalkulation und Soll-Ist-Vergleich | Geplant |
@@ -222,7 +223,7 @@ Bautagesberichte dokumentieren die tatsächliche Ausführung und sind **keine** 
 
 - Fotos und Anhänge je Bericht (Bilder, PDF, Text bis 15 MB), serverseitig zugriffsgeschützt. **(implementiert, Phase 3.2.2)**
 
-- **Materialanforderungen** statt täglicher Materialverbrauchserfassung: Monteure melden benötigtes Material als Freitext mit optionaler Bemerkung und Wunschtermin aus dem Bericht oder direkt am Auftrag; das Büro bearbeitet sie zentral (offen/erledigt). Materialanforderungen sind eigenständige Datensätze mit Auftragsbezug, keine Bestellungen und keine Ist-Kosten. Die Bestell-API (Phase 3.4.1) kann sie als Positionsvorschlag übernehmen (in der Oberfläche derzeit nicht angeboten); die Anforderung bleibt dabei offen. **(implementiert, Phase 3.2.2)**
+- **Materialanforderungen** statt täglicher Materialverbrauchserfassung: Monteure melden benötigtes Material als Freitext mit optionaler Bemerkung und Wunschtermin aus dem Bericht oder direkt am Auftrag; das Büro bearbeitet sie zentral (offen/erledigt). Materialanforderungen sind eigenständige Datensätze mit Auftragsbezug, keine Bestellungen und keine Ist-Kosten. Eine Übernahme in Bestellungen gibt es seit Phase 3.4.1.1 bewusst nicht mehr; bestehende Verknüpfungen werden nur noch angezeigt. **(implementiert, Phase 3.2.2)**
 
 - Artikelgenaue Ist-Materialkosten, Fahrzeiten und weitere Aufwendungen sind bewusst noch nicht umgesetzt; sie werden bei Bedarf im Zusammenhang mit der Nachkalkulation (Phase 3.5) geklärt.
 
@@ -336,25 +337,36 @@ Rapporte dokumentieren **abrechenbare Regieleistungen** und entsprechen in ihrer
 
 **Offen:** E-Mail-Versand und ein öffentliches Bestätigungsportal; optionale Übernahme aus Bautagesberichten.
 
-## Phase 3.4.1 – Bestellungen und Materialbeschaffung (implementiert, Migration `0029`)
+## Phase 3.4.1 / 3.4.1.1 – Bestellungen und Beschaffung (implementiert, Migrationen `0029`, `0030`)
 
-**Umgesetzt:** Eine Bestellung ist ein zentraler Beschaffungsvorgang. Drei Erfassungswege führen in dieselbe Übersicht („Kaufmännisch → Bestellungen“):
+**Grundsatz:** schlanke, vorgangsorientierte Beschaffung – keine Warenwirtschaft, kein Lager, keine Buchhaltung. Übersicht unter „Kaufmännisch → Bestellungen“.
 
-- **Intern, leer:** Lieferant wählen, Positionen frei oder aus dem Artikelstamm (Einkaufspreis als Vorschlag) erfassen, Bestell-PDF aus Calight erzeugen.
-- **Intern aus Materialbedarf:** serverseitig vorbereitet (`materialRequestIds` beim Anlegen; Freitext wird bearbeitbare Position, Bezug bleibt gespeichert, Anforderung bleibt offen). In der Oberfläche bewusst nicht angeboten: Die Übersicht hat nur „Neue Bestellung“ und „Externe Bestellung aufnehmen“ mit je eigenem Dialog.
-- **Extern:** bereits online, telefonisch oder vor Ort aufgegebene Bestellung schnell erfassen (Lieferant, Referenz, Datum, optional Betrag, Auftrag und Bestätigung als Datei). Keine Positionen nötig, kein künstlicher Calight-Beleg.
+**Erfassen:**
+- **Neue Bestellung:** Lieferant wählen oder direkt im Dialog anlegen (nur Name Pflicht), optional Auftrag; Positionen manuell oder aus dem Artikelstamm; Bestell-PDF; ausgegebene Fassungen unveränderlich archiviert.
+- **Externe Bestellung aufnehmen:** Lieferant (auch neu), Datum, externe Referenz, optional Betrag und Datei; keine Positionen, kein eigenes PDF.
+- Die Übernahme aus Materialanforderungen wurde gestrichen; Bestandsverknüpfungen aus `0029` werden nur angezeigt.
 
-Regeln:
-- **Bestellnummer** aus dem Nummernkreis „Bestellungen“ (`BE…`), vergeben beim Anlegen.
-- **Status:** Bestellstatus (Entwurf, Bestellt, Storniert), Lieferstatus (Ausstehend, Teilgeliefert, Geliefert) und Zahlungsstatus (Offen, Teilbezahlt, Bezahlt) sind unabhängig; jede Änderung steht mit Benutzer, Zeit und optionaler Bemerkung im Statusverlauf. Uploads ändern keinen Status.
-- **Ausgabe:** „Bestellen“ verlangt mindestens eine Position mit Bezeichnung und Menge, speichert einen Lieferanten-Snapshot und archiviert das PDF unveränderlich als Fassung. Danach sind Lieferant und Positionen gesperrt; Änderungen nur über „Neue Fassung“ (ältere PDFs bleiben erhalten).
-- **Stornieren** behält Dokumente, Rechnungen und entstandene Kosten. Löschen ist nur für nie bestellte Entwürfe möglich.
-- **Dokumente:** eigene Bestell-PDFs, Bestell- und Auftragsbestätigungen, Lieferscheine und Rechnungen des Lieferanten sowie sonstige Anhänge (PDF und Bilder, Typprüfung am Inhalt, max. 15 MB) unter `APP_DOCUMENTS_PATH/purchase-orders/<bestellung>/`.
-- **Ist-Kosten:** genau eine Quelle – Summe mehrerer Lieferantenrechnungen (Nummer, Datum, Netto, optional USt./Brutto und Beleg) **oder** ein direkt erfasster Betrag. Beides gleichzeitig lehnt der Server ab. Der erwartete Bestellwert zählt nie als Ist-Kosten; der Zahlungsstatus ist nur ein Nachweis.
-- **Kostenzuordnung:** Standard sind die vollen Ist-Kosten für den Auftrag der Bestellung. Optional feste Beträge auf mehrere Aufträge; Summe höchstens Ist-Kosten, der Rest bleibt als „nicht verteilt“ sichtbar. Mit Verteilung gelten nur die verteilten Beträge. `PurchaseOrderService::costsByOrder` liefert diese Werte für Phase 3.5.
-- **Rechte:** `purchases.read`/`purchases.write` für Büro und Admin; Preise, Beträge, Rechnungen und Rechnungsbelege zusätzlich nur mit `costs.read`. Techniker haben keinen Zugriff.
+**Lieferantenstamm:** optional Straße, Hausnummer, PLZ, Ort, Land und die eigene Kundennummer beim Lieferanten. Anschrift und Kundennummer stehen im Snapshot und auf dem Bestell-PDF. Ältere JSON-Importe ohne diese Felder leeren sie nicht.
 
-**Bewusst offen:** E-Mail-Versand an den Lieferanten, Bestellungen in der Auftragsdetailseite, Lieferantenanschriften im Stamm (der Lieferantenstamm hat nur Name und Kontakt), Übernahme aus der Auftragsgrundlage statt aus Materialanforderungen.
+**Vorgänge (beliebige Reihenfolge, unveränderlich, je mit optionalem Beleg):**
+- **Auftragsbestätigungen:** Nummer, Datum, bestätigter Netto­betrag und Liefertermin, Bemerkung. Mehrere Fassungen; genau eine ist ausdrücklich „aktuell“.
+- **Lieferungen:** Teillieferung, vollständige Lieferung (ohne Mengenabgleich), Rücksendung, Lieferkorrektur. Der Lieferstatus ist der Status nach dem zuletzt erfassten Ereignis; bei Rücksendung und Korrektur wird er gewählt. Lieferungen ändern nie Kosten.
+- **Lieferantenbelege:** Rechnung, Teilrechnung, Schlussrechnung, Gutschrift, Stornobeleg. Beträge positiv erfasst; Kostenwirkung berechnet ausschließlich `Domain\Purchase\PurchaseCostCalculator`: Rechnungen erhöhen, Gutschriften senken, Stornobelege mindern ihren Originalbeleg. Schlussrechnung entweder „zusätzlicher Betrag“ oder „Gesamtrechnung einschließlich Teilrechnungen“ (dann werden die wirksamen Teilrechnungen abgezogen; danach keine weiteren Teilrechnungen). Belege werden nie gelöscht; Kosten dürfen nicht negativ werden.
+- **Zahlungen:** Zahlung (optional „vollständig bezahlt“), Rückerstattung, Statuskorrektur. Zahlungen ändern keine Kosten; offener Bruttobetrag nur, wenn alle Belege einen Bruttobetrag haben.
+
+**Beträge strikt getrennt:** ursprünglicher Bestellwert (`expected_net_total`), aktuell bestätigter Wert (aktuelle AB), tatsächliche Nettokosten.
+
+**Ist-Kosten:** direkt erfasster Betrag **oder** Belege, nie beides. Der erste Beleg ersetzt einen direkten Betrag nur nach ausdrücklicher Bestätigung (protokolliert).
+
+**Kostenverteilung:** unverändert (Standard: Auftrag der Bestellung; optional feste Beträge). Jede Kostenänderung prüft die Verteilung erneut und wird abgelehnt, wenn die Verteilung die neuen Ist-Kosten übersteigen würde. `PurchaseOrderService::costsByOrder` bezieht stornierte Bestellungen mit ein.
+
+**Stornieren:** über „Weitere Aktionen“ mit optionalem Grund; Lieferungen, Belege, Zahlungen, Dokumente und Ist-Kosten bleiben, Gutschriften und Rücksendungen sind weiter möglich, neue Fassungen nicht.
+
+**Oberfläche:** kompakter Kopf mit drei Status und drei Beträgen; Bereiche Bestellung (Bearbeiten über eigene Aktion), Auftragsbestätigungen, Lieferungen, Rechnungen und Gutschriften, Zahlungen, Dokumente und Verlauf (einklappbar); jede Erfassung in einem kleinen Dialog.
+
+**Bestandsdaten (`0030`):** bisherige Rechnungen gelten als normale Rechnungen; manuell gesetzte Liefer-/Zahlungsstatus werden als Korrekturereignis übernommen.
+
+**Bewusst offen:** E-Mail-Versand an den Lieferanten, Bestellungen auf der Auftragsdetailseite, Positionsvorschläge aus der Auftragsgrundlage, Wareneingang je Position, Mahnwesen/Bankanbindung. Die Lieferanten-Schnellanlage ist ein ausklappbarer Bereich im Bestelldialog (der globale Dialog unterstützt keine verschachtelten Dialoge).
 
 Ursprüngliche Planung:
 
