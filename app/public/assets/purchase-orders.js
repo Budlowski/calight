@@ -191,6 +191,7 @@
   }
 
   const list = CalightListView.createListPage({
+    primaryFilters: ["status"],
     root,
     module: "purchase-orders",
     endpoint: "/api/purchase-orders",

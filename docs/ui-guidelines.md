@@ -63,6 +63,7 @@ Reine Icon-Buttons brauchen `aria-label` und `title`.
 
 `list-view.js` regelt Suche, Filter, Sortierung, Pagination, URL-Zustand und Karten-/Tabellenansicht.
 
+- **Werkzeugleiste der Übersichten (zweistufig, `list-view.js`):** eine Zeile mit Suche, Hauptfilter (Modul wählt per `primaryFilters`, Standard: erster Filter), Knopf „Filter (n)“, Sortierung, Anzahl und Ansicht. Weitere Filter liegen im aufklappbaren Filterbereich; aktive Filter erscheinen darunter als Chips mit × sowie „Alle zurücksetzen“. Filter brauchen ein `aria-label` (dient als Beschriftung im Filterbereich und auf den Chips).
 - Geldbeträge und Mengen stehen rechtsbündig.
 - **Stammdaten** (Artikel, Positionen, Schlepptexte, Kategorien, Lieferanten) nutzen dieselbe Tabellen-/Kartenansicht je Reiter (`master-data.js`). Bearbeitung im Modal; Stammpositionen mit Kalkulationsbausteinen auf eigener Seite (`/master-data/services/{id}`). Suche und Filter laufen hier bewusst im Browser, weil der Stamm einmal vollständig geladen wird; der gewählte Reiter steht in der URL (`#suppliers`).
 - Leere Listen zeigen einen Text statt einer leeren Tabelle.

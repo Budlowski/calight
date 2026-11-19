@@ -87,6 +87,7 @@
   if (canProcess) sorts.total = { label: "Nettobetrag", type: "number", dir: "desc" };
 
   const list = CalightListView.createListPage({
+    primaryFilters: ["status"],
     root,
     module: "work-reports",
     endpoint: "/api/work-reports",

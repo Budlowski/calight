@@ -138,16 +138,97 @@
 
     const filterValue = (element) => (element.type === "checkbox" ? (element.checked ? "1" : "") : element.value.trim());
 
+    // Zweistufige Werkzeugleiste: Suche, Hauptfilter, „Filter“, Sortierung, Anzahl, Ansicht.
+    // Weitere Filter liegen in einem aufklappbaren Bereich; aktive Filter erscheinen als Chips
+    // mit × und „Alle zurücksetzen“. Module wählen ihre Hauptfilter über primaryFilters
+    // (Standard: der erste Filter). Zustand, URL und Ereignisse bleiben unverändert.
+    const toolbar = (search || sortSelect)?.closest(".overview-toolbar") || null;
+    const primary = new Set(options.primaryFilters ?? Object.keys(filters).slice(0, 1));
+    const secondary = Object.entries(filters).filter(([name]) => !primary.has(name));
+    const filterLabel = (element) => element.getAttribute("aria-label") || element.closest("label")?.textContent.trim() || "Filter";
+    let filterToggle = null;
+    let filterPanel = null;
+    let chips = null;
+    if (toolbar) {
+      toolbar.classList.add("overview-toolbar-compact");
+      sortSelect?.classList.add("overview-sort");
+      if (secondary.length) {
+        filterToggle = document.createElement("button");
+        filterToggle.type = "button";
+        filterToggle.className = "button button-light overview-filter-toggle";
+        filterToggle.dataset.icon = "sliders-horizontal";
+        filterToggle.innerHTML = '<span data-filter-label>Filter</span>';
+        filterToggle.setAttribute("aria-expanded", "false");
+        filterPanel = document.createElement("div");
+        filterPanel.className = "overview-filter-panel";
+        filterPanel.id = `${module}-filters`;
+        filterPanel.hidden = true;
+        filterToggle.setAttribute("aria-controls", filterPanel.id);
+        for (const [, element] of secondary) {
+          // Kontrollkästchen samt Beschriftung verschieben, Auswahlfelder mit sichtbarer Beschriftung.
+          if (element.type === "checkbox") {
+            filterPanel.append(element.closest("label") || element);
+            continue;
+          }
+          const wrapper = document.createElement("label");
+          wrapper.className = "overview-filter-field";
+          wrapper.innerHTML = `<span class="field-label">${escapeHtml(filterLabel(element))}</span>`;
+          wrapper.append(element);
+          filterPanel.append(wrapper);
+        }
+        // Knopf vor der Sortierung (sonst direkt nach den Hauptfiltern).
+        const anchor = sortSelect && sortSelect.parentElement === toolbar ? sortSelect : null;
+        if (anchor) anchor.before(filterToggle);
+        else toolbar.append(filterToggle);
+        toolbar.after(filterPanel);
+        filterToggle.addEventListener("click", () => {
+          filterPanel.hidden = !filterPanel.hidden;
+          filterToggle.setAttribute("aria-expanded", String(!filterPanel.hidden));
+          if (!filterPanel.hidden) filterPanel.querySelector("select, input")?.focus();
+        });
+      }
+      chips = document.createElement("div");
+      chips.className = "overview-filter-chips";
+      chips.hidden = true;
+      (filterPanel || toolbar).after(chips);
+      // „Zurücksetzen“ wandert in die Chipzeile.
+      if (reset) reset.hidden = true;
+      chips.addEventListener("click", (event) => {
+        const chip = event.target.closest("[data-clear-filter]");
+        if (chip) {
+          update({ filters: { [chip.dataset.clearFilter]: "" } });
+          return;
+        }
+        if (event.target.closest("[data-clear-all]")) reset?.click();
+      });
+    }
+
+    function renderChips() {
+      if (!chips) return;
+      const active = secondary.filter(([name]) => state.filters[name]).map(([name, element]) => {
+        const text = element.type === "checkbox" ? filterLabel(element) : `${filterLabel(element)}: ${element.selectedOptions?.[0]?.textContent ?? element.value}`;
+        return `<button class="overview-filter-chip" type="button" data-clear-filter="${escapeHtml(name)}" title="Filter entfernen">${escapeHtml(text)} <span aria-hidden="true">×</span><span class="visually-hidden">entfernen</span></button>`;
+      });
+      if (filterToggle) filterToggle.querySelector("[data-filter-label]").textContent = active.length ? `Filter (${active.length})` : "Filter";
+      const showReset = !isDefault();
+      chips.hidden = !active.length && !showReset;
+      chips.innerHTML = active.join("") + (showReset ? '<button class="overview-filter-reset" type="button" data-clear-all>Alle zurücksetzen</button>' : "");
+    }
+
     function syncControls() {
       if (search && document.activeElement !== search) search.value = state.q;
       for (const [name, element] of Object.entries(filters)) {
         if (element.type === "checkbox") element.checked = state.filters[name] === "1";
         else element.value = state.filters[name] || "";
         // Unbekannte Werte (z. B. veraltete Links) nicht stillschweigend als Filter behalten.
-        if (element.tagName === "SELECT" && element.value !== (state.filters[name] || "")) state.filters[name] = "";
+        if (element.tagName === "SELECT" && element.value !== (state.filters[name] || "")) {
+          state.filters[name] = "";
+          element.value = "";
+        }
       }
       if (sortSelect) sortSelect.value = `${state.sort}:${state.dir}`;
       if (reset) reset.disabled = isDefault();
+      renderChips();
     }
 
     const isDefault = () => !state.q && Object.values(state.filters).every((value) => !value)

@@ -61,6 +61,7 @@
       </tr>`).join("")}</tbody>`;
 
   const list = CalightListView.createListPage({
+    primaryFilters: ["status"],
     root,
     module: "offers",
     endpoint: "/api/offers",

@@ -96,6 +96,7 @@ textarea { min-height: 58px; resize: vertical; }
 .icon-users { --icon-url: url('/assets/icons/lucide/users.svg'); }
 .icon-folder-kanban { --icon-url: url('/assets/icons/lucide/folder-kanban.svg'); }
 .icon-file-text { --icon-url: url('/assets/icons/lucide/file-text.svg'); }
+.icon-sliders-horizontal { --icon-url: url('/assets/icons/lucide/sliders-horizontal.svg'); }
 .icon-files { --icon-url: url('/assets/icons/lucide/files.svg'); }
 .icon-square-pen { --icon-url: url('/assets/icons/lucide/square-pen.svg'); }
 .icon-clipboard-list { --icon-url: url('/assets/icons/lucide/clipboard-list.svg'); }
@@ -1345,3 +1346,23 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 .document-list-main { display: grid; gap: 2px; min-width: 0; }
 .document-list-main small { font-size: var(--font-small); }
 .document-section .empty-state { padding: var(--space-1) 0; text-align: left; }
+
+/* Zweistufige Werkzeugleiste der Übersichten: Hauptzeile, aufklappbare Filter, aktive Filter als Chips. */
+.overview-toolbar-compact { flex-wrap: nowrap; }
+.overview-toolbar > input[type="search"] { min-width: 160px; }
+.overview-filter-panel { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); align-items: end; gap: var(--space-2) var(--space-3); margin-top: var(--space-2); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); background: #f6f8fa; }
+.overview-filter-field { display: grid; gap: 4px; min-width: 0; }
+.overview-toolbar-compact > .overview-sort { flex: 0 0 auto; min-width: 225px; }
+.overview-filter-panel .check-inline { min-height: var(--control-height); }
+.overview-filter-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: var(--space-2); }
+.overview-filter-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1px solid #b9cfdc; border-radius: 999px; background: #edf4f8; color: var(--primary); cursor: pointer; font: inherit; font-size: var(--font-small); font-weight: 650; }
+.overview-filter-chip:hover { border-color: var(--primary); }
+.overview-filter-reset { padding: 3px 4px; border: 0; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: var(--font-small); text-decoration: underline; }
+@media (max-width: 800px) {
+    .overview-toolbar-compact { flex-wrap: wrap; }
+    .overview-toolbar-compact > input[type="search"] { flex: 1 1 100%; }
+    .overview-filter-panel { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 480px) {
+    .overview-filter-panel { grid-template-columns: 1fr; }
+}
