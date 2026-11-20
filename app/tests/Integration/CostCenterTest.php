@@ -6,7 +6,9 @@ namespace App\Tests\Integration;
 
 use App\Application\CostCenterService;
 use App\Application\CostTargets;
+use App\Application\DailyReportPdfService;
 use App\Application\DailyReportService;
+use App\Application\MaterialRequestService;
 use App\Application\OfferPdfService;
 use App\Application\OfferService;
 use App\Application\OrderService;
@@ -28,6 +30,7 @@ use App\Infrastructure\Persistence\CostCenterRepository;
 use App\Infrastructure\Persistence\DailyReportRepository;
 use App\Infrastructure\Persistence\DocumentSettingsRepository;
 use App\Infrastructure\Persistence\EmployeeRepository;
+use App\Infrastructure\Persistence\MaterialRequestRepository;
 use App\Infrastructure\Persistence\NumberRangeRepository;
 use App\Infrastructure\Persistence\OfferJsonStore;
 use App\Infrastructure\Persistence\OfferRepository;
@@ -134,7 +137,7 @@ final class CostCenterTest extends TestCase
             $reportEntry = array_values(array_filter($time->day($employee, '2026-11-17', $tech)['entries'], static fn (array $item): bool => $item['sourceKind'] === 'work_report'))[0];
             $time->updateEntry($reportEntry['id'], ['version' => $reportEntry['version'], 'start' => '08:00', 'end' => '10:00', 'costCenterId' => $k110], $tech);
             $this->assertSame(null, $pdo->query('SELECT cost_center_id FROM time_entries WHERE id = ' . $pdo->quote($reportEntry['id']))->fetchColumn() ?: null, 'Keine Kostenstellenwahl für Rapportstunden.');
-            $this->assertThrows(\PDOException::class, fn () => $pdo->exec("UPDATE time_entries SET cost_center_id = " . $pdo->quote($k110) . " WHERE source_kind = 'daily_report'"), 'Datenbank: nur manuelle Buchungen auf Kostenstellen.');
+            $this->assertThrows(\PDOException::class, fn () => $pdo->exec("UPDATE time_entries SET cost_center_id = " . $pdo->quote($k110) . " WHERE source_kind = 'work_report'"), 'Datenbank: Rapportstunden nie auf Kostenstellen.');
         });
     }
 
@@ -190,6 +193,87 @@ final class CostCenterTest extends TestCase
         });
     }
 
+    public function testDailyReportsUseOrderCostCenterOrNoTarget(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['centers' => $centers, 'admin' => $admin, 'office' => $office, 'tech' => $tech, 'time' => $time, 'reports' => $reports, 'workReports' => $workReports,
+                'employee' => $employee, 'order' => $order, 'customer' => $customer, 'pdo' => $pdo, 'materials' => $materials, 'pdf' => $pdf] = $env;
+            $centers->importTemplate($admin);
+            $k110 = (string) $pdo->query("SELECT id FROM cost_centers WHERE number = 'K110'")->fetchColumn();
+            $k120 = (string) $pdo->query("SELECT id FROM cost_centers WHERE number = 'K120'")->fetchColumn();
+            $entry = static fn (string $hours): array => [['employeeId' => $employee, 'durationHours' => $hours, 'targetKey' => 'order']];
+            $base = static fn (string $date, string $hours): array => ['reportDate' => $date, 'activities' => 'Besichtigung', 'entries' => $entry($hours)];
+            $booking = static fn (string $reportId): array => $pdo->query('SELECT b.order_id, b.cost_center_id, b.net_minutes FROM time_entries b JOIN daily_report_time_entries e ON e.id = b.daily_report_entry_id WHERE e.report_id = '
+                . $pdo->quote($reportId))->fetchAll(PDO::FETCH_NUM);
+            $this->assertTrue(in_array('K110', array_column($reports->referenceData($tech)['costTargets'], 'number'), true), 'Gemeinsames Suchfeld im Bautagesbericht.');
+
+            // Drei Zustände: Auftrag, Kostenstelle beim Kunden, ohne Zuordnung.
+            $onOrder = $reports->create(['orderId' => $order] + $base('2026-11-16', '2'), $tech);
+            $visit = $reports->create(['customerId' => $customer, 'costCenterId' => $k110] + $base('2026-11-16', '3'), $tech);
+            $none = $reports->create(['customerId' => $customer] + $base('2026-11-17', '1'), $tech);
+            $this->assertSame([$customer, $k110, null], [$visit['customer_id'], $visit['cost_center_id'], $visit['order_id']], 'Kunde bleibt, Kostenziel ist die Kostenstelle.');
+            $this->assertSame([[$order, null, 120]], $booking($onOrder['id']));
+            $this->assertSame([[null, $k110, 180]], $booking($visit['id']));
+            $this->assertSame([[null, null, 60]], $booking($none['id']));
+            $this->assertThrows(DocumentValidationException::class, fn () => $reports->create(['orderId' => $order, 'costCenterId' => $k110] + $base('2026-11-18', '1'), $tech), 'Nie Auftrag und Kostenstelle zugleich.');
+            $centers->save($k120, ['number' => 'K120', 'name' => 'Lager & Rüstzeit', 'active' => false, 'version' => 1], $admin);
+            $this->assertThrows(DocumentValidationException::class, fn () => $reports->create(['customerId' => $customer, 'costCenterId' => $k120] + $base('2026-11-18', '1'), $tech), 'Deaktivierte Kostenstelle nicht für neue Berichte.');
+            $this->assertSame(['K110', 'Vertrieb & Angebote'], [$reports->detail($visit['id'], $tech)['cost_center_number'], $reports->detail($visit['id'], $tech)['cost_center_name']]);
+            $this->assertSame(1, $reports->page(['assignment' => 'with_cost_center'], $office)['total']);
+            $this->assertSame(1, $reports->page(['assignment' => 'unassigned'], $office)['total']);
+            $this->assertSame(1, $reports->page(['q' => 'Vertrieb'], $office)['total'], 'Suche nach Kostenstelle.');
+
+            // Auswertungen: Auftrag nur mit Auftrag, Kostenstelle nur mit Kostenstelle, Gesamtstunden unverändert.
+            $this->assertSame(120, $time->actualHoursForOrder($order, $office)['totals']['netMinutes']);
+            $this->assertSame(180, array_column($centers->overview($office, '2026')['items'], 'minutes', 'number')['K110']);
+            $this->assertSame(300, $time->day($employee, '2026-11-16', $tech)['totals']['netMinutes']);
+
+            // Nachträgliche Wechsel durch das Büro zwischen allen Zuständen – keine neuen Buchungen.
+            $this->assertThrows(AccessDeniedException::class, fn () => $reports->assignOrder($none['id'], ['version' => $none['version'], 'costCenterId' => $k110], $tech));
+            $count = static fn (): int => (int) $pdo->query("SELECT COUNT(*) FROM time_entries WHERE source_kind = 'daily_report'")->fetchColumn();
+            $before = $count();
+            $step = $reports->assignOrder($none['id'], ['version' => $none['version'], 'costCenterId' => $k110], $office);                // ohne → Kostenstelle
+            $this->assertSame([[null, $k110, 60]], $booking($none['id']));
+            $step = $reports->assignOrder($none['id'], ['version' => $step['version'], 'orderId' => $order], $office);                    // Kostenstelle → Auftrag
+            $this->assertSame([[$order, null, 60]], $booking($none['id']));
+            $this->assertSame(180, $time->actualHoursForOrder($order, $office)['totals']['netMinutes'], 'Auftrags-Ist-Stunden nach dem Wechsel neu ausgewertet.');
+            $step = $reports->assignOrder($none['id'], ['version' => $step['version'], 'costCenterId' => $k110], $office);                // Auftrag → Kostenstelle
+            $step = $reports->assignOrder($none['id'], ['version' => $step['version']], $office);                                        // Kostenstelle → ohne
+            $this->assertSame([[null, null, 60]], $booking($none['id']));
+            $step = $reports->assignOrder($none['id'], ['version' => $step['version'], 'orderId' => $order], $office);                    // ohne → Auftrag
+            $step = $reports->assignOrder($none['id'], ['version' => $step['version']], $office);                                        // Auftrag → ohne
+            $this->assertSame($before, $count(), 'Keine zusätzlichen Zeitbuchungen.');
+            $this->assertSame('1.000', $reports->detail($none['id'], $office)['entries'][0]['duration_hours'], 'Stunden unverändert.');
+            $this->assertThrows(DocumentValidationException::class, fn () => $reports->assignOrder($none['id'], ['version' => $step['version'], 'orderId' => $order, 'costCenterId' => $k110], $office));
+            $events = array_map(static fn (array $event): array => [$event['previous_order_id'], $event['previous_cost_center_id'], $event['order_id'], $event['cost_center_id']], $step['orderEvents']);
+            $this->assertSame([[null, null, null, $k110], [null, $k110, $order, null], [$order, null, null, $k110], [null, $k110, null, null], [null, null, $order, null], [$order, null, null, null]], $events,
+                'Eine nachvollziehbare Historie für Auftrag und Kostenstelle.');
+            // Historische Zuordnung zu einer inzwischen deaktivierten Kostenstelle bleibt bestehen.
+            $centers->save($k110, ['number' => 'K110', 'name' => 'Vertrieb & Angebote', 'active' => false, 'version' => 1], $admin);
+            $this->assertSame([[null, $k110, 180]], $booking($visit['id']));
+            $this->assertSame('K110', $reports->detail($visit['id'], $office)['cost_center_number']);
+
+            // Materialanforderung aus einem Kostenstellen-Bericht: Kunde, kein künstlicher Auftrag.
+            $ordersBefore = (int) $pdo->query('SELECT COUNT(*) FROM orders')->fetchColumn();
+            $request = $materials->create(['dailyReportId' => $visit['id'], 'description' => 'Muster Schalter'], $tech);
+            $this->assertSame([null, $customer], [$request['orderId'], $request['customerId']]);
+            $this->assertSame($ordersBefore, (int) $pdo->query('SELECT COUNT(*) FROM orders')->fetchColumn());
+
+            // PDF: Kostenstelle statt künstlicher Auftragsnummer.
+            $document = $pdf->pdf($visit['id'], $office)['pdf'];
+            $this->assertTrue(str_contains($document, '(Kostenstelle) Tj') && !str_contains($document, '(Auftrag) Tj'));
+
+            // Rapporte bleiben ausschließlich auftragsbezogen.
+            $draft = $workReports->create(['customerId' => $customer, 'workDate' => '2026-11-18'], $tech);
+            $draft = $workReports->update($draft['id'], ['version' => $draft['version'], 'description' => 'Regie', 'labor' => [['workDate' => '2026-11-18', 'employeeId' => $employee, 'hours' => '1']], 'materials' => []], $tech);
+            $this->assertThrows(OrderValidationException::class, fn () => $workReports->submit($draft['id'], ['version' => $draft['version'], 'costCenterId' => $k110], $tech), 'Einreichen nur mit Auftrag.');
+            $this->assertSame(0, (int) $pdo->query("SELECT COUNT(*) FROM time_entries WHERE source_kind = 'work_report' AND cost_center_id IS NOT NULL")->fetchColumn());
+            $this->assertThrows(\PDOException::class, fn () => $pdo->exec("UPDATE time_entries SET cost_center_id = " . $pdo->quote($k110) . " WHERE source_kind = 'work_report'"), 'Datenbank: Rapportstunden nie auf Kostenstellen.');
+            $this->assertThrows(\PDOException::class, fn () => $pdo->exec("UPDATE daily_reports SET cost_center_id = " . $pdo->quote($k110) . " WHERE id = " . $pdo->quote($onOrder['id'])), 'Datenbank: Bericht nie mit beiden Zielen.');
+            $this->assertThrows(DocumentValidationException::class, fn () => $centers->delete($k110, 2, $admin), 'Vom Bericht verwendete Kostenstelle nicht löschbar.');
+        });
+    }
+
     public function testMigrationKeepsExistingAssignments(): void
     {
         $tmp = sys_get_temp_dir() . '/calight-cost-centers-migration-' . bin2hex(random_bytes(6));
@@ -226,6 +310,11 @@ final class CostCenterTest extends TestCase
             $this->assertSame(0, (int) $pdo->query('SELECT COUNT(*) FROM cost_centers')->fetchColumn(), 'Keine automatische Anlage.');
             $this->assertSame([], $pdo->query('PRAGMA foreign_key_check')->fetchAll());
             $this->assertThrows(\PDOException::class, fn () => $pdo->exec("INSERT INTO purchase_order_allocations(id,purchase_order_id,amount,created_at) VALUES('a2'," . $pdo->quote($purchase) . ",'1','t')"), 'Je Verteilzeile genau ein Ziel.');
+            // 0040: Bautagesberichte und Zeitbuchungen unverändert, neue Spalten leer, Protokoll erweitert.
+            $this->assertSame([], array_values(array_diff(['cost_center_id'], array_column($pdo->query('PRAGMA table_info(daily_reports)')->fetchAll(), 'name'))));
+            $this->assertSame([], array_values(array_diff(['previous_cost_center_id', 'cost_center_id'], array_column($pdo->query('PRAGMA table_info(daily_report_order_events)')->fetchAll(), 'name'))));
+            $this->assertSame(1, (int) $pdo->query('SELECT COUNT(*) FROM time_entries')->fetchColumn());
+            $this->assertSame(['idx_time_entries_cost_center', 'idx_time_entries_employee_date', 'idx_time_entries_order'], $pdo->query("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'time_entries' AND name LIKE 'idx_%' ORDER BY name")->fetchAll(PDO::FETCH_COLUMN));
         } finally {
             $this->remove($tmp);
         }
@@ -266,6 +355,8 @@ final class CostCenterTest extends TestCase
                 'purchases' => new PurchaseOrderService($pdo, new PurchaseOrderRepository($pdo), $numbers, new AttachmentStore($tmp . '/documents'), new PurchaseOrderPdfService(new DocumentSettingsRepository($pdo))),
                 'reports' => new DailyReportService($pdo, new DailyReportRepository($pdo), new EmployeeRepository($pdo), new OrderRepository($pdo)),
                 'workReports' => new WorkReportService($pdo, new WorkReportRepository($pdo), new OrderRepository($pdo), $numbers, new PriceCalculator(), null, $orders),
+                'materials' => new MaterialRequestService(new MaterialRequestRepository($pdo), new OrderRepository($pdo), new DailyReportRepository($pdo)),
+                'pdf' => new DailyReportPdfService(new DailyReportService($pdo, new DailyReportRepository($pdo), new EmployeeRepository($pdo), new OrderRepository($pdo)), new DocumentSettingsRepository($pdo)),
             ]);
         } finally {
             $this->remove($tmp);

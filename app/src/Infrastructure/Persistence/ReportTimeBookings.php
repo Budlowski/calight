@@ -40,10 +40,10 @@ final readonly class ReportTimeBookings
         return $minutes->isEqualTo($minutes->toScale(0, RoundingMode::Down));
     }
 
-    /** Buchungen eines Bautagesberichts (jede Stundenposition zählt; Auftrag folgt dem Bericht). */
+    /** Buchungen eines Bautagesberichts (jede Stundenposition zählt; Kostenziel – Auftrag oder Kostenstelle – folgt dem Bericht). */
     public function syncDailyReport(string $reportId, string $userId, string $now): void
     {
-        $report = $this->row('SELECT id, order_id FROM daily_reports WHERE id = :id', ['id' => $reportId]);
+        $report = $this->row('SELECT id, order_id, cost_center_id FROM daily_reports WHERE id = :id', ['id' => $reportId]);
         if ($report === null) {
             return;
         }
@@ -51,7 +51,7 @@ final readonly class ReportTimeBookings
         foreach ($rows as $row) {
             $this->upsert('daily_report', 'daily_report_entry_id', (string) $row['id'], [
                 'employee_id' => (string) $row['employee_id'], 'work_date' => (string) $row['work_date'],
-                'net_minutes' => self::minutes((string) $row['duration_hours']), 'order_id' => $report['order_id'],
+                'net_minutes' => self::minutes((string) $row['duration_hours']), 'order_id' => $report['order_id'], 'cost_center_id' => $report['cost_center_id'],
                 'hourly_cost_rate_snapshot' => (string) $row['hourly_cost_rate_snapshot'],
             ], $userId, $now);
         }
@@ -83,7 +83,8 @@ final readonly class ReportTimeBookings
             }
             $this->upsert('work_report', 'work_report_labor_id', (string) $row['id'], [
                 'employee_id' => (string) $row['employee_id'], 'work_date' => (string) $row['work_date'],
-                'net_minutes' => self::minutes((string) $row['hours']), 'order_id' => $report['order_id'],
+                // Rapportstunden gehören ausschließlich zum Auftrag (nie zu einer Kostenstelle).
+                'net_minutes' => self::minutes((string) $row['hours']), 'order_id' => $report['order_id'], 'cost_center_id' => null,
                 'hourly_cost_rate_snapshot' => (string) $row['hourly_cost_rate'],
             ], $userId, $now);
         }
@@ -128,26 +129,26 @@ final readonly class ReportTimeBookings
      * Legt die Buchung zu einer Berichtsposition an oder gleicht sie an. Geänderte Dauer, geändertes
      * Datum oder ein anderer Mitarbeiter entfernen die ergänzten Uhrzeiten und die Reisezeit.
      *
-     * @param array{employee_id:string,work_date:string,net_minutes:int,order_id:?string,hourly_cost_rate_snapshot:string} $values
+     * @param array{employee_id:string,work_date:string,net_minutes:int,order_id:?string,cost_center_id:?string,hourly_cost_rate_snapshot:string} $values
      */
     private function upsert(string $kind, string $column, string $reference, array $values, string $userId, string $now): void
     {
         $existing = $this->row('SELECT * FROM time_entries WHERE ' . $column . ' = :ref', ['ref' => $reference]);
         if ($existing === null) {
-            $this->pdo->prepare('INSERT INTO time_entries (id, employee_id, work_date, source_kind, ' . $column . ', net_minutes, activity, order_id, notes,
+            $this->pdo->prepare('INSERT INTO time_entries (id, employee_id, work_date, source_kind, ' . $column . ', net_minutes, activity, order_id, cost_center_id, notes,
                 hourly_cost_rate_snapshot, created_by_user_id, created_at, updated_by_user_id, updated_at)
-                VALUES (:id, :employee, :date, :kind, :ref, :net, \'work\', :order, \'\', :rate, :user, :now, :user, :now)')
+                VALUES (:id, :employee, :date, :kind, :ref, :net, \'work\', :order, :cost_center, \'\', :rate, :user, :now, :user, :now)')
                 ->execute(['id' => Uuid::v4(), 'employee' => $values['employee_id'], 'date' => $values['work_date'], 'kind' => $kind, 'ref' => $reference,
-                    'net' => $values['net_minutes'], 'order' => $values['order_id'], 'rate' => $values['hourly_cost_rate_snapshot'], 'user' => $userId, 'now' => $now]);
+                    'net' => $values['net_minutes'], 'order' => $values['order_id'], 'cost_center' => $values['cost_center_id'], 'rate' => $values['hourly_cost_rate_snapshot'], 'user' => $userId, 'now' => $now]);
             return;
         }
         $timesInvalid = (int) $existing['net_minutes'] !== $values['net_minutes'] || $existing['work_date'] !== $values['work_date'] || $existing['employee_id'] !== $values['employee_id'];
-        $orderChanged = $existing['order_id'] !== $values['order_id'];
+        $orderChanged = $existing['order_id'] !== $values['order_id'] || $existing['cost_center_id'] !== $values['cost_center_id'];
         if (!$timesInvalid && !$orderChanged) {
             return;
         }
-        $sets = ['order_id = :order', 'updated_by_user_id = :user', 'updated_at = :now', 'version = version + 1'];
-        $parameters = ['order' => $values['order_id'], 'user' => $userId, 'now' => $now, 'id' => $existing['id']];
+        $sets = ['order_id = :order', 'cost_center_id = :cost_center', 'updated_by_user_id = :user', 'updated_at = :now', 'version = version + 1'];
+        $parameters = ['order' => $values['order_id'], 'cost_center' => $values['cost_center_id'], 'user' => $userId, 'now' => $now, 'id' => $existing['id']];
         if ($timesInvalid) {
             $sets = [...$sets, 'employee_id = :employee', 'work_date = :date', 'net_minutes = :net', 'start_time = NULL', 'end_time = NULL', 'ends_next_day = 0', 'break_minutes = 0', 'travel_minutes = 0'];
             $parameters += ['employee' => $values['employee_id'], 'date' => $values['work_date'], 'net' => $values['net_minutes']];

@@ -24,10 +24,12 @@ use Throwable;
  * Bautagesberichte: interne Dokumentation tatsächlicher Arbeiten und Termine.
  *
  * Kunde ist Pflicht; Projekt und Auftrag sind optional – auch dauerhaft (z. B. Besichtigung vor
- * dem Angebot). Jede Mitarbeiterstundenposition ist tatsächliche Arbeitszeit und hat genau eine
- * zentrale Zeitbuchung (ReportTimeBookings, gleiche Transaktion); Stundenkorrekturen am Bericht
- * wirken unmittelbar. Die Stunden folgen dem Auftrag des Berichts; das Büro kann den Auftrag
- * nachträglich setzen, ändern oder entfernen (protokolliert). PDFs werden bei jedem Abruf neu
+ * dem Angebot). Kostenziel: Kundenauftrag ODER allgemeine Kostenstelle ODER keines (der Kunde ist
+ * kein Kostenziel; ein Bericht beim Kunden kann z. B. auf K110 Vertrieb & Angebote laufen).
+ * Jede Mitarbeiterstundenposition ist tatsächliche Arbeitszeit und hat genau eine zentrale
+ * Zeitbuchung (ReportTimeBookings, gleiche Transaktion); Stundenkorrekturen am Bericht wirken
+ * unmittelbar. Die Stunden folgen dem Kostenziel des Berichts; das Büro kann es nachträglich
+ * setzen, wechseln oder entfernen (protokolliert). PDFs werden bei jedem Abruf neu
  * erzeugt und nicht archiviert.
  */
 final readonly class DailyReportService
@@ -58,7 +60,9 @@ final readonly class DailyReportService
         // Kunden und Projekte nur mit Nummer und Name (wie bei Rapporten), damit Monteure Berichte ohne Auftrag anlegen können.
         $customers=array_map(static fn(array $row):array=>['id'=>$row['id'],'customerNumber'=>$row['customer_number'],'name'=>$row['name']],$this->reports->activeCustomers());
         $projects=array_map(static fn(array $row):array=>['id'=>$row['id'],'projectNumber'=>$row['project_number'],'name'=>$row['name'],'customerId'=>$row['customer_id']],$this->reports->projectsForSelection());
-        return['orders'=>$orders,'customers'=>$customers,'projects'=>$projects,'employees'=>$this->visibleEmployees($employees,$actor),'filterEmployees'=>$this->visibleEmployees($filterEmployees,$actor)];
+        // Gemeinsames Suchfeld „Auftrag / Kostenstelle“ (Aufträge mit denselben Freigaberegeln).
+        $costTargets=(new CostTargets($this->pdo))->options(array_map(static fn(array $o):array=>['id'=>$o['id'],'orderNumber'=>$o['order_number'],'title'=>$o['title']],$orders));
+        return['orders'=>$orders,'costTargets'=>$costTargets,'customers'=>$customers,'projects'=>$projects,'employees'=>$this->visibleEmployees($employees,$actor),'filterEmployees'=>$this->visibleEmployees($filterEmployees,$actor)];
     }
 
     /** @param array<string,mixed> $actor @return list<array<string,mixed>> */
@@ -125,9 +129,9 @@ final readonly class DailyReportService
     /** @param array<string,mixed> $input @param array<string,mixed> $actor @return array<string,mixed> */
     public function create(array $input,array $actor):array
     {
-        ['customer_id'=>$customerId,'project_id'=>$projectId,'order_id'=>$orderId]=$this->resolveAssignment($input,$actor);
+        ['customer_id'=>$customerId,'project_id'=>$projectId,'order_id'=>$orderId,'cost_center_id'=>$costCenterId]=$this->resolveAssignment($input,$actor);
         $values=$this->validateReport($input,true);$id=Uuid::v4();$now=Clock::now();$entries=$this->validateEntries($input['entries']??[],$id,$orderId,$values['report_date'],$actor,$now,[]);
-        $this->pdo->exec('BEGIN IMMEDIATE');try{$this->reports->insertReport(['id'=>$id,'customer_id'=>$customerId,'project_id'=>$projectId,'order_id'=>$orderId,
+        $this->pdo->exec('BEGIN IMMEDIATE');try{$this->reports->insertReport(['id'=>$id,'customer_id'=>$customerId,'project_id'=>$projectId,'order_id'=>$orderId,'cost_center_id'=>$costCenterId,
             // Mit Auftrag angelegt: Stunden zählen wie bisher als Ist-Stunden. Ohne Auftrag: nie automatisch.
             'labor_counts_for_order'=>$orderId!==null?1:0,
             'report_date'=>$values['report_date'],'title'=>$values['title'],'activities'=>$values['activities'],'notes'=>$values['notes'],'created_by_user_id'=>$actor['id'],'created_at'=>$now,'updated_at'=>$now]);$this->reports->replaceEntries($id,$entries);(new ReportTimeBookings($this->pdo))->syncDailyReport($id,(string)$actor['id'],$now);$this->pdo->commit();}catch(Throwable $e){if($this->pdo->inTransaction())$this->pdo->rollBack();throw$e;}
@@ -140,29 +144,31 @@ final readonly class DailyReportService
      *
      * @param array<string,mixed> $input customerId, projectId, orderId
      * @param array<string,mixed> $actor
-     * @return array{customer_id:string,project_id:?string,order_id:?string}
+     * @return array{customer_id:string,project_id:?string,order_id:?string,cost_center_id:?string}
      */
     private function resolveAssignment(array $input,array $actor):array
     {
-        $orderId=trim((string)($input['orderId']??''));$customerId=trim((string)($input['customerId']??''));$projectId=trim((string)($input['projectId']??''));
+        $orderId=trim((string)($input['orderId']??''));
+        // Kostenstelle: nur ohne Auftrag (gemeinsame Prüfung in CostTargets).
+        $costCenterId=$this->costCenter($input['costCenterId']??'',$orderId!==''?$orderId:null,null);$customerId=trim((string)($input['customerId']??''));$projectId=trim((string)($input['projectId']??''));
         if($orderId!==''){
             $order=$this->orders->find($orderId);if($order===null)throw new DailyReportValidationException(['Auftrag wurde nicht gefunden.']);$this->assertOrderAccess($order,$actor);
             if($customerId!==''&&$customerId!==(string)$order['customer_id'])throw new DailyReportValidationException(['Der Auftrag gehört nicht zum ausgewählten Kunden.']);
             $orderProject=$order['project_id']!==null?(string)$order['project_id']:null;
             if($projectId!==''&&$projectId!==$orderProject)throw new DailyReportValidationException(['Das Projekt passt nicht zum ausgewählten Auftrag.']);
-            return['customer_id'=>(string)$order['customer_id'],'project_id'=>$orderProject,'order_id'=>$orderId];
+            return['customer_id'=>(string)$order['customer_id'],'project_id'=>$orderProject,'order_id'=>$orderId,'cost_center_id'=>null];
         }
         if($customerId===''||!$this->reports->customerIsActive($customerId))throw new DailyReportValidationException(['Bitte einen aktiven Kunden auswählen.']);
         if($projectId!==''){$project=$this->reports->project($projectId);if($project===null||(string)$project['customer_id']!==$customerId||$project['status']==='archived')throw new DailyReportValidationException(['Das Projekt gehört nicht zum ausgewählten Kunden.']);}
-        return['customer_id'=>$customerId,'project_id'=>$projectId!==''?$projectId:null,'order_id'=>null];
+        return['customer_id'=>$customerId,'project_id'=>$projectId!==''?$projectId:null,'order_id'=>null,'cost_center_id'=>$costCenterId];
     }
 
     /**
-     * Auftrag eines Berichts setzen, ändern oder entfernen (Büro, orders.write). Nur Aufträge
-     * desselben Kunden und passenden Projekts. Die zugehörigen Zeitbuchungen erhalten denselben
-     * Auftrag (keine neuen Buchungen). Protokolliert.
+     * Kostenziel eines Berichts setzen, wechseln oder entfernen (Büro, orders.write): Auftrag
+     * desselben Kunden und passenden Projekts ODER aktive Kostenstelle ODER keines. Die
+     * zugehörigen Zeitbuchungen erhalten dasselbe Ziel (keine neuen Buchungen). Protokolliert.
      *
-     * @param array<string,mixed> $input version, orderId ('' = ohne Auftrag)
+     * @param array<string,mixed> $input version, orderId | costCenterId (beide leer = ohne Zuordnung)
      * @param array<string,mixed> $actor
      * @return array<string,mixed>
      */
@@ -171,19 +177,20 @@ final readonly class DailyReportService
         if(!$this->can($actor,'orders.write'))throw new AccessDeniedException('orders.write');
         $report=$this->reports->find($id);if($report===null)throw new DailyReportValidationException(['Bautagesbericht wurde nicht gefunden.']);
         $orderId=trim((string)($input['orderId']??''));$order=null;
+        $costCenterId=$this->costCenter($input['costCenterId']??'',$orderId!==''?$orderId:null,$report['cost_center_id']!==null?(string)$report['cost_center_id']:null);
         if($orderId!==''){
             $order=$this->orders->find($orderId);if($order===null)throw new DailyReportValidationException(['Auftrag wurde nicht gefunden.']);
             if((string)$order['customer_id']!==(string)$report['customer_id'])throw new DailyReportValidationException(['Der Auftrag gehört nicht zum Kunden des Berichts.']);
             $reportProject=$report['order_id']===null?$report['project_id']:null;
             if($reportProject!==null&&$order['project_id']!==null&&(string)$reportProject!==(string)$order['project_id'])throw new DailyReportValidationException(['Der Auftrag gehört zu einem anderen Projekt als der Bericht.']);
         }
-        if(($order['id']??null)===$report['order_id'])throw new DailyReportValidationException(['Der Bericht ist diesem Auftrag bereits zugeordnet.']);
+        if(($order['id']??null)===$report['order_id']&&$costCenterId===$report['cost_center_id'])throw new DailyReportValidationException(['Der Bericht ist diesem Ziel bereits zugeordnet.']);
         // Stunden ohne Mitarbeiterzeiten-Änderung umhängen: Entwurf von Positionen mit Positionsziel (Titel/Position) passt nicht zum neuen Auftrag.
         if($report['order_id']!==null&&array_filter($this->reports->entries($id),static fn(array $entry):bool=>$entry['target_kind']!=='order')!==[])throw new DailyReportValidationException(['Zeiteinträge sind Positionen des bisherigen Auftrags zugeordnet. Bitte diese Zuordnung zuerst im Bericht auf „Gesamter Auftrag“ ändern.']);
         $now=Clock::now();
         $this->pdo->exec('BEGIN IMMEDIATE');
         try{
-            if(!$this->reports->setOrder($id,(int)($input['version']??0),$report['order_id']!==null?(string)$report['order_id']:null,$order!==null?(string)$order['id']:null,$order!==null&&$order['project_id']!==null?(string)$order['project_id']:null,(string)$actor['id'],$now))throw new DailyReportValidationException(['Der Bautagesbericht wurde zwischenzeitlich geändert. Bitte neu laden.']);
+            if(!$this->reports->setTarget($id,(int)($input['version']??0),$report['order_id']!==null?(string)$report['order_id']:null,$report['cost_center_id']!==null?(string)$report['cost_center_id']:null,$order!==null?(string)$order['id']:null,$costCenterId,$order!==null&&$order['project_id']!==null?(string)$order['project_id']:null,(string)$actor['id'],$now))throw new DailyReportValidationException(['Der Bautagesbericht wurde zwischenzeitlich geändert. Bitte neu laden.']);
             (new ReportTimeBookings($this->pdo))->syncDailyReport($id,(string)$actor['id'],$now);
             $this->pdo->commit();
         }catch(Throwable $e){if($this->pdo->inTransaction())$this->pdo->rollBack();throw$e;}
@@ -396,6 +403,8 @@ final readonly class DailyReportService
     private function assertReportAccess(array $report,array $actor):void{if(($actor['role']??'')==='technician'&&!$this->technicianMaySee($report,$actor))throw new AccessDeniedException('reports.released.read');}
     /** @param array<string,mixed> $report @param array<string,mixed> $actor */
     private function technicianMaySee(array $report,array $actor):bool{return(string)$report['created_by_user_id']===(string)$actor['id']||($report['order_id']!==null&&($report['order_status']??'open')!=='open');}
+    /** Kostenstelle prüfen (gemeinsame Regel in CostTargets). */
+    private function costCenter(mixed $value,?string $orderId,?string $current):?string{return(new CostTargets($this->pdo))->costCenter($value,$orderId,$current,static fn(string $message):DailyReportValidationException=>new DailyReportValidationException([$message]));}
     /** @param array<string,mixed> $actor */ private function can(array $actor,string $permission):bool{return \App\Security\RolePermissions::allows((string)($actor['role']??''),$permission);}
     /** @param array<string,mixed> $resource @param array<string,mixed> $actor */
     private function assertOrderAccess(array $resource,array $actor):void{if(($actor['role']??'')==='technician'&&($resource['order_status']??$resource['status']??'open')==='open')throw new AccessDeniedException('reports.released.read');}

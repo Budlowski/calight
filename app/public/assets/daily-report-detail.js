@@ -22,6 +22,7 @@
   let employees = [];
   let targets = [];
   let referenceOrders = [];
+  let referenceTargets = [];
   let dirty = false;
   let saving = false;
 
@@ -85,7 +86,7 @@
   function renderHeader() {
     const reportDate = format.date(report.report_date);
     root.querySelector("[data-title]").textContent = report.title || `Bautagesbericht vom ${reportDate}`;
-    const assignment = report.order_id ? report.order_number : "Ohne Auftrag";
+    const assignment = report.order_id ? report.order_number : report.cost_center_id ? report.cost_center_number : "Ohne Zuordnung";
     root.querySelector("[data-meta]").textContent = [assignment, report.customer_name, report.project_name, `erstellt von ${report.creator_name}`].filter(Boolean).join(" · ");
     root.querySelector("[data-order-crumb]").innerHTML = report.order_id ? `<a href="/orders/${encodeURIComponent(report.order_id)}">${esc(report.order_number)}</a>` : "";
     root.querySelector("[data-order-crumb]").hidden = !report.order_id;
@@ -99,21 +100,25 @@
    * erscheinen genau einmal in der Zeiterfassung der Mitarbeiter; sie folgen dem Auftrag des
    * Berichts. Büro: Auftrag zuordnen, ändern oder entfernen (protokolliert).
    */
+  /** Kostenziel als Text: Auftrag, Kostenstelle oder „ohne Zuordnung“ (für Anzeige und Verlauf). */
+  const targetText = (orderNumber, costCenterNumber) => orderNumber || (costCenterNumber ? `Kostenstelle ${costCenterNumber}` : "ohne Zuordnung");
+
   function renderAssignment() {
     const box = root.querySelector("[data-assignment]");
+    const assigned = report.order_assigned_at ? ` <small class="muted">zugeordnet von ${esc(report.order_assigned_by_name)} am ${format.dateTime(report.order_assigned_at)}</small>` : "";
     const lines = [
       `<dt>Kunde</dt><dd>${esc(report.customer_name)}${report.customer_number ? ` <span class="muted">(${esc(report.customer_number)})</span>` : ""}</dd>`,
       report.project_id ? `<dt>Projekt</dt><dd>${esc([report.project_number, report.project_name].filter(Boolean).join(" · "))}</dd>` : "",
-      `<dt>Auftrag</dt><dd>${report.order_id
-        ? `<a href="/orders/${encodeURIComponent(report.order_id)}">${esc(report.order_number)} · ${esc(report.order_title)}</a>${report.order_assigned_at
-          ? ` <small class="muted">zugeordnet von ${esc(report.order_assigned_by_name)} am ${format.dateTime(report.order_assigned_at)}</small>` : ""}`
-        : '<span class="muted">Ohne Auftrag</span>'}</dd>`,
-      `<dt>Arbeitszeiten</dt><dd>erscheinen in der Zeiterfassung der Mitarbeiter${report.order_id ? " und zählen als Ist-Stunden dieses Auftrags" : " (ohne Auftrag)"}</dd>`,
+      `<dt>Auftrag / Kostenstelle</dt><dd>${report.order_id
+        ? `<a href="/orders/${encodeURIComponent(report.order_id)}">${esc(report.order_number)} · ${esc(report.order_title)}</a>${assigned}`
+        : report.cost_center_id ? `${esc(report.cost_center_number)} · ${esc(report.cost_center_name)} <small class="muted">Kostenstelle</small>${assigned}`
+          : '<span class="muted">Ohne Zuordnung</span>'}</dd>`,
+      `<dt>Arbeitszeiten</dt><dd>erscheinen in der Zeiterfassung der Mitarbeiter${report.order_id ? " und zählen als Ist-Stunden dieses Auftrags" : report.cost_center_id ? " und zählen zu dieser Kostenstelle" : " (ohne Zuordnung)"}</dd>`,
     ];
     const events = report.orderEvents || [];
     box.innerHTML = `<dl class="report-assignment">${lines.join("")}</dl>
-      ${report.canAssignOrder ? `<div class="report-assignment-actions"><button class="button button-light button-small" type="button" data-assign-order data-icon="clipboard-list">${report.order_id ? "Auftrag ändern …" : "Auftrag zuordnen …"}</button></div>` : ""}
-      ${events.length ? `<details class="report-order-events"><summary>Verlauf der Auftragszuordnung (${events.length})</summary><ul>${events.map((event) => `<li>${format.dateTime(event.changed_at)} · ${esc(event.changed_by_name)}: ${esc(event.previous_order_number || "ohne Auftrag")} → ${esc(event.order_number || "ohne Auftrag")}</li>`).join("")}</ul></details>` : ""}`;
+      ${report.canAssignOrder ? `<div class="report-assignment-actions"><button class="button button-light button-small" type="button" data-assign-order data-icon="clipboard-list">${report.order_id || report.cost_center_id ? "Zuordnung ändern …" : "Auftrag / Kostenstelle zuordnen …"}</button></div>` : ""}
+      ${events.length ? `<details class="report-order-events"><summary>Verlauf der Zuordnung (${events.length})</summary><ul>${events.map((event) => `<li>${format.dateTime(event.changed_at)} · ${esc(event.changed_by_name)}: ${esc(targetText(event.previous_order_number, event.previous_cost_center_number))} → ${esc(targetText(event.order_number, event.cost_center_number))}</li>`).join("")}</ul></details>` : ""}`;
   }
 
   // ---------------------------------------------------------------------------
@@ -234,25 +239,24 @@
       notify(message, "Bitte zuerst die Änderungen speichern.", "warning");
       return;
     }
-    const candidates = referenceOrders.filter((order) => order.customer_id === report.customer_id && order.id !== report.order_id
-      && (report.order_id || !report.project_id || !order.project_id || order.project_id === report.project_id));
+    // Gemeinsames Feld: Aufträge dieses Kunden (passendes Projekt) und allgemeine Kostenstellen.
+    const customerOrders = new Set(referenceOrders.filter((order) => order.customer_id === report.customer_id
+      && (report.order_id || !report.project_id || !order.project_id || order.project_id === report.project_id)).map((order) => order.id));
+    const targets = referenceTargets.filter((target) => target.type !== "order" || customerOrders.has(target.id));
     const dialog = document.createElement("form");
     dialog.className = "form-stack";
     dialog.innerHTML = `
-      <p>Die Zuordnung ändert weder Tätigkeiten noch Stunden. Die Arbeitszeiten dieses Berichts gehören danach zum gewählten Auftrag – bzw. ohne Auftrag zu keinem – und zählen dort genau einmal. Die Änderung wird mit Benutzer und Zeitpunkt protokolliert.</p>
-      <label><span class="field-label">Auftrag von ${esc(report.customer_name)}</span>
-        <select name="orderId">${report.order_id ? '<option value="">Ohne Auftrag (Zuordnung entfernen)</option>' : '<option value="">Auftrag auswählen …</option>'}${candidates.map((order) => `<option value="${esc(order.id)}">${esc(order.order_number)} · ${esc(order.title)}</option>`).join("")}</select></label>`;
-    if (candidates.length) Calight.searchableSelect(dialog.elements.orderId, { placeholder: "Auftragsnummer oder Bezeichnung …" });
-    const ok = await CalightModal.open({ title: report.order_id ? "Auftrag ändern" : "Auftrag zuordnen", content: dialog, actions: [{ label: "Abbrechen", value: false }, { label: "Übernehmen", value: true, primary: true }] });
+      <p>Die Zuordnung ändert weder Tätigkeiten noch Stunden. Die Arbeitszeiten dieses Berichts gehören danach zum gewählten Auftrag bzw. zur Kostenstelle – oder zu keinem Ziel – und zählen dort genau einmal. Die Änderung wird mit Benutzer und Zeitpunkt protokolliert.</p>
+      <label><span class="field-label">Auftrag / Kostenstelle</span><select name="costTarget"></select></label>`;
+    Calight.costTargetSelect(dialog.elements.costTarget, targets, { orderId: report.order_id || "", costCenterId: report.cost_center_id || "", emptyLabel: "Ohne Zuordnung" });
+    const ok = await CalightModal.open({ title: report.order_id || report.cost_center_id ? "Zuordnung ändern" : "Auftrag / Kostenstelle zuordnen", content: dialog, actions: [{ label: "Abbrechen", value: false }, { label: "Übernehmen", value: true, primary: true }] });
     if (!ok) return;
-    if (!report.order_id && !dialog.elements.orderId.value) {
-      notify(message, "Bitte einen Auftrag auswählen.", "warning");
-      return;
-    }
+    const target = Calight.parseCostTarget(dialog.elements.costTarget.value);
+    if (target.orderId === (report.order_id || "") && target.costCenterId === (report.cost_center_id || "")) return;
     try {
-      await api(`/api/daily-reports/${encodeURIComponent(report.id)}/assign-order`, { method: "POST", body: { version: report.version, orderId: dialog.elements.orderId.value } });
+      await api(`/api/daily-reports/${encodeURIComponent(report.id)}/assign-order`, { method: "POST", body: { version: report.version, ...target } });
       await load();
-      notify(message, report.order_id ? `Der Bericht gehört jetzt zum Auftrag ${report.order_number}.` : "Der Bericht ist keinem Auftrag mehr zugeordnet.", "success");
+      notify(message, report.order_id ? `Der Bericht gehört jetzt zum Auftrag ${report.order_number}.` : report.cost_center_id ? `Der Bericht gehört jetzt zur Kostenstelle ${report.cost_center_number}.` : "Der Bericht hat jetzt keine Zuordnung.", "success");
     } catch (exception) {
       notify(message, exception.message);
     }
@@ -267,6 +271,7 @@
     employees = reference.employees;
     targets = report.targets;
     referenceOrders = reference.orders || [];
+    referenceTargets = reference.costTargets || [];
     form.elements.reportDate.value = report.report_date || "";
     for (const name of ["title", "activities", "notes"]) form.elements[name].value = report[name] || "";
     renderHeader();

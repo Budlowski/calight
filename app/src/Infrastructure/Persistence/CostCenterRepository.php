@@ -89,7 +89,7 @@ final readonly class CostCenterRepository
     {
         $statement = $this->pdo->prepare('SELECT EXISTS (SELECT 1 FROM time_entries WHERE cost_center_id = :id)
             OR EXISTS (SELECT 1 FROM time_expenses WHERE cost_center_id = :id) OR EXISTS (SELECT 1 FROM purchase_orders WHERE cost_center_id = :id)
-            OR EXISTS (SELECT 1 FROM purchase_order_allocations WHERE cost_center_id = :id)');
+            OR EXISTS (SELECT 1 FROM purchase_order_allocations WHERE cost_center_id = :id) OR EXISTS (SELECT 1 FROM daily_reports WHERE cost_center_id = :id)');
         $statement->execute(['id' => $id]);
         return (bool) $statement->fetchColumn();
     }

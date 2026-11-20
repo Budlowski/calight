@@ -14,12 +14,12 @@ final readonly class DailyReportRepository
     /** @return list<array<string,mixed>> */
     public function all():array
     {
-        return$this->pdo->query("SELECT r.*,o.order_number,o.title order_title,o.status order_status,c.customer_number,CASE WHEN c.customer_type='company' THEN c.company_name ELSE trim(c.first_name||' '||c.last_name) END customer_name,u.display_name creator_name,(SELECT COUNT(*) FROM daily_report_time_entries t WHERE t.report_id=r.id) entry_count,(SELECT group_concat(t.duration_hours,'|') FROM daily_report_time_entries t WHERE t.report_id=r.id) duration_values,(SELECT group_concat(t.labor_cost,'|') FROM daily_report_time_entries t WHERE t.report_id=r.id) cost_values,(SELECT group_concat(DISTINCT t.employee_id) FROM daily_report_time_entries t WHERE t.report_id=r.id) employee_ids,(SELECT group_concat(DISTINCT e.display_name) FROM daily_report_time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.report_id=r.id) employee_names FROM daily_reports r LEFT JOIN orders o ON o.id=r.order_id JOIN customers c ON c.id=r.customer_id JOIN users u ON u.id=r.created_by_user_id ORDER BY r.report_date DESC,r.created_at DESC")->fetchAll();
+        return$this->pdo->query("SELECT r.*,o.order_number,o.title order_title,o.status order_status,cc.number cost_center_number,cc.name cost_center_name,c.customer_number,CASE WHEN c.customer_type='company' THEN c.company_name ELSE trim(c.first_name||' '||c.last_name) END customer_name,u.display_name creator_name,(SELECT COUNT(*) FROM daily_report_time_entries t WHERE t.report_id=r.id) entry_count,(SELECT group_concat(t.duration_hours,'|') FROM daily_report_time_entries t WHERE t.report_id=r.id) duration_values,(SELECT group_concat(t.labor_cost,'|') FROM daily_report_time_entries t WHERE t.report_id=r.id) cost_values,(SELECT group_concat(DISTINCT t.employee_id) FROM daily_report_time_entries t WHERE t.report_id=r.id) employee_ids,(SELECT group_concat(DISTINCT e.display_name) FROM daily_report_time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.report_id=r.id) employee_names FROM daily_reports r LEFT JOIN orders o ON o.id=r.order_id LEFT JOIN cost_centers cc ON cc.id=r.cost_center_id JOIN customers c ON c.id=r.customer_id JOIN users u ON u.id=r.created_by_user_id ORDER BY r.report_date DESC,r.created_at DESC")->fetchAll();
     }
 
     /** Sortierbare Spalten der Berichtsübersicht mit natürlicher Richtung. */
     public const LIST_SORTS = ['date' => 'desc', 'order' => 'asc', 'customer' => 'asc', 'title' => 'asc', 'hours' => 'desc', 'updated' => 'desc'];
-    public const LIST_FILTERS = ['order', 'date', 'employee', 'customer', 'project', 'assignment'];
+    public const LIST_FILTERS = ['order', 'date', 'employee', 'customer', 'project', 'assignment', 'cost_center'];
 
     /**
      * @param string|null $technicianId Techniker: eigene Berichte sowie Berichte freigegebener Aufträge.
@@ -30,7 +30,7 @@ final readonly class DailyReportRepository
         $customer = "CASE WHEN c.customer_type='company' THEN c.company_name ELSE trim(c.first_name || ' ' || c.last_name) END";
         $employeeNames = '(SELECT group_concat(DISTINCT e.display_name) FROM daily_report_time_entries t JOIN employees e ON e.id = t.employee_id WHERE t.report_id = r.id)';
         $page = (new Paginator($this->pdo))
-            ->search($query, ['o.order_number', 'o.title', $customer, 'c.customer_number', 'p.project_number', 'p.name', 'r.title', 'r.activities', $employeeNames]);
+            ->search($query, ['o.order_number', 'o.title', 'cc.number', 'cc.name', $customer, 'c.customer_number', 'p.project_number', 'p.name', 'r.title', 'r.activities', $employeeNames]);
         if ($technicianId !== null) {
             $page->where("(r.created_by_user_id = :report_technician OR (r.order_id IS NOT NULL AND o.status <> 'open'))", ['report_technician' => $technicianId]);
         }
@@ -40,9 +40,15 @@ final readonly class DailyReportRepository
         if ($query->filter('project') !== null) {
             $page->where('r.project_id = :report_project', ['report_project' => (string) $query->filter('project')]);
         }
+        // Zuordnung: Auftrag, Kostenstelle, ohne Auftrag (bisheriger Filter) oder ganz ohne Zuordnung.
         $assignment = $query->filter('assignment');
-        if ($assignment === 'with_order' || $assignment === 'without_order') {
-            $page->where($assignment === 'with_order' ? 'r.order_id IS NOT NULL' : 'r.order_id IS NULL');
+        $conditions = ['with_order' => 'r.order_id IS NOT NULL', 'without_order' => 'r.order_id IS NULL', 'with_cost_center' => 'r.cost_center_id IS NOT NULL',
+            'unassigned' => 'r.order_id IS NULL AND r.cost_center_id IS NULL'];
+        if (isset($conditions[(string) $assignment])) {
+            $page->where($conditions[(string) $assignment]);
+        }
+        if ($query->filter('cost_center') !== null) {
+            $page->where('r.cost_center_id = :report_cost_center', ['report_cost_center' => (string) $query->filter('cost_center')]);
         }
         if ($query->filter('order') !== null) {
             $page->where('r.order_id = :report_order', ['report_order' => (string) $query->filter('order')]);
@@ -57,15 +63,15 @@ final readonly class DailyReportRepository
         }
 
         return $page->fetch(
-            "r.id, r.customer_id, r.project_id, r.order_id, r.order_assigned_at, r.labor_counts_for_order, r.report_date, r.title, r.activities, r.created_by_user_id, r.created_at, r.updated_at,
+            "r.id, r.customer_id, r.project_id, r.order_id, r.cost_center_id, cc.number AS cost_center_number, cc.name AS cost_center_name, r.order_assigned_at, r.labor_counts_for_order, r.report_date, r.title, r.activities, r.created_by_user_id, r.created_at, r.updated_at,
              o.order_number, o.title AS order_title, o.status AS order_status, c.customer_number, {$customer} AS customer_name, p.project_number, p.name AS project_name,
              {$employeeNames} AS employee_names,
              (SELECT group_concat(t.duration_hours, '|') FROM daily_report_time_entries t WHERE t.report_id = r.id) AS duration_values,
              (SELECT group_concat(t.labor_cost, '|') FROM daily_report_time_entries t WHERE t.report_id = r.id) AS cost_values",
-            'daily_reports r LEFT JOIN orders o ON o.id = r.order_id JOIN customers c ON c.id = r.customer_id LEFT JOIN projects p ON p.id = r.project_id',
+            'daily_reports r LEFT JOIN orders o ON o.id = r.order_id LEFT JOIN cost_centers cc ON cc.id = r.cost_center_id JOIN customers c ON c.id = r.customer_id LEFT JOIN projects p ON p.id = r.project_id',
             [
                 'date' => 'r.report_date',
-                'order' => "COALESCE(o.order_number, '') COLLATE NOCASE",
+                'order' => "COALESCE(o.order_number, cc.number, '') COLLATE NOCASE",
                 'customer' => "{$customer} COLLATE NOCASE",
                 'title' => "NULLIF(r.title, '') COLLATE NOCASE",
                 // Nur zum Ordnen; angezeigte Stunden werden exakt summiert.
@@ -81,7 +87,7 @@ final readonly class DailyReportRepository
     /** @return array<string,mixed>|null */
     public function find(string $id):?array
     {
-        $s=$this->pdo->prepare("SELECT r.*,o.order_number,o.title order_title,o.status order_status,o.basis_json,o.project_id order_project_id,c.customer_number,CASE WHEN c.customer_type='company' THEN c.company_name ELSE trim(c.first_name||' '||c.last_name) END customer_name,p.project_number,p.name project_name,u.display_name creator_name,ua.display_name order_assigned_by_name FROM daily_reports r LEFT JOIN orders o ON o.id=r.order_id JOIN customers c ON c.id=r.customer_id LEFT JOIN projects p ON p.id=r.project_id JOIN users u ON u.id=r.created_by_user_id LEFT JOIN users ua ON ua.id=r.order_assigned_by_user_id WHERE r.id=:id");$s->execute(['id'=>$id]);$row=$s->fetch();return is_array($row)?$row:null;
+        $s=$this->pdo->prepare("SELECT r.*,o.order_number,o.title order_title,o.status order_status,o.basis_json,o.project_id order_project_id,cc.number cost_center_number,cc.name cost_center_name,c.customer_number,CASE WHEN c.customer_type='company' THEN c.company_name ELSE trim(c.first_name||' '||c.last_name) END customer_name,p.project_number,p.name project_name,u.display_name creator_name,ua.display_name order_assigned_by_name FROM daily_reports r LEFT JOIN orders o ON o.id=r.order_id LEFT JOIN cost_centers cc ON cc.id=r.cost_center_id JOIN customers c ON c.id=r.customer_id LEFT JOIN projects p ON p.id=r.project_id JOIN users u ON u.id=r.created_by_user_id LEFT JOIN users ua ON ua.id=r.order_assigned_by_user_id WHERE r.id=:id");$s->execute(['id'=>$id]);$row=$s->fetch();return is_array($row)?$row:null;
     }
 
     /** @return list<array<string,mixed>> */
@@ -93,7 +99,7 @@ final readonly class DailyReportRepository
     /** @param array<string,mixed> $data */
     public function insertReport(array $data):void
     {
-        $s=$this->pdo->prepare('INSERT INTO daily_reports(id,customer_id,project_id,order_id,labor_counts_for_order,report_date,title,activities,notes,created_by_user_id,version,created_at,updated_at) VALUES(:id,:customer_id,:project_id,:order_id,:labor_counts_for_order,:report_date,:title,:activities,:notes,:created_by_user_id,1,:created_at,:updated_at)');$s->execute($data);
+        $s=$this->pdo->prepare('INSERT INTO daily_reports(id,customer_id,project_id,order_id,cost_center_id,labor_counts_for_order,report_date,title,activities,notes,created_by_user_id,version,created_at,updated_at) VALUES(:id,:customer_id,:project_id,:order_id,:cost_center_id,:labor_counts_for_order,:report_date,:title,:activities,:notes,:created_by_user_id,1,:created_at,:updated_at)');$s->execute($data);
     }
 
     /** @param array<string,mixed> $data */
@@ -172,28 +178,33 @@ final readonly class DailyReportRepository
     }
 
     /**
-     * Auftragszuordnung setzen, ändern oder aufheben (Büro). Die Stunden folgen dem Auftrag des
-     * Berichts (labor_counts_for_order = 1 mit Auftrag); jede Änderung wird protokolliert.
+     * Kostenziel setzen, ändern oder aufheben (Büro): Auftrag ODER Kostenstelle ODER keines.
+     * Die Stunden folgen dem Ziel (labor_counts_for_order = 1 nur mit Auftrag); jede Änderung wird
+     * in daily_report_order_events protokolliert (eine Historie für beide Zielarten).
      */
-    public function setOrder(string $id, int $version, ?string $previousOrderId, ?string $orderId, ?string $projectId, string $userId, string $at): bool
+    public function setTarget(string $id, int $version, ?string $previousOrderId, ?string $previousCostCenterId, ?string $orderId, ?string $costCenterId, ?string $projectId, string $userId, string $at): bool
     {
-        $statement = $this->pdo->prepare('UPDATE daily_reports SET order_id = :order_id, project_id = COALESCE(:project_id, project_id),
+        $statement = $this->pdo->prepare('UPDATE daily_reports SET order_id = :order_id, cost_center_id = :cost_center_id, project_id = COALESCE(:project_id, project_id),
             labor_counts_for_order = CASE WHEN :order_id IS NULL THEN 0 ELSE 1 END, order_assigned_at = :at, order_assigned_by_user_id = :user,
-            version = version + 1, updated_at = :at WHERE id = :id AND version = :version AND order_id IS :previous');
-        $statement->execute(['order_id' => $orderId, 'project_id' => $projectId, 'at' => $at, 'user' => $userId, 'id' => $id, 'version' => $version, 'previous' => $previousOrderId]);
+            version = version + 1, updated_at = :at WHERE id = :id AND version = :version AND order_id IS :previous AND cost_center_id IS :previous_cost_center');
+        $statement->execute(['order_id' => $orderId, 'cost_center_id' => $costCenterId, 'project_id' => $projectId, 'at' => $at, 'user' => $userId, 'id' => $id, 'version' => $version,
+            'previous' => $previousOrderId, 'previous_cost_center' => $previousCostCenterId]);
         if ($statement->rowCount() !== 1) {
             return false;
         }
-        $this->pdo->prepare('INSERT INTO daily_report_order_events (report_id, previous_order_id, order_id, changed_by_user_id, changed_at) VALUES (:id, :previous, :order, :user, :at)')
-            ->execute(['id' => $id, 'previous' => $previousOrderId, 'order' => $orderId, 'user' => $userId, 'at' => $at]);
+        $this->pdo->prepare('INSERT INTO daily_report_order_events (report_id, previous_order_id, order_id, previous_cost_center_id, cost_center_id, changed_by_user_id, changed_at)
+            VALUES (:id, :previous, :order, :previous_cost_center, :cost_center, :user, :at)')
+            ->execute(['id' => $id, 'previous' => $previousOrderId, 'order' => $orderId, 'previous_cost_center' => $previousCostCenterId, 'cost_center' => $costCenterId, 'user' => $userId, 'at' => $at]);
         return true;
     }
 
     /** Protokoll der Auftragszuordnung (älteste zuerst). @return list<array<string,mixed>> */
     public function orderEvents(string $id): array
     {
-        $statement = $this->pdo->prepare('SELECT ev.previous_order_id, po.order_number AS previous_order_number, ev.order_id, o.order_number, ev.changed_at, u.display_name AS changed_by_name
-            FROM daily_report_order_events ev LEFT JOIN orders po ON po.id = ev.previous_order_id LEFT JOIN orders o ON o.id = ev.order_id JOIN users u ON u.id = ev.changed_by_user_id
+        $statement = $this->pdo->prepare('SELECT ev.previous_order_id, po.order_number AS previous_order_number, ev.order_id, o.order_number,
+                ev.previous_cost_center_id, pcc.number AS previous_cost_center_number, ev.cost_center_id, cc.number AS cost_center_number, ev.changed_at, u.display_name AS changed_by_name
+            FROM daily_report_order_events ev LEFT JOIN orders po ON po.id = ev.previous_order_id LEFT JOIN orders o ON o.id = ev.order_id
+            LEFT JOIN cost_centers pcc ON pcc.id = ev.previous_cost_center_id LEFT JOIN cost_centers cc ON cc.id = ev.cost_center_id JOIN users u ON u.id = ev.changed_by_user_id
             WHERE ev.report_id = :id ORDER BY ev.id');
         $statement->execute(['id' => $id]);
         return $statement->fetchAll();

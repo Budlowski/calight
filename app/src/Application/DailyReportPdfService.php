@@ -41,6 +41,8 @@ final readonly class DailyReportPdfService
                 ['Berichtsdatum', $date],
                 $report['project_id'] !== null ? ['Projekt', trim(($report['project_number'] ?? '') . ' · ' . ($report['project_name'] ?? ''), ' ·')] : null,
                 $report['order_id'] !== null ? ['Auftrag', trim($report['order_number'] . ' · ' . $report['order_title'])] : null,
+                // Allgemeine Kostenstelle statt Auftrag – nie eine künstliche Auftragsnummer.
+                ($report['cost_center_id'] ?? null) !== null ? ['Kostenstelle', trim($report['cost_center_number'] . ' · ' . $report['cost_center_name'])] : null,
                 ['Kundennummer', (string) ($report['customer_number'] ?? '')],
                 ['Erstellt von', (string) ($report['creator_name'] ?? '')],
             ])),
