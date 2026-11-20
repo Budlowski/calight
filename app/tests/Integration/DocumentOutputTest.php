@@ -237,6 +237,34 @@ final class DocumentOutputTest extends TestCase
         return $service->detail($draft['id'], $actor);
     }
 
+    public function testWorkReportPdfShowsSubmissionDateAndDatedLaborRows(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['service' => $service, 'pdf' => $pdfService, 'office' => $office, 'technician' => $technician, 'customer' => $customer, 'pdo' => $pdo] = $env;
+            $ben = Uuid::v4();
+            $pdo->prepare("INSERT INTO employees(id,display_name,hourly_cost_rate,active,created_at,updated_at) VALUES(:id,'Ben Monteur','40.0000',1,'2026-11-18T08:00:00Z','2026-11-18T08:00:00Z')")->execute(['id' => $ben]);
+            $draft = $service->create(['customerId' => $customer, 'workDate' => '2026-11-18'], $technician);
+            $draft = $this->saveProof($service, $draft, [
+                'description' => 'Montage',
+                'labor' => [
+                    ['workDate' => '2026-11-19', 'employeeId' => $env['anna'], 'hours' => '5'],
+                    ['workDate' => '2026-11-18', 'employeeId' => $env['anna'], 'hours' => '8'],
+                    ['workDate' => '2026-11-18', 'employeeId' => $ben, 'hours' => '6,5'],
+                ],
+            ], $technician);
+            $preview = $pdfService->pdf($draft['id'], $technician)['pdf'];
+            $this->assertTrue(!str_contains($preview, '(Eingereicht am) Tj'), 'Entwurf ohne Einreichungsdatum.');
+            $submitted = $service->submit($draft['id'], ['version' => $draft['version'], 'createOrder' => true], $technician);
+            $pdf = $pdfService->pdf($submitted['id'], $office)['pdf'];
+            $this->assertTrue(str_contains($pdf, '(Eingereicht am) Tj') && str_contains($pdf, '(Datum) Tj'));
+            $this->assertTrue(!str_contains($pdf, '(Leistungsdatum) Tj'), 'Bei datierten Positionen kein pauschales Leistungsdatum im Kopf.');
+            $first = strpos($pdf, '(18.11.2026) Tj');
+            $last = strpos($pdf, '(19.11.2026) Tj');
+            $this->assertTrue($first !== false && $last !== false && $first < $last, 'Positionen nach Datum geordnet.');
+            $this->assertSame($pdf, $pdfService->pdf($submitted['id'], $office)['pdf'], 'Archivierte Fassung bleibt unverändert.');
+        });
+    }
+
     private function submitted(WorkReportService $service, array $target, array $actor, string $employee): array
     {
         $draft = $service->create([...$target, 'workDate' => '2026-11-18'], $actor);

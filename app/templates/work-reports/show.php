@@ -36,8 +36,6 @@
             <div><h2>Leistungsnachweis</h2><small data-proof-hint>Ausgeführte Arbeiten, Stunden und Material</small></div>
         </div>
         <div class="form-grid work-report-head-grid">
-            <label><span class="field-label">Leistungsdatum <span aria-hidden="true">*</span></span><input name="workDate" type="date" required></label>
-            <label><span class="field-label">Bis (optional, mehrtägig)</span><input name="workDateTo" type="date"></label>
             <label><span class="field-label">Ansprechpartner vor Ort (optional)</span><input name="contactPerson" maxlength="200" autocomplete="off"></label>
             <label class="work-report-location"><span class="field-label">Einsatzort / Objekt (optional)</span><input name="workLocation" maxlength="200" autocomplete="off" placeholder="z. B. Werk 2, Produktionshalle 4"></label>
         </div>

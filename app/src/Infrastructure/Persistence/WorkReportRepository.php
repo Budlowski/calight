@@ -138,10 +138,10 @@ final readonly class WorkReportRepository
         $this->pdo->prepare('DELETE FROM work_report_labor WHERE report_id = :id')->execute(['id' => $reportId]);
         $this->pdo->prepare('DELETE FROM work_report_materials WHERE report_id = :id')->execute(['id' => $reportId]);
         $insertLabor = $this->pdo->prepare('INSERT INTO work_report_labor
-            (id, report_id, employee_id, worker_name, hours, labor_item_id, labor_item_name, activity, sort_order)
-            VALUES (:id, :report_id, :employee_id, :worker_name, :hours, :labor_item_id, :labor_item_name, :activity, :sort_order)');
+            (id, report_id, employee_id, worker_name, work_date, hours, labor_item_id, labor_item_name, activity, sort_order)
+            VALUES (:id, :report_id, :employee_id, :worker_name, :work_date, :hours, :labor_item_id, :labor_item_name, :activity, :sort_order)');
         foreach ($labor as $row) {
-            $insertLabor->execute($row);
+            $insertLabor->execute($row + ['work_date' => null]);
         }
         $insertMaterial = $this->pdo->prepare('INSERT INTO work_report_materials (id, report_id, quantity, unit, description, sort_order)
             VALUES (:id, :report_id, :quantity, :unit, :description, :sort_order)');

@@ -24,8 +24,10 @@ $date = static fn (?string $value): string => $value ? (new DateTimeImmutable($v
     <section class="sign-section">
         <h2>Arbeitsstunden</h2>
         <ul class="sign-list">
-            <?php foreach ($report['labor'] as $row): ?>
-                <li><span><?= $escape($row['workerName']) ?><?= $row['activity'] !== '' ? '<small>' . $escape($row['activity']) . '</small>' : '' ?></span><strong><?= $escape($hours((string) $row['hours'])) ?> h</strong></li>
+            <?php // Stabil nach Leistungsdatum; innerhalb eines Tages in erfasster Reihenfolge.
+            $laborRows = $report['labor']; usort($laborRows, static fn (array $a, array $b): int => strcmp((string) ($a['workDate'] ?? ''), (string) ($b['workDate'] ?? ''))); ?>
+            <?php foreach ($laborRows as $row): ?>
+                <li><span><?php if (($row['workDate'] ?? null) !== null): ?><small><?= $escape($date($row['workDate'])) ?></small><?php endif; ?><?= $escape($row['workerName']) ?><?= $row['activity'] !== '' ? '<small>' . $escape($row['activity']) . '</small>' : '' ?></span><strong><?= $escape($hours((string) $row['hours'])) ?> h</strong></li>
             <?php endforeach; ?>
             <li class="sign-total"><span>Summe</span><strong><?= $escape($hours((string) $report['totalHours'])) ?> h</strong></li>
         </ul>

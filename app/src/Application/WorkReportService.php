@@ -159,7 +159,10 @@ final readonly class WorkReportService
             ]);
             if ($original !== null) {
                 // Die Korrektur startet mit dem eingereichten Stand; das Original bleibt unverändert.
-                $this->reports->replaceProof($id, $this->copyRows($this->reports->labor((string) $original['id']), $id), $this->copyRows($this->reports->materials((string) $original['id']), $id));
+                // Historische Positionen ohne eigenes Datum erhalten das Leistungsdatum des Originals (im Entwurf änderbar).
+                $labor = array_map(static fn (array $row): array => ['work_date' => $row['work_date'] ?? $original['work_date']] + $row,
+                    $this->copyRows($this->reports->labor((string) $original['id']), $id));
+                $this->reports->replaceProof($id, $labor, $this->copyRows($this->reports->materials((string) $original['id']), $id));
             }
             $this->pdo->commit();
         } catch (Throwable $exception) {
@@ -203,7 +206,7 @@ final readonly class WorkReportService
             'projectNumber' => $context['project_number'] ?? null,
             'projectName' => $context['project_name'] ?? null,
             'labor' => array_map(static fn (array $item): array => [
-                'employeeId' => $item['employee_id'], 'workerName' => $item['worker_name'], 'hours' => $item['hours'],
+                'workDate' => $item['work_date'], 'employeeId' => $item['employee_id'], 'workerName' => $item['worker_name'], 'hours' => $item['hours'],
                 'laborItemId' => $item['labor_item_id'], 'laborItemName' => $item['labor_item_name'], 'activity' => $item['activity'],
             ], $labor),
             'materials' => array_map(static fn (array $item): array => [
@@ -232,9 +235,9 @@ final readonly class WorkReportService
      */
     public function update(string $id, array $input, array $actor): array
     {
-        $this->editableDraft($id, $actor);
-        $header = $this->validateHeader($input);
-        $labor = $this->validateLabor($input['labor'] ?? [], $id);
+        $current = $this->editableDraft($id, $actor);
+        $labor = $this->validateLabor($input['labor'] ?? [], $id, (string) $current['work_date']);
+        $header = $this->validateHeader($input) + self::laborPeriod($labor, (string) $current['work_date']);
         $materials = $this->validateMaterials($input['materials'] ?? [], $id);
         $this->pdo->exec('BEGIN IMMEDIATE');
         try {
@@ -302,7 +305,10 @@ final readonly class WorkReportService
                 $version++;
                 $report = $this->reports->find($id) ?? throw new OrderValidationException(['Rapport wurde nicht gefunden.']);
             } else {
-                $this->assignableOrder((string) $report['order_id'], $report, $actor);
+                // Bereits zugeordnet (bei Anlage geprüft oder aus dem Original übernommen): Kunde und Status
+                // erneut prüfen; keine erneute Freigabeprüfung, damit z. B. Korrekturen eines automatisch
+                // angelegten, noch offenen Regieauftrags einreichbar bleiben.
+                $this->assignableOrder((string) $report['order_id'], $report, $actor, false);
             }
             $number = $this->numbers->allocate('work_report', 'work_report', $id, Uuid::v4(), new DateTimeImmutable());
             if (!$this->reports->submit($id, $version, $number, (string) $actor['id'], $now, $this->proofHash($report, $labor, $materials))) {
@@ -709,29 +715,15 @@ final readonly class WorkReportService
     // Validierung
     // -------------------------------------------------------------------------
 
-    /** @param array<string,mixed> $input @return array{work_date:string,work_date_to:?string,contact_person:string,work_location:string,description:string,notes:string} */
+    /** @param array<string,mixed> $input @return array{contact_person:string,work_location:string,description:string,notes:string} */
     private function validateHeader(array $input): array
     {
-        $date = trim((string) ($input['workDate'] ?? ''));
-        $dateTo = trim((string) ($input['workDateTo'] ?? ''));
+        // Kein allgemeines Leistungsdatum mehr: Datum je Stundenposition (validateLabor), Einreichungsdatum = submitted_at.
         $contact = trim((string) ($input['contactPerson'] ?? ''));
         $location = trim((string) ($input['workLocation'] ?? ''));
         $description = trim((string) ($input['description'] ?? ''));
         $notes = trim((string) ($input['notes'] ?? ''));
         $errors = [];
-        foreach ([[$date, 'Leistungsdatum', true], [$dateTo, 'Leistungsende', false]] as [$value, $label, $required]) {
-            if ($value === '' && !$required) {
-                continue;
-            }
-            try {
-                $this->validDate($value, $label);
-            } catch (OrderValidationException $exception) {
-                $errors = [...$errors, ...$exception->errors];
-            }
-        }
-        if ($dateTo !== '' && $errors === [] && $dateTo < $date) {
-            $errors[] = 'Das Leistungsende darf nicht vor dem Leistungsdatum liegen.';
-        }
         if (mb_strlen($contact) > 200) {
             $errors[] = 'Der Ansprechpartner vor Ort darf höchstens 200 Zeichen lang sein.';
         }
@@ -744,11 +736,11 @@ final readonly class WorkReportService
         if ($errors !== []) {
             throw new OrderValidationException($errors);
         }
-        return ['work_date' => $date, 'work_date_to' => $dateTo !== '' && $dateTo !== $date ? $dateTo : null, 'contact_person' => $contact, 'work_location' => $location, 'description' => $description, 'notes' => $notes];
+        return ['contact_person' => $contact, 'work_location' => $location, 'description' => $description, 'notes' => $notes];
     }
 
     /** @return list<array<string,mixed>> */
-    private function validateLabor(mixed $raw, string $reportId): array
+    private function validateLabor(mixed $raw, string $reportId, string $defaultDate): array
     {
         $rows = $this->rows($raw, 'Arbeitsstunden');
         $result = [];
@@ -766,6 +758,8 @@ final readonly class WorkReportService
             if ($name === '' || mb_strlen($name) > 150) {
                 throw new OrderValidationException([$label . ': Bitte einen Mitarbeiter auswählen oder einen Namen angeben.']);
             }
+            $workDate = trim((string) ($row['workDate'] ?? '')) ?: $defaultDate;
+            $this->validDate($workDate, $label . ': Leistungsdatum');
             $hours = $this->positive((string) ($row['hours'] ?? ''), Decimal::TIME_SCALE, $label . ': Stunden');
             $itemId = trim((string) ($row['laborItemId'] ?? ''));
             $itemName = '';
@@ -781,7 +775,7 @@ final readonly class WorkReportService
                 throw new OrderValidationException([$label . ': Die Tätigkeit darf höchstens 500 Zeichen lang sein.']);
             }
             $result[] = [
-                'id' => Uuid::v4(), 'report_id' => $reportId, 'employee_id' => $employeeId !== '' ? $employeeId : null, 'worker_name' => $name,
+                'id' => Uuid::v4(), 'report_id' => $reportId, 'employee_id' => $employeeId !== '' ? $employeeId : null, 'worker_name' => $name, 'work_date' => $workDate,
                 'hours' => $hours, 'labor_item_id' => $itemId !== '' ? $itemId : null, 'labor_item_name' => $itemName,
                 'activity' => $activity, 'sort_order' => $index,
             ];
@@ -908,9 +902,11 @@ final readonly class WorkReportService
         $proof = [
             'customerId' => $report['customer_id'], 'orderId' => $report['order_id'], 'workDate' => $report['work_date'], 'workDateTo' => $report['work_date_to'],
             'contactPerson' => $report['contact_person'], 'description' => $report['description'], 'notes' => $report['notes'],
-            'labor' => array_map(static fn (array $row): array => [
+            // Leistungsdatum je Position nur, wenn vorhanden: historische Rapporte (ohne Positionsdatum)
+            // behalten ihre bisherige Prüfsummenbildung.
+            'labor' => array_map(static fn (array $row): array => array_merge([
                 $row['employee_id'], $row['worker_name'], $row['hours'], $row['labor_item_id'], $row['labor_item_name'], $row['activity'],
-            ], $labor),
+            ], ($row['work_date'] ?? null) !== null ? [$row['work_date']] : []), $labor),
             'materials' => array_map(static fn (array $row): array => [$row['quantity'], $row['unit'], $row['description']], $materials),
         ];
         // Einsatzort nur bei Angabe aufnehmen: Rapporte ohne Einsatzort behalten die bisherige Prüfsummenbildung.
@@ -918,6 +914,24 @@ final readonly class WorkReportService
             $proof['workLocation'] = $report['work_location'];
         }
         return hash('sha256', json_encode($proof, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * Leistungszeitraum des Rapports, abgeleitet aus den datierten Stundenpositionen (für Listen,
+     * Suche und Sortierung; keine eigene Eingabe). Ohne Stunden bleibt das bisherige Datum.
+     *
+     * @param list<array<string,mixed>> $labor
+     * @return array{work_date:string,work_date_to:?string}
+     */
+    private static function laborPeriod(array $labor, string $fallback): array
+    {
+        $dates = array_values(array_filter(array_column($labor, 'work_date')));
+        if ($dates === []) {
+            return ['work_date' => $fallback, 'work_date_to' => null];
+        }
+        $from = min($dates);
+        $to = max($dates);
+        return ['work_date' => $from, 'work_date_to' => $to !== $from ? $to : null];
     }
 
     /** @param list<array<string,mixed>> $rows @return list<array<string,mixed>> */

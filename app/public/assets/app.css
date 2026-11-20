@@ -1117,7 +1117,8 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 .work-report-proof h3 { margin:0; font-size:var(--font-base); }
 .work-report-row { display:grid; gap:var(--space-2); align-items:end; padding:var(--space-2); border:1px solid var(--border); border-radius:var(--radius); background:#fff; }
 .work-report-row + .work-report-row { margin-top:var(--space-2); }
-.work-report-labor-row { grid-template-columns:minmax(160px, 1.2fr) minmax(130px, 1fr) 100px minmax(150px, 1fr) minmax(180px, 1.5fr) auto; }
+.work-report-labor-row { grid-template-columns:140px minmax(160px, 1.2fr) minmax(130px, 1fr) 100px minmax(150px, 1fr) minmax(180px, 1.5fr) auto; }
+.work-report-date { display:inline-block; min-width:80px; color:var(--muted); font-variant-numeric:tabular-nums; }
 .work-report-material-row { grid-template-columns:110px 110px minmax(200px, 1fr) auto; }
 .work-report-billing-row { grid-template-columns:175px minmax(200px, 2fr) 100px 90px 120px 120px auto; }
 .work-report-line-total { display:grid; gap:var(--space-1); text-align:right; font-variant-numeric:tabular-nums; }

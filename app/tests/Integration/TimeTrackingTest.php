@@ -380,6 +380,28 @@ final class TimeTrackingTest extends TestCase
         });
     }
 
+    public function testWorkReportHoursAppearOnTheirOwnDateAsReferenceOnly(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['service' => $service, 'tech' => $tech, 'office' => $office, 'employee' => $employee, 'order' => $order, 'pdo' => $pdo, 'customer' => $customer] = $env;
+            $report = Uuid::v4();
+            $pdo->prepare("INSERT INTO work_reports (id, customer_id, order_id, work_date, work_date_to, description, created_by_user_id, created_at, updated_at)
+                VALUES (:id, :customer, :order, '2026-11-18', '2026-11-19', 'Montage', :user, :now, :now)")
+                ->execute(['id' => $report, 'customer' => $customer, 'order' => $order, 'user' => $tech['id'], 'now' => '2026-11-19T18:00:00Z']);
+            $labor = $pdo->prepare("INSERT INTO work_report_labor (id, report_id, employee_id, worker_name, work_date, hours, sort_order) VALUES (:id, :report, :employee, 'Monteur', :date, :hours, :sort)");
+            $labor->execute(['id' => Uuid::v4(), 'report' => $report, 'employee' => $employee, 'date' => '2026-11-18', 'hours' => '8.000', 'sort' => 0]);
+            $labor->execute(['id' => Uuid::v4(), 'report' => $report, 'employee' => $employee, 'date' => '2026-11-19', 'hours' => '5.000', 'sort' => 1]);
+            $service->createEntry(['date' => '2026-11-19', 'start' => '07:00', 'end' => '12:00', 'activity' => 'work', 'orderId' => $order], $tech);
+
+            $first = $service->day($employee, '2026-11-18', $office);
+            $second = $service->day($employee, '2026-11-19', $office);
+            $this->assertSame([['8.000'], ['5.000']], [array_column($first['workReportTimes'], 'hours'), array_column($second['workReportTimes'], 'hours')], 'Rapportstunden am Datum der Stundenposition.');
+            $this->assertSame([null, null], [$first['workReportTimes'][0]['dateTo'], $second['workReportTimes'][0]['dateTo']], 'Kein Zeitraumhinweis bei datierten Positionen.');
+            $this->assertSame([0, 300], [$first['totals']['netMinutes'], $second['totals']['netMinutes']], 'Rapportstunden werden nicht addiert.');
+            $this->assertSame(300, $service->actualHoursForOrder($order, $office)['totals']['netMinutes'], 'Rapportstunden sind keine Ist-Stunden.');
+        });
+    }
+
     public function testLegacyTravelEntriesAndDayAssignmentAreMigrated(): void
     {
         $tmp = sys_get_temp_dir() . '/calight-time-legacy-' . bin2hex(random_bytes(6));

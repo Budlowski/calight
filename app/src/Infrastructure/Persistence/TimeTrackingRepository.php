@@ -125,16 +125,18 @@ final readonly class TimeTrackingRepository
     }
 
     /**
-     * Rapportstunden eines Mitarbeiters (nur Referenz). Nur Zeilen mit eindeutigem Mitarbeiter;
-     * mehrtägige Rapporte erscheinen an ihrem Beginndatum mit Hinweis auf den Zeitraum.
+     * Rapportstunden eines Mitarbeiters (nur Referenz). Nur Zeilen mit eindeutigem Mitarbeiter.
+     * Maßgeblich ist das Leistungsdatum der Stundenposition; historische Positionen ohne eigenes
+     * Datum erscheinen am Leistungsdatum des Rapports mit Hinweis auf den Zeitraum.
      *
      * @return list<array<string,mixed>>
      */
     public function workReportTimes(string $employeeId, string $from, string $to): array
     {
-        $statement = $this->pdo->prepare("SELECT l.id, l.hours, l.activity, w.id AS report_id, w.report_number, w.status, w.work_date, w.work_date_to, w.order_id, o.order_number
+        $statement = $this->pdo->prepare("SELECT l.id, l.hours, l.activity, w.id AS report_id, w.report_number, w.status, COALESCE(l.work_date, w.work_date) AS work_date,
+                CASE WHEN l.work_date IS NULL THEN w.work_date_to END AS work_date_to, w.order_id, o.order_number
             FROM work_report_labor l JOIN work_reports w ON w.id = l.report_id LEFT JOIN orders o ON o.id = w.order_id
-            WHERE l.employee_id = :employee AND w.work_date BETWEEN :from AND :to ORDER BY w.work_date, w.report_number");
+            WHERE l.employee_id = :employee AND COALESCE(l.work_date, w.work_date) BETWEEN :from AND :to ORDER BY COALESCE(l.work_date, w.work_date), w.report_number, l.sort_order");
         $statement->execute(['employee' => $employeeId, 'from' => $from, 'to' => $to]);
         return $statement->fetchAll();
     }

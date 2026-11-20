@@ -67,14 +67,23 @@
     return `<select data-field="employeeId"><option value="">Mitarbeiter wählen …</option>${options.join("")}<option value="${OTHER}"${other ? " selected" : ""}>Andere Person …</option></select>`;
   }
 
+  /** Stabil nach Leistungsdatum ordnen (innerhalb eines Tages bleibt die erfasste Reihenfolge). */
+  const byDate = (rows) => rows.map((row, index) => ({ row, index }))
+    .sort((a, b) => (a.row.workDate || "").localeCompare(b.row.workDate || "") || a.index - b.index).map((item) => item.row);
+  const today = () => {
+    const now = new Date();
+    return new Date(now - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  };
+
   function renderLabor() {
     if (!editableProof()) {
       laborBox.innerHTML = labor.length
-        ? `<ul class="work-report-readonly">${labor.map((row) => `<li><strong>${display(row.hours, 2)} h</strong> ${esc(row.workerName)}${row.laborItemName ? ` · ${esc(row.laborItemName)}` : ""}${row.activity ? `<br><span class="muted">${esc(row.activity)}</span>` : ""}</li>`).join("")}</ul>`
+        ? `<ul class="work-report-readonly">${byDate(labor).map((row) => `<li>${row.workDate ? `<span class="work-report-date">${format.date(row.workDate)}</span> ` : ""}<strong>${display(row.hours, 2)} h</strong> ${esc(row.workerName)}${row.laborItemName ? ` · ${esc(row.laborItemName)}` : ""}${row.activity ? `<br><span class="muted">${esc(row.activity)}</span>` : ""}</li>`).join("")}</ul>`
         : '<p class="empty-state">Keine Arbeitsstunden erfasst.</p>';
     } else {
       laborBox.innerHTML = labor.map((row, index) => `
         <div class="work-report-row work-report-labor-row" data-index="${index}">
+          <label><span class="field-label">Datum</span><input data-field="workDate" type="date" required value="${esc(row.workDate || "")}"></label>
           <label><span class="field-label">Mitarbeiter</span>${employeeSelect(row)}</label>
           <label${row.employeeId || !row.custom ? " hidden" : ""} data-custom-name><span class="field-label">Name</span><input data-field="workerName" maxlength="150" value="${esc(row.employeeId ? "" : row.workerName)}"></label>
           <label><span class="field-label">Stunden</span><input data-field="hours" inputmode="decimal" autocomplete="off" value="${esc(inputValue(row.hours))}" placeholder="z. B. 3,5"></label>
@@ -153,7 +162,9 @@
   }
   root.querySelector("[data-add-labor]").addEventListener("click", () => {
     // Ist nur ein Mitarbeiter verfügbar oder der Benutzer selbst als Mitarbeiter erkennbar, vorbelegen.
-    labor.push({ employeeId: reference.employees.length === 1 ? reference.employees[0].id : "", workerName: "", hours: "", laborItemId: "", activity: "" });
+    // Datum vorbelegen: Datum der vorherigen Position, sonst heute.
+    const previous = labor[labor.length - 1];
+    labor.push({ workDate: previous?.workDate || today(), employeeId: reference.employees.length === 1 ? reference.employees[0].id : "", workerName: "", hours: "", laborItemId: "", activity: "" });
     setDirty("proof", true);
     renderLabor();
     laborBox.querySelector(".work-report-labor-row:last-child select")?.focus();
@@ -168,13 +179,11 @@
   function proofPayload() {
     return {
       version: report.version,
-      workDate: proofForm.elements.workDate.value,
-      workDateTo: proofForm.elements.workDateTo.value,
       contactPerson: proofForm.elements.contactPerson.value.trim(),
       workLocation: proofForm.elements.workLocation.value.trim(),
       description: proofForm.elements.description.value.trim(),
       notes: proofForm.elements.notes.value.trim(),
-      labor: labor.map((row) => ({ employeeId: row.employeeId || "", workerName: row.employeeId ? "" : (row.workerName || "").trim(), hours: decimal(row.hours), laborItemId: row.laborItemId || "", activity: (row.activity || "").trim() })),
+      labor: labor.map((row) => ({ workDate: row.workDate || "", employeeId: row.employeeId || "", workerName: row.employeeId ? "" : (row.workerName || "").trim(), hours: decimal(row.hours), laborItemId: row.laborItemId || "", activity: (row.activity || "").trim() })),
       materials: materials.map((row) => ({ quantity: decimal(row.quantity), unit: (row.unit || "").trim(), description: (row.description || "").trim() })),
     };
   }
@@ -310,7 +319,10 @@
   function renderHeader() {
     const number = report.reportNumber || "Entwurf";
     root.querySelector("[data-number]").textContent = number;
-    root.querySelector("[data-title]").textContent = `Rapport ${report.reportNumber || ""} · ${format.date(report.workDate)}`.replace("  ", " ");
+    // Kopf: Einreichungsdatum (Serverzeit) – Entwürfe haben noch keins. Leistungsdaten stehen je Stundenposition.
+    root.querySelector("[data-title]").textContent = report.submittedAt
+      ? `Rapport ${report.reportNumber} · ${format.date(report.submittedAt.slice(0, 10))}`
+      : "Rapport · Entwurf";
     root.querySelector("[data-current-crumb]").textContent = number;
     // Eigenständige Rapporte haben keinen Auftrag; die Brotkrume führt dann über die Rapportübersicht.
     const orderCrumb = root.querySelector("[data-order-crumb]");
@@ -340,7 +352,7 @@
     const more = [];
     if (editableProof()) {
       actions.push('<button class="button button-light" type="button" data-action="save-proof" data-shortcut-save data-icon="save" title="Entwurf speichern (Strg+S)">Entwurf speichern</button>');
-      actions.push('<button class="button" type="button" data-action="submit" data-icon="clipboard-check">Einreichen …</button>');
+      actions.push('<button class="button" type="button" data-action="submit" data-icon="clipboard-check">Einreichen</button>');
       more.push('<button type="button" data-action="delete" data-icon="trash">Entwurf löschen</button>');
     }
     actions.push(`<a class="button button-light" href="/api/work-reports/${encodeURIComponent(report.id)}/pdf" data-icon="file-down">${report.status === "draft" ? "PDF-Vorschau" : "PDF"}</a>`);
@@ -366,7 +378,7 @@
 
   function render() {
     renderHeader();
-    for (const name of ["workDate", "workDateTo", "contactPerson", "workLocation", "description", "notes"]) {
+    for (const name of ["contactPerson", "workLocation", "description", "notes"]) {
       proofForm.elements[name].value = report[name] ?? "";
       proofForm.elements[name].disabled = !editableProof();
     }
@@ -416,7 +428,11 @@
   }
 
   async function saveProof({ silent = false } = {}) {
-    if (!proofForm.elements.workDate.reportValidity()) return false;
+    const missingDate = laborBox.querySelector('[data-field="workDate"]:invalid');
+    if (missingDate) {
+      missingDate.reportValidity();
+      return false;
+    }
     adopt(await api(`/api/work-reports/${encodeURIComponent(report.id)}`, { method: "PUT", body: proofPayload() }));
     if (!silent) notify(message, "Entwurf wurde gespeichert.", "success");
     return true;
@@ -510,7 +526,7 @@
       const hours = report.labor.reduce((sum, row) => sum + exact.toUnits(row.hours, 3), 0n);
       const ok = await confirmDialog("Rapport einreichen", `
         <p>Mit dem Einreichen wird der Leistungsnachweis verbindlich gespeichert und erhält eine Rapportnummer. Danach sind keine Änderungen mehr möglich; Korrekturen erfolgen über einen neuen Korrekturrapport.</p>
-        ${summaryList([["Leistungsdatum", format.date(report.workDate)], ["Arbeitsstunden", `${display(exact.fromUnits(hours, 3), 2)} h`], ["Materialzeilen", String(report.materials.length)]])}`, "Verbindlich einreichen");
+        ${summaryList([["Leistungszeitraum", report.workDateTo ? `${format.date(report.workDate)} – ${format.date(report.workDateTo)}` : format.date(report.workDate)], ["Einreichungsdatum", "beim Einreichen (heute)"], ["Arbeitsstunden", `${display(exact.fromUnits(hours, 3), 2)} h`], ["Materialzeilen", String(report.materials.length)]])}`, "Verbindlich einreichen");
       if (!ok) return;
       const body = { version: report.version };
       if (!report.orderId) {

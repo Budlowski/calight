@@ -60,7 +60,7 @@ final class WorkReportTest extends TestCase
 
             $this->assertThrows(OrderValidationException::class, fn () => $this->saveProof($service, $draft, ['labor' => [['employeeId' => $anna, 'hours' => '0']]], $technician));
             $this->assertThrows(OrderValidationException::class, fn () => $this->saveProof($service, $draft, ['materials' => [['quantity' => '1', 'unit' => 'Stk.', 'description' => ' ']]], $technician));
-            $this->assertThrows(OrderValidationException::class, fn () => $this->saveProof($service, $draft, ['workDateTo' => '2026-11-11'], $technician));
+            $this->assertThrows(OrderValidationException::class, fn () => $this->saveProof($service, $draft, ['labor' => [['employeeId' => $anna, 'hours' => '1', 'workDate' => '2026-02-30']]], $technician), 'Ungültiges Leistungsdatum je Position.');
             $this->assertThrows(OrderValidationException::class, fn () => $service->submit($draft['id'], ['version' => $draft['version']], $technician), 'Ohne Beschreibung und Leistungen nicht einreichbar.');
 
             $saved = $this->saveProof($service, $draft, [
@@ -309,7 +309,8 @@ final class WorkReportTest extends TestCase
             $legacy = [
                 'customerId' => $row['customer_id'], 'orderId' => $row['order_id'], 'workDate' => $row['work_date'], 'workDateTo' => $row['work_date_to'],
                 'contactPerson' => $row['contact_person'], 'description' => $row['description'], 'notes' => $row['notes'],
-                'labor' => array_map(static fn (array $item): array => [$item['employee_id'], $item['worker_name'], $item['hours'], $item['labor_item_id'], $item['labor_item_name'], $item['activity']], $labor),
+                // Neue Rapporte: Leistungsdatum je Position ist Teil der Prüfsumme.
+                'labor' => array_map(static fn (array $item): array => [$item['employee_id'], $item['worker_name'], $item['hours'], $item['labor_item_id'], $item['labor_item_name'], $item['activity'], $item['work_date']], $labor),
                 'materials' => [],
             ];
             $this->assertSame(hash('sha256', json_encode($legacy, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)), $submitted['submittedSha256']);
@@ -464,6 +465,97 @@ final class WorkReportTest extends TestCase
             $this->assertSame($before + 1, $count());
             $this->assertTrue($fix['orderId'] !== null && $fix['createdOrderNumber'] !== null);
             $this->assertSame([null, $other['submittedSha256']], [$service->detail($other['id'], $office)['orderId'], $service->detail($other['id'], $office)['submittedSha256']], 'Original bleibt unverändert.');
+        });
+    }
+
+    public function testLaborRowsCarryTheirOwnDateAndSubmissionDateIsServerSide(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['pdo' => $pdo, 'service' => $service, 'office' => $office, 'technician' => $technician, 'anna' => $anna, 'customer' => $customer, 'labor' => $laborItem] = $env;
+            $ben = Uuid::v4();
+            $pdo->prepare("INSERT INTO employees(id,display_name,hourly_cost_rate,active,created_at,updated_at) VALUES(:id,'Ben Monteur','40.0000',1,'2026-11-12T08:00:00Z','2026-11-12T08:00:00Z')")->execute(['id' => $ben]);
+            $draft = $service->create(['customerId' => $customer, 'workDate' => '2026-11-18'], $technician);
+            $this->assertSame(null, $draft['submittedAt'], 'Entwürfe haben kein Einreichungsdatum.');
+
+            // Mehrere Mitarbeiter am selben Tag, ein Mitarbeiter an mehreren Tagen, mehrere Positionen je Tag.
+            $saved = $this->saveProof($service, $draft, [
+                'description' => 'Montage und Inbetriebnahme',
+                'labor' => [
+                    ['workDate' => '2026-11-19', 'employeeId' => $anna, 'hours' => '5', 'activity' => 'Inbetriebnahme'],
+                    ['workDate' => '2026-11-18', 'employeeId' => $anna, 'hours' => '6', 'laborItemId' => $laborItem, 'activity' => 'Montage'],
+                    ['workDate' => '2026-11-18', 'employeeId' => $ben, 'hours' => '6,5', 'activity' => 'Montage'],
+                    ['workDate' => '2026-11-18', 'employeeId' => $anna, 'hours' => '2', 'activity' => 'Nacharbeiten'],
+                ],
+            ], $technician);
+            $this->assertSame(['2026-11-19', '2026-11-18', '2026-11-18', '2026-11-18'], array_column($saved['labor'], 'workDate'), 'Erfasste Reihenfolge bleibt.');
+            $this->assertSame(['2026-11-18', '2026-11-19'], [$saved['workDate'], $saved['workDateTo']], 'Leistungszeitraum aus den Positionen abgeleitet.');
+            $this->assertThrows(OrderValidationException::class, fn () => $this->saveProof($service, $saved, ['description' => 'x', 'labor' => [['workDate' => '18.11.2026', 'employeeId' => $anna, 'hours' => '1']]], $technician));
+            $this->assertThrows(OrderValidationException::class, fn () => $this->saveProof($service, $saved, ['description' => 'x', 'labor' => [['workDate' => '2026-11-18', 'employeeId' => $anna, 'hours' => '-1']]], $technician));
+            $this->assertThrows(OrderValidationException::class, fn () => $this->saveProof($service, $saved, ['description' => 'x', 'labor' => [['workDate' => '2026-11-18', 'employeeId' => $anna, 'hours' => '0']]], $technician));
+
+            // Einreichen: Zeitpunkt vom Server, Leistungsdaten unabhängig; Auftrag wie bisher Pflicht.
+            $this->assertThrows(OrderValidationException::class, fn () => $service->submit($saved['id'], ['version' => $saved['version'], 'submittedAt' => '2020-01-01T00:00:00Z'], $technician));
+            $submitted = $service->submit($saved['id'], ['version' => $saved['version'], 'createOrder' => true, 'submittedAt' => '2020-01-01T00:00:00Z'], $technician);
+            $this->assertTrue($submitted['submittedAt'] !== null && !str_starts_with((string) $submitted['submittedAt'], '2020'), 'Kein frei wählbares Einreichungsdatum.');
+            $this->assertSame('2026-11-18', $submitted['workDate']);
+            $repository = new WorkReportRepository($pdo);
+            $proofHash = new \ReflectionMethod(WorkReportService::class, 'proofHash');
+            $this->assertSame($proofHash->invoke($service, $repository->find($submitted['id']), $repository->labor($submitted['id']), $repository->materials($submitted['id'])), $submitted['submittedSha256']);
+            $changed = $repository->labor($submitted['id']);
+            $changed[0]['work_date'] = '2026-11-20';
+            $this->assertTrue($proofHash->invoke($service, $repository->find($submitted['id']), $changed, []) !== $submitted['submittedSha256'], 'Leistungsdaten sind Teil der Prüfsumme.');
+
+            // Unveränderlich: Bestätigung ändert weder Einreichungsdatum noch Prüfsumme; Entwurfsänderung abgelehnt.
+            $confirmed = $service->confirm($submitted['id'], ['version' => $submitted['version'], 'confirmedByName' => 'Frau Mack', 'method' => 'on_site'], $technician);
+            $this->assertSame([$submitted['submittedAt'], $submitted['submittedSha256']], [$confirmed['submittedAt'], $confirmed['submittedSha256']]);
+            $this->assertThrows(OrderValidationException::class, fn () => $this->saveProof($service, $confirmed, ['labor' => [['workDate' => '2026-11-01', 'employeeId' => $anna, 'hours' => '1']]], $technician));
+
+            // Korrektur übernimmt datierte Positionen; Datum im Entwurf änderbar; Original unverändert.
+            $correction = $service->create(['correctionOf' => $submitted['id']], $technician);
+            $this->assertSame([null, $submitted['orderId']], [$correction['submittedAt'], $correction['orderId']]);
+            $this->assertSame(array_column($submitted['labor'], 'workDate'), array_column($correction['labor'], 'workDate'));
+            $rows = array_map(static fn (array $row): array => ['workDate' => $row['workDate'], 'employeeId' => $row['employeeId'], 'hours' => $row['hours'], 'activity' => $row['activity']], $correction['labor']);
+            $rows[0]['workDate'] = '2026-11-20';
+            $corrected = $this->saveProof($service, $correction, ['description' => 'Korrigiert', 'labor' => $rows], $technician);
+            $this->assertSame('2026-11-20', $corrected['labor'][0]['workDate']);
+            $this->assertSame('2026-11-19', $service->detail($submitted['id'], $office)['labor'][0]['workDate'], 'Original unverändert.');
+            $correctionSubmitted = $service->submit($corrected['id'], ['version' => $corrected['version']], $technician);
+            $this->assertTrue($correctionSubmitted['submittedAt'] !== null && $correctionSubmitted['id'] !== $submitted['id']);
+            $this->assertSame([$submitted['submittedSha256'], 'confirmed'], [$service->detail($submitted['id'], $office)['submittedSha256'], $service->detail($submitted['id'], $office)['confirmationStatus']]);
+
+            // Rapport ohne Mitarbeiterstunden ist zulässig.
+            $materialOnly = $this->saveProof($service, $service->create(['customerId' => $customer, 'workDate' => '2026-11-18'], $technician),
+                ['description' => 'Material geliefert', 'materials' => [['quantity' => '1', 'unit' => 'Stk.', 'description' => 'Leuchte']]], $technician);
+            $materialOnly = $service->submit($materialOnly['id'], ['version' => $materialOnly['version'], 'orderId' => $submitted['orderId']], $office);
+            $this->assertSame(['submitted', []], [$materialOnly['status'], $materialOnly['labor']]);
+        });
+    }
+
+    public function testHistoricReportsWithoutLaborDatesKeepTheirChecksumAndCorrectionsGetTheReportDate(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['pdo' => $pdo, 'service' => $service, 'office' => $office, 'technician' => $technician, 'anna' => $anna, 'customer' => $customer] = $env;
+            $draft = $this->saveProof($service, $service->create(['customerId' => $customer, 'workDate' => '2026-10-05'], $technician),
+                ['description' => 'Bestand', 'labor' => [['workDate' => '2026-10-05', 'employeeId' => $anna, 'hours' => '3']]], $technician);
+            // Stand vor Migration 0036: eingereichte Positionen ohne eigenes Datum.
+            $pdo->prepare('UPDATE work_report_labor SET work_date = NULL WHERE report_id = :id')->execute(['id' => $draft['id']]);
+            $pdo->prepare("UPDATE work_reports SET work_date_to = '2026-10-06' WHERE id = :id")->execute(['id' => $draft['id']]);
+            $historic = $this->legacySubmit($pdo, $service, $service->detail($draft['id'], $technician), $technician, 'RP2026-0601');
+            $row = $pdo->query('SELECT * FROM work_reports WHERE id = ' . $pdo->quote($historic['id']))->fetch();
+            $labor = $pdo->query('SELECT * FROM work_report_labor WHERE report_id = ' . $pdo->quote($historic['id']))->fetchAll();
+            $legacy = [
+                'customerId' => $row['customer_id'], 'orderId' => $row['order_id'], 'workDate' => '2026-10-05', 'workDateTo' => '2026-10-06',
+                'contactPerson' => '', 'description' => 'Bestand', 'notes' => '',
+                'labor' => array_map(static fn (array $item): array => [$item['employee_id'], $item['worker_name'], $item['hours'], $item['labor_item_id'], $item['labor_item_name'], $item['activity']], $labor),
+                'materials' => [],
+            ];
+            $this->assertSame(hash('sha256', json_encode($legacy, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)), $historic['submittedSha256'], 'Bisherige Prüfsummenbildung ohne Positionsdatum.');
+            $this->assertSame([null, '2026-10-05', '2026-10-06'], [$historic['labor'][0]['workDate'], $historic['workDate'], $historic['workDateTo']]);
+
+            // Korrektur eines historischen Rapports: Positionen erhalten das Leistungsdatum des Originals.
+            $correction = $service->create(['correctionOf' => $historic['id']], $technician);
+            $this->assertSame('2026-10-05', $correction['labor'][0]['workDate']);
+            $this->assertSame([null, $historic['submittedSha256']], [$service->detail($historic['id'], $office)['labor'][0]['workDate'], $service->detail($historic['id'], $office)['submittedSha256']]);
         });
     }
 

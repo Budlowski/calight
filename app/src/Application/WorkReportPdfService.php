@@ -62,13 +62,17 @@ final readonly class WorkReportPdfService
         // Kurze Einsatzorte stehen im Kopfblock; längere vollständig über den ausgeführten Arbeiten.
         $location = trim((string) ($report['workLocation'] ?? ''));
         $longLocation = mb_strlen($location) > 34;
-        $period = self::date((string) $report['workDate']) . ($report['workDateTo'] ? ' – ' . self::date((string) $report['workDateTo']) : '');
+        // Historische Rapporte (Positionen ohne eigenes Datum) behalten ihr Leistungsdatum im Kopf;
+        // neue Rapporte zeigen das Einreichungsdatum und das Leistungsdatum je Stundenposition.
+        $dated = $report['labor'] !== [] && array_filter($report['labor'], static fn (array $row): bool => ($row['workDate'] ?? null) === null) === [];
+        $period = $dated ? '' : self::date((string) $report['workDate']) . ($report['workDateTo'] ? ' – ' . self::date((string) $report['workDateTo']) : '');
         $pdf->begin(
             'Rapport – Leistungsnachweis',
             $report['reportNumber'] ? 'Nr. ' . $report['reportNumber'] : 'Entwurf, noch nicht eingereicht',
             [(string) $report['customerName'], ...array_map('trim', explode(',', (string) ($report['customerAddress'] ?? '')))],
             [
                 ['Rapportnummer', (string) ($report['reportNumber'] ?? '')],
+                ['Eingereicht am', $report['submittedAt'] ? self::localDate((string) $report['submittedAt']) : ''],
                 ['Leistungsdatum', $period],
                 ['Kundennummer', (string) ($report['customerNumber'] ?? '')],
                 ['Auftrag', $report['orderId'] ? trim($report['orderNumber'] . ' · ' . $report['orderTitle']) : ''],
@@ -92,17 +96,22 @@ final readonly class WorkReportPdfService
             // Die Spalte „Tätigkeit“ erscheint nur, wenn mindestens eine Zeile eine Tätigkeit enthält.
             $withActivity = array_filter($report['labor'], static fn (array $row): bool => trim((string) ($row['activity'] ?? '')) !== '') !== [];
             $text = static fn (mixed $value): string => trim((string) ($value ?? '')) !== '' ? (string) $value : '–';
-            foreach ($report['labor'] as $row) {
+            // Nach Leistungsdatum ordnen; innerhalb eines Tages bleibt die erfasste Reihenfolge (stabile Sortierung).
+            $labor = $report['labor'];
+            if ($dated) {
+                usort($labor, static fn (array $a, array $b): int => strcmp((string) $a['workDate'], (string) $b['workDate']));
+            }
+            foreach ($labor as $row) {
                 $total = $total->plus((string) $row['hours']);
-                $cells = [(string) $row['workerName'], $text($row['laborItemName'] ?? '')];
+                $cells = $dated ? [self::date((string) $row['workDate'])] : [];
+                $cells = [...$cells, (string) $row['workerName'], $text($row['laborItemName'] ?? '')];
                 if ($withActivity) {
                     $cells[] = $text($row['activity'] ?? '');
                 }
                 $cells[] = $numbers->quantity((string) $row['hours']) . ' h';
                 $rows[] = ['cells' => $cells];
             }
-            $rows[] = ['cells' => $withActivity ? ['Summe', '', '', $numbers->quantity((string) $total) . ' h'] : ['Summe', '', $numbers->quantity((string) $total) . ' h'], 'bold' => true];
-            $pdf->table($withActivity ? [
+            $columns = $withActivity ? [
                 ['label' => 'Mitarbeiter', 'width' => 150, 'wrap' => 32],
                 ['label' => 'Tätigkeitsart', 'width' => 110, 'wrap' => 24],
                 ['label' => 'Tätigkeit', 'width' => 175, 'wrap' => 38],
@@ -111,7 +120,18 @@ final readonly class WorkReportPdfService
                 ['label' => 'Mitarbeiter', 'width' => 220, 'wrap' => 48],
                 ['label' => 'Tätigkeitsart', 'width' => 215, 'wrap' => 47],
                 ['label' => 'Stunden', 'width' => 70, 'align' => 'right'],
-            ], $rows);
+            ];
+            if ($dated) {
+                // Datumsspalte vorn; die Breite wird der Mitarbeiterspalte entnommen (Gesamtbreite unverändert).
+                $columns[0]['width'] -= 65;
+                $columns[0]['wrap'] = (int) round($columns[0]['wrap'] * $columns[0]['width'] / ($columns[0]['width'] + 65));
+                array_unshift($columns, ['label' => 'Datum', 'width' => 65]);
+            }
+            $sum = array_fill(0, count($columns), '');
+            $sum[0] = 'Summe';
+            $sum[count($columns) - 1] = $numbers->quantity((string) $total) . ' h';
+            $rows[] = ['cells' => $sum, 'bold' => true];
+            $pdf->table($columns, $rows);
         }
 
         if ($report['materials'] !== []) {
@@ -163,6 +183,12 @@ final readonly class WorkReportPdfService
     private static function date(string $value): string
     {
         return $value !== '' ? (new DateTimeImmutable($value))->format('d.m.Y') : '';
+    }
+
+    /** Datum eines UTC-Zeitpunkts in lokaler Zeitzone. */
+    private static function localDate(string $value): string
+    {
+        return (new DateTimeImmutable($value))->setTimezone(new \DateTimeZone(date_default_timezone_get()))->format('d.m.Y');
     }
 
     private static function dateTime(string $value): string
