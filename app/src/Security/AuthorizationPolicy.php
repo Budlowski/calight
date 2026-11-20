@@ -40,6 +40,9 @@ final class AuthorizationPolicy
         if (preg_match('#^/api/offers/[^/]+/order$#', $path) === 1) return ['offers.read', 'orders.write'];
         if (preg_match('#^/api/change-orders/[^/]+/accept$#', $path) === 1) return ['offers.write', 'orders.write'];
         if (str_starts_with($path, '/settings') || str_starts_with($path, '/api/settings')) return ['settings.manage'];
+        // Kostenstellen: Übersicht mit master_data.read (Beträge nur mit costs.read, Prüfung im Service), Verwaltung nur Administratoren.
+        if (str_starts_with($path, '/api/cost-centers')) return [$write ? 'cost_centers.manage' : 'master_data.read'];
+        if ($path === '/master-data/cost-centers') return ['master_data.read'];
         if (str_starts_with($path, '/master-data') || str_starts_with($path, '/api/master-data')) return [$write ? 'master_data.write' : 'master_data.read', 'costs.read'];
         if (str_starts_with($path, '/customers') || str_starts_with($path, '/api/customers')) return [$write ? 'customers.write' : 'customers.read'];
         if (str_starts_with($path, '/projects') || str_starts_with($path, '/api/projects') || $path === '/api/customer-projects') return [$write ? 'projects.write' : 'projects.read'];

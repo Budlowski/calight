@@ -27,6 +27,7 @@ use App\Http\MeasurementController;
 use App\Http\PurchaseOrderController;
 use App\Http\DocumentController;
 use App\Http\TimeTrackingController;
+use App\Http\CostCenterController;
 use App\Http\WorkReportController;
 use App\Domain\Order\OrderValidationException;
 use App\Domain\Document\DocumentValidationException;
@@ -69,6 +70,7 @@ final readonly class Application
         private PurchaseOrderController $purchaseOrderController,
         private DocumentController $documentController,
         private TimeTrackingController $timeTrackingController,
+        private CostCenterController $costCenterController,
     ) {
         $this->registerRoutes();
     }
@@ -127,6 +129,7 @@ final readonly class Application
         $this->purchaseOrderController->register($this->router);
         $this->documentController->register($this->router);
         $this->timeTrackingController->register($this->router);
+        $this->costCenterController->register($this->router);
 
         $this->router->add('GET', '/', fn (): Response => Session::user() === null
             ? Response::redirect('/login')

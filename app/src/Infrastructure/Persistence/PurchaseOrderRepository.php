@@ -14,10 +14,11 @@ final readonly class PurchaseOrderRepository
     public const LIST_FILTERS = ['supplier', 'order', 'origin', 'status', 'delivery', 'payment'];
 
     private const SELECT = "p.*, s.name AS supplier_name, s.supplier_number, o.order_number AS job_number, o.title AS job_title,
+        cc.number AS cost_center_number, cc.name AS cost_center_name,
         u.display_name AS creator_name, iu.display_name AS issued_by_name,
         (SELECT c.confirmed_net_total FROM purchase_order_confirmations c WHERE c.purchase_order_id = p.id AND c.is_current = 1) AS confirmed_net_total,
         (SELECT COUNT(*) FROM purchase_order_items it WHERE it.purchase_order_id = p.id) AS item_count";
-    private const FROM = 'purchase_orders p JOIN suppliers s ON s.id = p.supplier_id LEFT JOIN orders o ON o.id = p.order_id
+    private const FROM = 'purchase_orders p JOIN suppliers s ON s.id = p.supplier_id LEFT JOIN orders o ON o.id = p.order_id LEFT JOIN cost_centers cc ON cc.id = p.cost_center_id
         JOIN users u ON u.id = p.created_by_user_id LEFT JOIN users iu ON iu.id = p.issued_by_user_id';
     // Nur zum Sortieren: Ist-Kosten aus direkt erfasstem Betrag oder Belegsumme (nie beides).
     private const ACTUAL_SORT = 'CAST(COALESCE(p.actual_net_total, p.invoiced_net_total) AS REAL)';
@@ -245,17 +246,20 @@ final readonly class PurchaseOrderRepository
     /** @return list<array<string,mixed>> */
     public function allocations(string $id): array
     {
-        $statement = $this->pdo->prepare('SELECT a.*, o.order_number, o.title AS order_title FROM purchase_order_allocations a
-            JOIN orders o ON o.id = a.order_id WHERE a.purchase_order_id = :id ORDER BY o.order_number');
+        // Je Zeile genau ein Ziel: Auftrag oder allgemeine Kostenstelle.
+        $statement = $this->pdo->prepare('SELECT a.*, o.order_number, o.title AS order_title, cc.number AS cost_center_number, cc.name AS cost_center_name
+            FROM purchase_order_allocations a LEFT JOIN orders o ON o.id = a.order_id LEFT JOIN cost_centers cc ON cc.id = a.cost_center_id
+            WHERE a.purchase_order_id = :id ORDER BY COALESCE(o.order_number, cc.number)');
         $statement->execute(['id' => $id]);
         return $statement->fetchAll();
     }
 
-    /** @param list<array{id:string,order_id:string,amount:string}> $allocations */
+    /** @param list<array{id:string,order_id:?string,cost_center_id:?string,amount:string}> $allocations */
     public function replaceAllocations(string $id, array $allocations, string $now): void
     {
         $this->pdo->prepare('DELETE FROM purchase_order_allocations WHERE purchase_order_id = :id')->execute(['id' => $id]);
-        $insert = $this->pdo->prepare('INSERT INTO purchase_order_allocations (id, purchase_order_id, order_id, amount, created_at) VALUES (:id, :purchase_order_id, :order_id, :amount, :created_at)');
+        $insert = $this->pdo->prepare('INSERT INTO purchase_order_allocations (id, purchase_order_id, order_id, cost_center_id, amount, created_at)
+            VALUES (:id, :purchase_order_id, :order_id, :cost_center_id, :amount, :created_at)');
         foreach ($allocations as $allocation) {
             $insert->execute([...$allocation, 'purchase_order_id' => $id, 'created_at' => $now]);
         }

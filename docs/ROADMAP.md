@@ -445,6 +445,15 @@ Bestellungen sind **an Lieferanten gerichtete Beschaffungsdokumente**, keine Rec
 
 **Bewusst offen:** Freigabe-Workflow, Export, Ruhezeit über mehrere Tage, Gültigkeitshistorie der Kostensätze (nur Snapshot je Eintrag), Bewertung der Ist-Stunden (Phase 3.5).
 
+## Allgemeine Kostenstellen (Migration `0039`, implementiert)
+
+Neben Kundenaufträgen gibt es frei verwaltbare interne Kostenstellen (Stammdaten → Kostenstellen, z. B. K100 Verwaltung & Büro). Überall, wo Arbeitszeiten oder Kosten zugeordnet werden, gibt es **ein** Suchfeld „Auftrag / Kostenstelle“ für Auftrags- und Kostenstellennummern und -bezeichnungen – ohne Typauswahl. Calight bleibt ausdrücklich keine Buchhaltungssoftware.
+
+- **Zeiterfassung:** Manuelle Zeitblöcke und Auslagen auf Auftrag oder Kostenstelle. Rapport- und Bautagesberichtstunden folgen unverändert dem Auftrag ihres Berichts (keine Kostenstellenwahl in den Berichten). Gesamtstunden bleiben unverändert; Auftrags-Ist-Stunden enthalten keine Kostenstellenstunden. Die Auswertung gruppiert nach Auftrag / Kostenstelle.
+- **Bestellungen:** Hauptzuordnung auf Auftrag oder Kostenstelle; gemischte Bestellungen über die vorhandene Kostenverteilung (feste Nettobeträge je Auftrag oder Kostenstelle). Eine positionsweise Zuordnung sieht die Bestellarchitektur nicht vor und wurde bewusst nicht eingeführt.
+- **Übersicht je Kostenstelle und Kalenderjahr:** Arbeitszeit (zentrale Zeitbuchungen nach Buchungstag); mit `costs.read` Bestellkosten (Bestelldatum, nur bekannte Ist-Kosten, bei Verteilung nur der zugeordnete Betrag) und Auslagen. Keine Umlagen, Zuschläge, Hierarchien oder Verteilungsschlüssel.
+- **Vorlage:** Zehn typische Kostenstellen (K100–K190) optional übernehmbar, idempotent.
+
 ## Phase 3.4.4 – Monteurs-Interface (geplant)
 
 Mobile, auf das Wesentliche reduzierte Oberfläche für Monteure: Zeiterfassung als Einstieg, dazu Bautagesberichte, Rapporte, Aufmaße und Materialanforderungen der freigegebenen Aufträge. Nutzt die vorhandenen Fachmodule und Rechte; keine eigene Datenhaltung.

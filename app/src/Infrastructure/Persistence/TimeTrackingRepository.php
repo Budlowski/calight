@@ -19,9 +19,10 @@ final readonly class TimeTrackingRepository
      */
     private const ENTRY_SELECT = "t.*, o.order_number, o.title AS order_title, u.display_name AS updated_by_name, cu.display_name AS created_by_name,
         de.report_id AS daily_report_id, de.description AS daily_entry_description, dr.title AS daily_report_title, dr.report_date AS daily_report_date,
+        cc.number AS cost_center_number, cc.name AS cost_center_name,
         wl.report_id AS work_report_id, wl.activity AS labor_activity, wl.labor_item_name, wr.report_number AS work_report_number, wr.status AS work_report_status,
         CASE WHEN c.customer_type = 'company' THEN c.company_name ELSE trim(c.first_name || ' ' || c.last_name) END AS customer_name";
-    private const ENTRY_FROM = 'time_entries t LEFT JOIN orders o ON o.id = t.order_id JOIN users u ON u.id = t.updated_by_user_id JOIN users cu ON cu.id = t.created_by_user_id
+    private const ENTRY_FROM = 'time_entries t LEFT JOIN orders o ON o.id = t.order_id LEFT JOIN cost_centers cc ON cc.id = t.cost_center_id JOIN users u ON u.id = t.updated_by_user_id JOIN users cu ON cu.id = t.created_by_user_id
         LEFT JOIN daily_report_time_entries de ON de.id = t.daily_report_entry_id LEFT JOIN daily_reports dr ON dr.id = de.report_id
         LEFT JOIN work_report_labor wl ON wl.id = t.work_report_labor_id LEFT JOIN work_reports wr ON wr.id = wl.report_id
         LEFT JOIN customers c ON c.id = COALESCE(o.customer_id, dr.customer_id, wr.customer_id)';
@@ -106,7 +107,7 @@ final readonly class TimeTrackingRepository
     /** @return list<array<string,mixed>> */
     public function expenses(string $employeeId, string $from, string $to): array
     {
-        $statement = $this->pdo->prepare('SELECT x.*, o.order_number FROM time_expenses x LEFT JOIN orders o ON o.id = x.order_id
+        $statement = $this->pdo->prepare('SELECT x.*, o.order_number, cc.number AS cost_center_number FROM time_expenses x LEFT JOIN orders o ON o.id = x.order_id LEFT JOIN cost_centers cc ON cc.id = x.cost_center_id
             WHERE x.employee_id = :employee AND x.work_date BETWEEN :from AND :to ORDER BY x.work_date, x.created_at, x.rowid');
         $statement->execute(['employee' => $employeeId, 'from' => $from, 'to' => $to]);
         return $statement->fetchAll();

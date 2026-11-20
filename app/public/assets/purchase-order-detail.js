@@ -86,7 +86,8 @@
     const facts = [
       ["Lieferant", esc(order.supplierName) + (supplierNotes ? ` <small>${supplierNotes}</small>` : "")],
       ["Art", (order.origin === "external" ? "Externe Bestellung" : "Interne Bestellung") + externalRef],
-      ["Auftrag", order.orderId ? `<a href="/orders/${encodeURIComponent(order.orderId)}">${esc(order.jobNumber)}</a> <small>${esc(order.jobTitle)}</small>` : muted("Ohne Auftrag")],
+      ["Auftrag / Kostenstelle", order.orderId ? `<a href="/orders/${encodeURIComponent(order.orderId)}">${esc(order.jobNumber)}</a> <small>${esc(order.jobTitle)}</small>`
+        : order.costCenterId ? `${esc(order.costCenterNumber)} <small>${esc(order.costCenterName)} · Kostenstelle</small>` : muted("Ohne Zuordnung")],
       ["Bestelldatum", order.orderDate ? format.date(order.orderDate) : muted("Noch nicht bestellt")],
     ];
     if (costs()) {
@@ -157,9 +158,10 @@
     const supplierKnown = reference.suppliers.some((supplier) => supplier.id === order.supplierId);
     f.supplierId.innerHTML = (supplierKnown ? "" : `<option value="${esc(order.supplierId)}">${esc(order.supplierName)}</option>`)
       + reference.suppliers.map((supplier) => `<option value="${esc(supplier.id)}">${esc(shared.supplierLabel(supplier))}</option>`).join("");
-    f.orderId.innerHTML = '<option value="">Ohne Auftrag</option>' + reference.orders.map((job) => `<option value="${esc(job.id)}">${esc(job.orderNumber)} · ${esc(job.title)}</option>`).join("");
+    // Gemeinsames Feld „Auftrag / Kostenstelle“ (Wert: Typ und ID).
+    f.orderId.innerHTML = Calight.costTargetOptions(reference.costTargets, { orderId: order.orderId || "", costCenterId: order.costCenterId || "" });
     f.supplierId.value = order.supplierId;
-    f.orderId.value = order.orderId || "";
+    f.orderId.value = order.orderId ? `order:${order.orderId}` : order.costCenterId ? `cost_center:${order.costCenterId}` : "";
     f.title.value = order.title || "";
     f.externalReference.value = order.externalReference || "";
     f.orderDate.value = order.orderDate || "";
@@ -184,7 +186,7 @@
     if (!general.dataset.enhanced) {
       general.dataset.enhanced = "1";
       shared.supplierPicker(f.supplierId, reference.suppliers);
-      Calight.searchableSelect(f.orderId, { placeholder: "Auftragsnummer oder Bezeichnung …" });
+      Calight.searchableSelect(f.orderId, { placeholder: "Auftrag oder Kostenstelle: Nummer oder Bezeichnung …" });
     }
     for (const select of [f.supplierId, f.orderId]) {
       const box = select.nextElementSibling;
@@ -320,7 +322,7 @@
     const f = general.elements;
     const body = {
       version: order.version, supplierId: f.supplierId.value, title: f.title.value.trim(), externalReference: f.externalReference.value.trim(),
-      orderDate: f.orderDate.value, expectedDeliveryDate: f.expectedDeliveryDate.value, orderId: f.orderId.value,
+      orderDate: f.orderDate.value, expectedDeliveryDate: f.expectedDeliveryDate.value, ...Calight.parseCostTarget(f.orderId.value),
       deliveryAddress: f.deliveryAddress.value.trim(), notes: f.notes.value.trim(),
     };
     if (costs() && !f.expectedNetTotal.disabled) body.expectedNetTotal = decimal(f.expectedNetTotal.value);
@@ -417,10 +419,10 @@
       ? `<p class="purchase-invoice-totals">Summe der Kostenwirkung: <strong>${money(order.invoicedNetTotal)}</strong>${order.invoicedGrossTotal !== null ? ` · brutto ${money(order.invoicedGrossTotal)}` : ""}</p>` : "";
     let allocations = "";
     if (order.allocations?.length) {
-      allocations = `<div class="purchase-allocation-summary"><span class="field-label">Kostenverteilung</span><ul class="work-report-readonly">${order.allocations.map((allocation) => `<li>${esc(allocation.orderNumber)} · ${esc(allocation.orderTitle)}: <strong>${money(allocation.amount)}</strong></li>`).join("")}</ul>
+      allocations = `<div class="purchase-allocation-summary"><span class="field-label">Kostenverteilung</span><ul class="work-report-readonly">${order.allocations.map((allocation) => `<li>${allocation.orderId ? `${esc(allocation.orderNumber)} · ${esc(allocation.orderTitle)}` : `${esc(allocation.costCenterNumber)} · ${esc(allocation.costCenterName)} <small class="muted">Kostenstelle</small>`}: <strong>${money(allocation.amount)}</strong></li>`).join("")}</ul>
           <small class="muted">${order.allocationExceeded ? `Überverteilt: ${money(String(order.unallocatedTotal).replace("-", ""))}` : `Nicht verteilt: ${money(order.unallocatedTotal)}`}</small></div>`;
     } else if (order.actualNetTotal !== null) {
-      allocations = `<p class="muted">Die Ist-Kosten gehen vollständig an ${order.orderId ? `Auftrag ${esc(order.jobNumber)}` : "keinen Auftrag (noch keine Zuordnung)"}.</p>`;
+      allocations = `<p class="muted">Die Ist-Kosten gehen vollständig an ${order.orderId ? `Auftrag ${esc(order.jobNumber)}` : order.costCenterId ? `Kostenstelle ${esc(order.costCenterNumber)}` : "kein Kostenziel (noch keine Zuordnung)"}.</p>`;
     }
     root.querySelector('[data-event-list="invoices"]').innerHTML = exceeded + direct
       + eventList(rows, notPlaced() || "Noch keine Belege erfasst.") + totals + allocations;

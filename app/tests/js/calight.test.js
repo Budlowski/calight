@@ -69,4 +69,25 @@ assert(DECIMAL_PATTERN.test("3,5") && !DECIMAL_PATTERN.test("3,5 h"), "decimal p
   assert(tiny.maxHeight === 80, "Mindesthöhe bleibt bedienbar");
 }
 
+// Gemeinsames Kostenziel „Auftrag / Kostenstelle“: ein Feld, Wert mit Typ und ID.
+{
+  const { costTargetOptions, parseCostTarget } = globalThis.Calight;
+  const targets = [
+    { type: "order", id: "o1", number: "A20270015", label: "Gebäudeautomation Villa Müller", active: true },
+    { type: "cost_center", id: "c1", number: "K100", label: "Verwaltung & Büro", active: true },
+    { type: "cost_center", id: "c2", number: "K190", label: "Gewährleistung & Kulanz", active: false },
+  ];
+  const html = costTargetOptions(targets);
+  assert(html.includes('value="order:o1"') && html.includes("A20270015 · Gebäudeautomation Villa Müller"), "Auftrag mit Nummer und Bezeichnung");
+  assert(html.includes('value="cost_center:c1"') && html.includes("K100 · Verwaltung &amp; Büro (Kostenstelle)"), "Kostenstelle dezent gekennzeichnet, maskiert");
+  assert(!html.includes("cost_center:c2"), "deaktivierte Kostenstellen nicht für neue Zuordnungen");
+  const historic = costTargetOptions(targets, { costCenterId: "c2" });
+  assert(historic.includes('value="cost_center:c2" selected') && historic.includes("deaktiviert"), "bestehende Zuordnung bleibt sichtbar");
+  assert(costTargetOptions(targets, { orderId: "gone" }).includes('value="order:gone" selected>bisherige Zuordnung'), "unbekannte bisherige Zuordnung bleibt erhalten");
+  assert(JSON.stringify(parseCostTarget("cost_center:c1")) === JSON.stringify({ orderId: "", costCenterId: "c1" }), "Typ und ID der Kostenstelle");
+  assert(JSON.stringify(parseCostTarget("order:o1")) === JSON.stringify({ orderId: "o1", costCenterId: "" }), "Typ und ID des Auftrags");
+  assert(JSON.stringify(parseCostTarget("")) === JSON.stringify({ orderId: "", costCenterId: "" }), "ohne Zuordnung");
+  assert(parseCostTarget("K100").costCenterId === "" && parseCostTarget("K100").orderId === "", "nie anhand des Nummernpräfixes");
+}
+
 console.log("calight helper tests passed");

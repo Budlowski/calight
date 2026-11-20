@@ -1,0 +1,15 @@
+{
+  "description": "Vorlage für allgemeine Kostenstellen. Wird nur auf ausdrücklichen Wunsch übernommen (Stammdaten → Kostenstellen → Vorlage übernehmen); vorhandene Nummern bleiben unverändert.",
+  "costCenters": [
+    {"number": "K100", "name": "Verwaltung & Büro"},
+    {"number": "K110", "name": "Vertrieb & Angebote"},
+    {"number": "K120", "name": "Lager & Rüstzeit"},
+    {"number": "K130", "name": "Werkzeuge & Ausstattung"},
+    {"number": "K140", "name": "Fahrzeuge & Fuhrpark"},
+    {"number": "K150", "name": "IT & Software"},
+    {"number": "K160", "name": "Weiterbildung & Arbeitssicherheit"},
+    {"number": "K170", "name": "Marketing & Kundenpflege"},
+    {"number": "K180", "name": "Räumlichkeiten & Betrieb"},
+    {"number": "K190", "name": "Gewährleistung & Kulanz"}
+  ]
+}

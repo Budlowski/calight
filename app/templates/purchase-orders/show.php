@@ -40,7 +40,7 @@
                     <label><span class="field-label">Externe Bestellnummer (optional)</span><input name="externalReference" maxlength="100" autocomplete="off"></label>
                     <label><span class="field-label">Bestelldatum</span><input name="orderDate" type="date"></label>
                     <label><span class="field-label">Gewünschter Liefertermin (optional)</span><input name="expectedDeliveryDate" type="date"></label>
-                    <label><span class="field-label">Auftrag (optional)</span><select name="orderId"></select></label>
+                    <label><span class="field-label">Auftrag / Kostenstelle (optional)</span><select name="orderId"></select></label>
                     <label data-expected-field hidden><span class="field-label">Bestellwert netto</span><input name="expectedNetTotal" inputmode="decimal" placeholder="0,00"></label>
                 </div>
                 <label><span class="field-label">Lieferanschrift (optional)</span><textarea name="deliveryAddress" rows="2" maxlength="1000" placeholder="Leer = Lieferung an die Firmenanschrift"></textarea></label>

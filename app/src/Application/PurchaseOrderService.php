@@ -95,7 +95,9 @@ final readonly class PurchaseOrderService
         $this->require($actor, 'purchases.read');
         return [
             'suppliers' => array_map(static fn (array $row): array => ['id' => $row['id'], 'number' => $row['supplier_number'], 'name' => $row['name']], $this->orders->activeSuppliers()),
-            'orders' => array_map(static fn (array $row): array => ['id' => $row['id'], 'orderNumber' => $row['order_number'], 'title' => $row['title']], $this->orders->orders()),
+            'orders' => $orders = array_map(static fn (array $row): array => ['id' => $row['id'], 'orderNumber' => $row['order_number'], 'title' => $row['title']], $this->orders->orders()),
+            // Gemeinsames Suchfeld „Auftrag / Kostenstelle“.
+            'costTargets' => (new CostTargets($this->pdo))->options($orders),
             'deliveryLabels' => self::DELIVERY_LABELS,
             'paymentLabels' => self::PAYMENT_LABELS,
             'deliveryKinds' => self::DELIVERY_KINDS,
@@ -232,7 +234,8 @@ final readonly class PurchaseOrderService
             // Offener Betrag nur, wenn alle Belege einen Bruttobetrag haben (Zahlungen sind brutto).
             $result['openGrossTotal'] = $calculation['grossTotal'] !== null ? Decimal::money(BigDecimal::of($calculation['grossTotal'])->minus($paid)) : null;
             $result['allocations'] = array_map(static fn (array $allocation): array => [
-                'orderId' => $allocation['order_id'], 'orderNumber' => $allocation['order_number'], 'orderTitle' => $allocation['order_title'], 'amount' => $allocation['amount'],
+                'orderId' => $allocation['order_id'], 'orderNumber' => $allocation['order_number'], 'orderTitle' => $allocation['order_title'],
+                'costCenterId' => $allocation['cost_center_id'], 'costCenterNumber' => $allocation['cost_center_number'], 'costCenterName' => $allocation['cost_center_name'], 'amount' => $allocation['amount'],
             ], $this->orders->allocations($id));
             $allocated = $this->sum(array_column($result['allocations'], 'amount'));
             $result['allocatedTotal'] = $result['allocations'] === [] ? null : $allocated;
@@ -260,13 +263,14 @@ final readonly class PurchaseOrderService
         $this->require($actor, 'purchases.write');
         $supplier = $this->supplier($input['supplierId'] ?? '');
         $orderId = $this->optionalOrder($input['orderId'] ?? '');
+        $costCenterId = $this->costCenter($input['costCenterId'] ?? '', $orderId, null);
         $id = Uuid::v4();
         $now = Clock::now();
-        $this->transaction(function () use ($id, $now, $supplier, $orderId, $input, $actor): void {
+        $this->transaction(function () use ($id, $now, $supplier, $orderId, $costCenterId, $input, $actor): void {
             $number = $this->numbers->allocate('purchase_order', 'purchase_order', $id, Uuid::v4(), new DateTimeImmutable($now));
             $this->orders->insert([
                 'id' => $id, 'order_number' => $number, 'origin' => 'internal', 'status' => 'draft',
-                'supplier_id' => $supplier['id'], 'order_id' => $orderId,
+                'supplier_id' => $supplier['id'], 'order_id' => $orderId, 'cost_center_id' => $costCenterId,
                 'title' => $this->text($input['title'] ?? '', 200, 'Bezeichnung'),
                 'delivery_address' => $this->text($input['deliveryAddress'] ?? '', 1000, 'Lieferanschrift'),
                 'notes' => $this->text($input['notes'] ?? '', 5000, 'Bemerkung'),
@@ -289,6 +293,7 @@ final readonly class PurchaseOrderService
         $this->require($actor, 'purchases.write');
         $supplier = $this->supplier($input['supplierId'] ?? '');
         $orderId = $this->optionalOrder($input['orderId'] ?? '');
+        $costCenterId = $this->costCenter($input['costCenterId'] ?? '', $orderId, null);
         $orderDate = $this->date($input['orderDate'] ?? '', 'Bestelldatum') ?? $this->today();
         $expected = $this->canCosts($actor) ? $this->money($input['expectedNetTotal'] ?? '', 'Bestellwert') : null;
         $id = Uuid::v4();
@@ -298,7 +303,7 @@ final readonly class PurchaseOrderService
             $number = $this->numbers->allocate('purchase_order', 'purchase_order', $id, Uuid::v4(), new DateTimeImmutable($now));
             $this->orders->insert([
                 'id' => $id, 'order_number' => $number, 'origin' => 'external', 'status' => 'ordered',
-                'supplier_id' => $supplier['id'], 'supplier_snapshot' => $this->snapshot($supplier), 'order_id' => $orderId,
+                'supplier_id' => $supplier['id'], 'supplier_snapshot' => $this->snapshot($supplier), 'order_id' => $orderId, 'cost_center_id' => $costCenterId,
                 'external_reference' => $this->text($input['externalReference'] ?? '', 100, 'Externe Bestellnummer'),
                 'title' => $this->text($input['title'] ?? '', 200, 'Bezeichnung'),
                 'notes' => $this->text($input['notes'] ?? '', 5000, 'Bemerkung'),
@@ -335,7 +340,10 @@ final readonly class PurchaseOrderService
             'external_reference' => $this->text($input['externalReference'] ?? $row['external_reference'], 100, 'Externe Bestellnummer'),
             // Nicht übermittelte Felder bleiben unverändert.
             'expected_delivery_date' => array_key_exists('expectedDeliveryDate', $input) ? $this->date($input['expectedDeliveryDate'], 'Liefertermin') : $row['expected_delivery_date'],
-            'order_id' => array_key_exists('orderId', $input) ? $this->optionalOrder($input['orderId']) : $row['order_id'],
+            'order_id' => $targetOrder = array_key_exists('orderId', $input) ? $this->optionalOrder($input['orderId']) : $row['order_id'],
+            // Kostenziel: Auftrag ODER Kostenstelle; wird nur einer übermittelt, gilt das Ziel als gewechselt.
+            'cost_center_id' => array_key_exists('costCenterId', $input) || array_key_exists('orderId', $input)
+                ? $this->costCenter($input['costCenterId'] ?? '', $targetOrder, $row['cost_center_id']) : $row['cost_center_id'],
             'notes' => $this->text($input['notes'] ?? $row['notes'], 5000, 'Bemerkung'),
         ];
         if ($draft) {
@@ -949,16 +957,23 @@ final readonly class PurchaseOrderService
             throw new OrderValidationException(['Die Kostenverteilung muss als Liste mit höchstens 50 Einträgen übergeben werden.']);
         }
         $allocations = [];
+        // Bereits verteilte, inzwischen deaktivierte Kostenstellen dürfen bestehen bleiben.
+        $existingCenters = array_values(array_filter(array_column($this->orders->allocations($id), 'cost_center_id')));
         foreach (array_values(array_filter($raw, 'is_array')) as $index => $entry) {
-            $orderId = $this->optionalOrder($entry['orderId'] ?? '') ?? throw new OrderValidationException(['Zeile ' . ($index + 1) . ': Bitte einen Auftrag wählen.']);
+            $orderId = $this->optionalOrder($entry['orderId'] ?? '');
+            $costCenterId = $this->costCenter($entry['costCenterId'] ?? '', $orderId, in_array((string) ($entry['costCenterId'] ?? ''), $existingCenters, true) ? (string) $entry['costCenterId'] : null);
+            if ($orderId === null && $costCenterId === null) {
+                throw new OrderValidationException(['Zeile ' . ($index + 1) . ': Bitte einen Auftrag oder eine Kostenstelle wählen.']);
+            }
+            $key = $orderId !== null ? 'order:' . $orderId : 'cost_center:' . $costCenterId;
             $amount = $this->money($entry['amount'] ?? '', 'Zeile ' . ($index + 1) . ': Betrag');
             if ($amount === null || !BigDecimal::of($amount)->isPositive()) {
                 throw new OrderValidationException(['Zeile ' . ($index + 1) . ': Bitte einen Betrag größer 0 angeben.']);
             }
-            if (isset($allocations[$orderId])) {
-                throw new OrderValidationException(['Jeder Auftrag darf in der Kostenverteilung nur einmal vorkommen.']);
+            if (isset($allocations[$key])) {
+                throw new OrderValidationException(['Jeder Auftrag und jede Kostenstelle darf in der Kostenverteilung nur einmal vorkommen.']);
             }
-            $allocations[$orderId] = ['id' => Uuid::v4(), 'order_id' => $orderId, 'amount' => $amount];
+            $allocations[$key] = ['id' => Uuid::v4(), 'order_id' => $orderId, 'cost_center_id' => $costCenterId, 'amount' => $amount];
         }
         if ($allocations !== []) {
             $actual = $this->actualCost($row);
@@ -976,7 +991,7 @@ final readonly class PurchaseOrderService
             }
             $this->orders->replaceAllocations($id, array_values($allocations), $now);
             $this->orders->addHistory($id, Uuid::v4(), 'allocation', null, $allocations === [] ? 'removed' : 'saved',
-                $allocations === [] ? 'Kostenverteilung entfernt.' : 'Kostenverteilung auf ' . count($allocations) . ' Auftrag/Aufträge gespeichert.', (string) $actor['id'], $now);
+                $allocations === [] ? 'Kostenverteilung entfernt.' : 'Kostenverteilung auf ' . count($allocations) . ' Ziel(e) (Auftrag/Kostenstelle) gespeichert.', (string) $actor['id'], $now);
         });
         return $this->detail($id, $actor);
     }
@@ -1042,6 +1057,9 @@ final readonly class PurchaseOrderService
             'orderId' => $row['order_id'],
             'jobNumber' => $row['order_id'] !== null ? $row['job_number'] : null,
             'jobTitle' => $row['order_id'] !== null ? $row['job_title'] : null,
+            'costCenterId' => $row['cost_center_id'] ?? null,
+            'costCenterNumber' => $row['cost_center_number'] ?? null,
+            'costCenterName' => $row['cost_center_name'] ?? null,
             'itemCount' => (int) ($row['item_count'] ?? 0),
             'creatorName' => $row['creator_name'],
             // Drei getrennte Beträge: ursprünglich bestellt, aktuell bestätigt, tatsächlich berechnet.
@@ -1069,6 +1087,17 @@ final readonly class PurchaseOrderService
      * @param array<string,mixed> $row
      */
     private function actualCost(array $row): ?string
+    {
+        return self::actualCostOf($row);
+    }
+
+    /**
+     * Ist-Kosten einer Bestellung (einzige Regel, auch für Kostenstellenauswertungen): direkt
+     * erfasster Betrag, sonst Summe der Lieferantenrechnungen, sonst unbekannt.
+     *
+     * @param array<string,mixed> $row
+     */
+    public static function actualCostOf(array $row): ?string
     {
         if ($row['actual_net_total'] !== null) {
             return (string) $row['actual_net_total'];
@@ -1230,7 +1259,7 @@ final readonly class PurchaseOrderService
     {
         $labels = [
             'title' => 'Bezeichnung', 'external_reference' => 'Externe Bestellnummer', 'expected_delivery_date' => 'Liefertermin',
-            'order_id' => 'Auftrag', 'notes' => 'Bemerkung', 'supplier_id' => 'Lieferant', 'delivery_address' => 'Lieferanschrift',
+            'order_id' => 'Auftrag', 'cost_center_id' => 'Kostenstelle', 'notes' => 'Bemerkung', 'supplier_id' => 'Lieferant', 'delivery_address' => 'Lieferanschrift',
             'order_date' => 'Bestelldatum', 'expected_net_total' => 'Bestellwert',
         ];
         $changed = [];
@@ -1387,6 +1416,12 @@ final readonly class PurchaseOrderService
             'postalCode' => (string) ($supplier['postal_code'] ?? ''), 'city' => (string) ($supplier['city'] ?? ''),
             'country' => (string) ($supplier['country'] ?? ''), 'customerNumber' => (string) ($supplier['customer_number'] ?? ''),
         ], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    }
+
+    /** Kostenstelle als Kostenziel (gemeinsame Regel in CostTargets). */
+    private function costCenter(mixed $value, ?string $orderId, ?string $current): ?string
+    {
+        return (new CostTargets($this->pdo))->costCenter($value, $orderId, $current, static fn (string $message): OrderValidationException => new OrderValidationException([$message]));
     }
 
     private function optionalOrder(mixed $id): ?string

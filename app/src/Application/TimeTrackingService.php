@@ -47,7 +47,7 @@ final readonly class TimeTrackingService
     private const MIN_REST_MINUTES = 660;
     private const MAX_RANGE_DAYS = 92;
 
-    public function __construct(private TimeTrackingRepository $times, private AttachmentStore $store)
+    public function __construct(private TimeTrackingRepository $times, private AttachmentStore $store, private ?CostTargets $targets = null)
     {
     }
 
@@ -73,8 +73,11 @@ final readonly class TimeTrackingService
             'employees' => $manage ? array_map(static fn (array $employee): array => [
                 'id' => $employee['id'], 'name' => $employee['display_name'], 'number' => $employee['personnel_number'], 'active' => (bool) $employee['active'],
             ], $this->times->employees()) : [],
-            'orders' => array_map(static fn (array $order): array => ['id' => $order['id'], 'orderNumber' => $order['order_number'], 'title' => $order['title']],
+            'orders' => $orders = array_map(static fn (array $order): array => ['id' => $order['id'], 'orderNumber' => $order['order_number'], 'title' => $order['title']],
                 $this->times->orders(!$this->releasedAll($actor))),
+            // Gemeinsames Suchfeld „Auftrag / Kostenstelle“ (Aufträge mit den bestehenden Freigaberegeln).
+            'costTargets' => $this->targets?->options($orders) ?? array_map(static fn (array $order): array => ['type' => 'order', 'id' => $order['id'], 'number' => $order['orderNumber'],
+                'label' => $order['title'], 'active' => true], $orders),
         ];
     }
 
@@ -187,8 +190,10 @@ final readonly class TimeTrackingService
             if ($net === 0 && ((string) $entry['work_date'] < $from)) {
                 continue; // Vortagsblock ohne Anteil im Zeitraum
             }
-            $orderKey = (string) ($entry['order_id'] ?? '');
-            $byOrder[$orderKey] ??= ['orderId' => $entry['order_id'], 'orderNumber' => $entry['order_number'], 'orderTitle' => $entry['order_title']] + $empty;
+            // Gruppiert nach Kostenziel: Auftrag, allgemeine Kostenstelle oder ohne Zuordnung.
+            $orderKey = $entry['order_id'] !== null ? 'order:' . $entry['order_id'] : ($entry['cost_center_id'] !== null ? 'cost_center:' . $entry['cost_center_id'] : '');
+            $byOrder[$orderKey] ??= ['orderId' => $entry['order_id'], 'orderNumber' => $entry['order_number'], 'orderTitle' => $entry['order_title'],
+                'costCenterId' => $entry['cost_center_id'], 'costCenterNumber' => $entry['cost_center_number'], 'costCenterName' => $entry['cost_center_name']] + $empty;
             self::addShare($byOrder[$orderKey], $entry, $net, $travel, $timesOptional);
             self::addShare($totals, $entry, $net, $travel, $timesOptional);
             $rows[] = [
@@ -197,7 +202,7 @@ final readonly class TimeTrackingService
                 'travelMinutes' => (int) $entry['travel_minutes'], 'periodNetMinutes' => $net, 'periodTravelMinutes' => $travel,
                 'activity' => $entry['activity'], 'activityLabel' => self::ACTIVITIES[$entry['activity']] ?? $entry['activity'],
                 'assignmentKind' => $entry['assignment_kind'], 'assignmentLabel' => $entry['assignment_kind'] !== null ? self::ASSIGNMENTS[$entry['assignment_kind']] ?? '' : '',
-                'orderNumber' => $entry['order_number'], 'notes' => $entry['notes'], 'hasTimes' => $entry['start_time'] !== null,
+                'orderNumber' => $entry['order_number'], 'costCenterNumber' => $entry['cost_center_number'], 'notes' => $entry['notes'], 'hasTimes' => $entry['start_time'] !== null,
             ] + self::source($entry);
         }
         return ['from' => $from, 'to' => $to, 'timesOptional' => $timesOptional, 'rows' => $rows, 'byOrder' => array_values($byOrder), 'totals' => $totals];
@@ -509,6 +514,7 @@ final readonly class TimeTrackingService
             throw new DocumentValidationException(['Bitte den Zweck der Auslage angeben.']);
         }
         $order = $this->optionalOrder($input['orderId'] ?? '', $actor, null);
+        $costCenter = $this->costCenter($input['costCenterId'] ?? '', $order, null);
         $id = Uuid::v4();
         $receipt = ['receipt_path' => null, 'receipt_name' => null, 'receipt_mime' => null, 'receipt_size' => null, 'receipt_sha256' => null];
         if ($upload !== null) {
@@ -526,7 +532,7 @@ final readonly class TimeTrackingService
         }
         try {
             $this->times->insertExpense([
-                'id' => $id, 'employee_id' => $employee['id'], 'work_date' => $date, 'amount' => $amount, 'purpose' => $purpose, 'order_id' => $order,
+                'id' => $id, 'employee_id' => $employee['id'], 'work_date' => $date, 'amount' => $amount, 'purpose' => $purpose, 'order_id' => $order, 'cost_center_id' => $costCenter,
                 'created_by_user_id' => (string) $actor['id'], 'created_at' => Clock::now(),
             ] + $receipt);
         } catch (Throwable $exception) {
@@ -591,10 +597,13 @@ final readonly class TimeTrackingService
         if (!in_array($activity, self::SELECTABLE_ACTIVITIES, true) && !($activity === 'travel' && ($existing['activity'] ?? null) === 'travel')) {
             throw new DocumentValidationException(['Bitte die Art der Tätigkeit wählen.']);
         }
+        $order = $this->optionalOrder($input['orderId'] ?? '', $actor, $existing['order_id'] ?? null);
         return $timing + [
             'work_date' => $date, 'activity' => $activity,
             'travel_minutes' => $this->travel($input, $timing['net_minutes']),
-            'order_id' => $this->optionalOrder($input['orderId'] ?? '', $actor, $existing['order_id'] ?? null),
+            'order_id' => $order,
+            // Kostenziel: Auftrag ODER allgemeine Kostenstelle (nur manuelle Zeitblöcke).
+            'cost_center_id' => $this->costCenter($input['costCenterId'] ?? '', $order, $existing['cost_center_id'] ?? null),
             'assignment_kind' => $this->assignment($input),
             'notes' => $this->text($input['notes'] ?? '', 500, 'Bemerkung'),
         ];
@@ -769,6 +778,7 @@ final readonly class TimeTrackingService
             'assignmentKind' => $entry['assignment_kind'], 'assignmentLabel' => $entry['assignment_kind'] !== null ? (self::ASSIGNMENTS[$entry['assignment_kind']] ?? '') : null,
             'activity' => $entry['activity'], 'activityLabel' => self::ACTIVITIES[$entry['activity']] ?? $entry['activity'],
             'orderId' => $entry['order_id'], 'orderNumber' => $entry['order_number'], 'orderTitle' => $entry['order_title'], 'notes' => $entry['notes'],
+            'costCenterId' => $entry['cost_center_id'], 'costCenterNumber' => $entry['cost_center_number'], 'costCenterName' => $entry['cost_center_name'],
             // Dauer ist bei Berichtsbuchungen vorgegeben; Löschen nur bei manuellen Buchungen.
             'durationFixed' => !$manual, 'canEditTimes' => $canEdit, 'canDelete' => $canEdit && $manual,
             // Nachvollziehbarkeit von Korrekturen durch Büro/Admin.
@@ -794,6 +804,7 @@ final readonly class TimeTrackingService
     {
         return [
             'id' => $expense['id'], 'amount' => $expense['amount'], 'purpose' => $expense['purpose'], 'orderId' => $expense['order_id'], 'orderNumber' => $expense['order_number'],
+            'costCenterId' => $expense['cost_center_id'], 'costCenterNumber' => $expense['cost_center_number'],
             'receiptName' => $expense['receipt_name'], 'hasReceipt' => $expense['receipt_path'] !== null,
         ];
     }
@@ -851,6 +862,16 @@ final readonly class TimeTrackingService
             throw new DocumentValidationException(['Dieser Auftrag steht für die Zeiterfassung nicht zur Verfügung.']);
         }
         return $id;
+    }
+
+    /** Kostenstelle prüfen (gemeinsame Regel in CostTargets). */
+    private function costCenter(mixed $value, ?string $orderId, ?string $current): ?string
+    {
+        if (trim((string) $value) === '') {
+            return null;
+        }
+        $targets = $this->targets ?? throw new DocumentValidationException(['Kostenstellen sind nicht verfügbar.']);
+        return $targets->costCenter($value, $orderId, $current, static fn (string $message): DocumentValidationException => new DocumentValidationException([$message]));
     }
 
     /** Büro sieht alle offenen Aufträge, Techniker nur freigegebene (wie in den Fachmodulen). @param array<string,mixed> $actor */

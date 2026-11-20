@@ -34,6 +34,7 @@ $toolbar = static function (string $scope, string $placeholder, string $newLabel
         <button class="tab-button" type="button" data-tab="trailing-texts">Schlepptexte</button>
         <button class="tab-button" type="button" data-tab="categories">Kategorien</button>
         <button class="tab-button" type="button" data-tab="suppliers">Lieferanten</button>
+        <a class="tab-button" href="/master-data/cost-centers">Kostenstellen</a>
     </nav>
 
     <section class="tab-panel" data-panel="cost-items" hidden>

@@ -226,28 +226,32 @@
       },
 
       allocations() {
-        const rows = (order.allocations || []).map((allocation) => ({ orderId: allocation.orderId, amount: inputValue(allocation.amount) }));
-        const form = dialogForm(`<p class="muted">Ohne Verteilung gehen die Ist-Kosten (${money(order.actualNetTotal)}) vollständig an den Auftrag der Bestellung. Mit Verteilung gelten genau die eingetragenen Beträge – höchstens bis zu den Ist-Kosten.</p>
+        // Je Zeile ein Kostenziel (Auftrag oder Kostenstelle) mit festem Nettobetrag.
+        const rows = (order.allocations || []).map((allocation) => ({ orderId: allocation.orderId || "", costCenterId: allocation.costCenterId || "", amount: inputValue(allocation.amount) }));
+        const form = dialogForm(`<p class="muted">Ohne Verteilung gehen die Ist-Kosten (${money(order.actualNetTotal)}) vollständig an das Kostenziel der Bestellung. Mit Verteilung gelten genau die eingetragenen Beträge – höchstens bis zu den Ist-Kosten.</p>
           <div data-allocation-rows></div>
-          <div><button class="button button-light button-small" type="button" data-add-allocation data-icon="plus">Auftrag hinzufügen</button></div>`);
+          <div><button class="button button-light button-small" type="button" data-add-allocation data-icon="plus">Auftrag / Kostenstelle hinzufügen</button></div>`);
         const box = form.querySelector("[data-allocation-rows]");
         const draw = () => {
           box.innerHTML = rows.length ? rows.map((row, index) => `
             <div class="purchase-allocation-row" data-allocation="${index}">
-              <select data-allocation-field="orderId" aria-label="Auftrag"><option value="">Auftrag wählen …</option>${reference.orders.map((job) => `<option value="${esc(job.id)}"${job.id === row.orderId ? " selected" : ""}>${esc(job.orderNumber)} · ${esc(job.title)}</option>`).join("")}</select>
+              <select data-allocation-field="target" aria-label="Auftrag / Kostenstelle">${Calight.costTargetOptions(reference.costTargets, { orderId: row.orderId, costCenterId: row.costCenterId, emptyLabel: "Auftrag / Kostenstelle wählen …" })}</select>
               <input data-allocation-field="amount" inputmode="decimal" value="${esc(row.amount)}" placeholder="Betrag netto" aria-label="Betrag netto">
               <button class="icon-button icon-button-danger" type="button" data-remove-allocation data-icon="trash" title="Zeile entfernen" aria-label="Zeile entfernen"></button>
-            </div>`).join("") : '<p class="muted">Keine Verteilung – volle Kosten an den Auftrag der Bestellung.</p>';
+            </div>`).join("") : '<p class="muted">Keine Verteilung – volle Kosten an das Kostenziel der Bestellung.</p>';
+          box.querySelectorAll('[data-allocation-field="target"]').forEach((select) => Calight.searchableSelect(select, { placeholder: "Auftrag oder Kostenstelle …" }));
         };
         const update = (event) => {
           const row = event.target.closest("[data-allocation]");
-          if (row && event.target.dataset.allocationField) rows[Number(row.dataset.allocation)][event.target.dataset.allocationField] = event.target.value;
+          if (!row || !event.target.dataset.allocationField) return;
+          if (event.target.dataset.allocationField === "target") Object.assign(rows[Number(row.dataset.allocation)], Calight.parseCostTarget(event.target.value));
+          else rows[Number(row.dataset.allocation)][event.target.dataset.allocationField] = event.target.value;
         };
         form.addEventListener("input", update);
         form.addEventListener("change", update);
         form.addEventListener("click", (event) => {
           if (event.target.closest("[data-add-allocation]")) {
-            rows.push({ orderId: rows.length ? "" : order.orderId || "", amount: "" });
+            rows.push({ orderId: rows.length ? "" : order.orderId || "", costCenterId: rows.length ? "" : order.costCenterId || "", amount: "" });
             draw();
           } else if (event.target.closest("[data-remove-allocation]")) {
             rows.splice(Number(event.target.closest("[data-allocation]").dataset.allocation), 1);
@@ -261,7 +265,7 @@
           submitLabel: "Speichern",
           discardMessage: "Die Änderungen an der Verteilung verwerfen?",
           submit: async () => {
-            adopt(await api(url("/allocations"), { method: "PUT", body: { version: order.version, allocations: rows.map((row) => ({ orderId: row.orderId, amount: decimal(row.amount) })) } }));
+            adopt(await api(url("/allocations"), { method: "PUT", body: { version: order.version, allocations: rows.map((row) => ({ orderId: row.orderId, costCenterId: row.costCenterId, amount: decimal(row.amount) })) } }));
             success("Kostenverteilung gespeichert.");
           },
         });

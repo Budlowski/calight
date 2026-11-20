@@ -61,8 +61,11 @@ assert(report.includes('title="Uhrzeiten ergänzen"') && !report.includes("data-
 assert(entryRow({ ...base, timesMissing: true }).includes("time-untimed is-incomplete"), "unvollständig bei deaktivierter Einstellung");
 const manual = entryRow({ ...base, durationFixed: false, sourceKind: "manual", sourceLabel: "Manuell", reportUrl: null, reportLabel: null, reportActivity: "",
   hasTimes: true, start: "07:00", end: "12:00", notes: "Büro / Rüstzeit", canDelete: true });
-assert(manual.includes("07:00–12:00") && manual.includes("Büro / Rüstzeit") && manual.includes("Ohne Auftrag") && manual.includes("data-delete-entry") && manual.includes('title="Bearbeiten"'), "manueller Eintrag");
+assert(manual.includes("07:00–12:00") && manual.includes("Büro / Rüstzeit") && manual.includes("Ohne Zuordnung") && manual.includes("data-delete-entry") && manual.includes('title="Bearbeiten"'), "manueller Eintrag");
 assert(!manual.includes("geändert von"), "keine Änderungsinformationen in der Liste");
 const withOrder = entryRow({ ...base, orderNumber: "AU1", orderTitle: "Halle <3>", customerName: "Kunde" });
 assert(withOrder.includes("AU1 · Halle &lt;3&gt;") && !withOrder.includes("Kunde<"), "Auftrag statt Kunde, maskiert, nicht doppelt");
+const onCostCenter = entryRow({ ...base, durationFixed: false, sourceKind: "manual", sourceLabel: "Manuell", reportUrl: null, reportLabel: null, reportActivity: "", notes: "Rüsten",
+  costCenterNumber: "K120", costCenterName: "Lager & Rüstzeit" });
+assert(onCostCenter.includes("K120 · Lager &amp; Rüstzeit") && !onCostCenter.includes("Ohne Zuordnung"), "Kostenstelle als Zuordnung");
 console.log("time-tracking.test.js ok");

@@ -82,7 +82,8 @@
    */
   const entryRow = (entry) => {
     const manual = entry.sourceKind === "manual";
-    const context = entry.orderNumber ? `${entry.orderNumber}${entry.orderTitle ? ` · ${entry.orderTitle}` : ""}` : entry.customerName || "";
+    const context = entry.orderNumber ? `${entry.orderNumber}${entry.orderTitle ? ` · ${entry.orderTitle}` : ""}`
+      : entry.costCenterNumber ? `${entry.costCenterNumber} · ${entry.costCenterName}` : entry.customerName || "";
     const title = manual
       ? esc(entry.notes || entry.activityLabel)
       : `<a href="${esc(entry.reportUrl)}">${esc(entry.reportLabel)}</a>${entry.reportDraft ? ' <span class="time-meta-note">Entwurf</span>' : ""}`;
@@ -90,7 +91,7 @@
       `<span class="time-source">${esc(entry.sourceLabel)}</span>`,
       manual && entry.notes ? esc(entry.activityLabel) : "",
       !manual && entry.reportActivity ? esc(entry.reportActivity) : "",
-      context ? `<span class="time-context" title="${esc(context)}">${esc(context)}</span>` : manual ? "Ohne Auftrag" : "",
+      context ? `<span class="time-context" title="${esc(context)}">${esc(context)}</span>` : manual ? "Ohne Zuordnung" : "",
       entry.assignmentKind ? `<span title="${esc(entry.assignmentLabel)}">${entry.assignmentKind === "external" ? "Auswärts" : "Erste Tätigkeitsstätte"}</span>` : "",
     ].filter(Boolean).join('<span aria-hidden="true"> · </span>');
     const editLabel = entry.durationFixed ? (entry.hasTimes ? "Uhrzeiten bearbeiten" : "Uhrzeiten ergänzen") : "Bearbeiten";
@@ -248,7 +249,7 @@
           <div><h2>Einsatz und Auslagen</h2><small>${detailText || "Einsatzart, Reise, Übernachtung, Kilometer und Auslagen (optional)"}</small></div>
           <div class="step-section-actions">${editable ? `<button class="button button-light button-small" type="button" data-details data-icon="square-pen">${details || day.expenses.length ? "Bearbeiten" : "Erfassen"}</button>` : ""}</div>
         </div>
-        ${day.expenses.length ? `<ul class="time-expenses">${day.expenses.map((expense) => `<li><span>${esc(expense.purpose)}${expense.orderNumber ? ` <small class="muted">· ${esc(expense.orderNumber)}</small>` : ""}${expense.hasReceipt ? ` <a href="/api/time-tracking/expenses/${encodeURIComponent(expense.id)}/receipt" target="_blank" rel="noopener" data-icon="file-down">Beleg</a>` : ""}</span><strong>${money(expense.amount)}</strong></li>`).join("")}</ul><p class="time-expense-total">Auslagen gesamt: <strong>${money(day.expenseTotal)}</strong></p>` : ""}
+        ${day.expenses.length ? `<ul class="time-expenses">${day.expenses.map((expense) => `<li><span>${esc(expense.purpose)}${expense.orderNumber || expense.costCenterNumber ? ` <small class="muted">· ${esc(expense.orderNumber || expense.costCenterNumber)}</small>` : ""}${expense.hasReceipt ? ` <a href="/api/time-tracking/expenses/${encodeURIComponent(expense.id)}/receipt" target="_blank" rel="noopener" data-icon="file-down">Beleg</a>` : ""}</span><strong>${money(expense.amount)}</strong></li>`).join("")}</ul><p class="time-expense-total">Auslagen gesamt: <strong>${money(day.expenseTotal)}</strong></p>` : ""}
       </section>`;
   }
 
@@ -280,7 +281,7 @@
     const values = {
       start: entry ? entry.start || "" : preset.start ?? (fixed === null ? lastEnd : ""), end: entry?.end ?? "", breakMinutes: entry?.breakMinutes ?? 0, travelMinutes: entry?.travelMinutes ?? 0,
       activity: entry?.activity ?? preset.activity ?? "work", assignmentKind: entry ? entry.assignmentKind || "" : preset.assignmentKind ?? lastAssignment,
-      orderId: entry?.orderId ?? preset.orderId ?? "", notes: entry?.notes ?? "",
+      orderId: entry?.orderId ?? preset.orderId ?? "", costCenterId: entry?.costCenterId ?? preset.costCenterId ?? "", notes: entry?.notes ?? "",
       duration: entry && !entry.hasTimes && fixed === null ? hours(entry.netMinutes).replace(" h", "") : "",
     };
     const timesRequired = !current.timesOptional && fixed === null;
@@ -304,7 +305,7 @@
         ${Object.entries(activities).map(([key, label]) => `<label class="${activityClass(key)}"><input type="radio" name="activity" value="${key}"${key === values.activity ? " checked" : ""}> ${esc(label)}</label>`).join("")}
       </fieldset>` : ""}
       <label><span class="field-label">Einsatzart (optional)</span><select name="assignmentKind"><option value="">Keine Angabe</option>${Object.entries(reference.assignments).map(([key, label]) => `<option value="${key}"${key === values.assignmentKind ? " selected" : ""}>${esc(label)}</option>`).join("")}</select></label>
-      ${fixed === null ? `<label><span class="field-label">Auftrag (optional)</span><select name="orderId">${orderOptions(values.orderId)}</select></label>` : ""}
+      ${fixed === null ? `<label><span class="field-label">Auftrag / Kostenstelle (optional)</span><select name="costTarget"></select></label>` : ""}
       <label><span class="field-label">Bemerkung (optional)</span><input name="notes" maxlength="500" value="${esc(values.notes)}" placeholder="${fixed === null ? "z. B. Angebotsbearbeitung" : "Ergänzung zur Zeiterfassung"}"></label>
       <p class="field-error" data-dialog-error hidden></p>`;
     const net = () => {
@@ -321,14 +322,15 @@
     };
     form.addEventListener("input", net);
     net();
-    if (form.elements.orderId) Calight.searchableSelect(form.elements.orderId, { placeholder: "Auftragsnummer oder Bezeichnung …" });
+    // Ein gemeinsames Suchfeld für Kundenaufträge und allgemeine Kostenstellen.
+    if (form.elements.costTarget) Calight.costTargetSelect(form.elements.costTarget, reference.costTargets, { orderId: values.orderId, costCenterId: values.costCenterId });
     const body = () => {
       const timesGiven = Boolean(form.elements.start.value || form.elements.end.value);
       const duration = form.elements.duration && !timesGiven ? parseDuration(form.elements.duration.value) : NaN;
       return {
         date: state.date, employeeId: state.employee, start: form.elements.start.value, end: form.elements.end.value,
         breakMinutes: timesGiven ? form.elements.breakMinutes.value : 0, travelMinutes: form.elements.travelMinutes.value, assignmentKind: form.elements.assignmentKind.value,
-        activity: form.elements.activity?.value ?? entry?.activity, orderId: form.elements.orderId?.value ?? "", notes: form.elements.notes.value.trim(),
+        activity: form.elements.activity?.value ?? entry?.activity, ...Calight.parseCostTarget(form.elements.costTarget?.value ?? ""), notes: form.elements.notes.value.trim(),
         ...(Number.isNaN(duration) ? {} : { durationMinutes: duration }),
         ...(entry ? { version: entry.version } : {}),
       };
@@ -348,7 +350,7 @@
       extraActions: entry ? [] : [{
         label: "Speichern und weiter",
         onClick: async (run) => {
-          const next = { start: form.elements.end.value, activity: form.elements.activity.value, orderId: form.elements.orderId.value, assignmentKind: form.elements.assignmentKind.value };
+          const next = { start: form.elements.end.value, activity: form.elements.activity.value, ...Calight.parseCostTarget(form.elements.costTarget.value), assignmentKind: form.elements.assignmentKind.value };
           if (!form.reportValidity()) return false;
           if (await run(save)) {
             await renderDay();
@@ -430,9 +432,10 @@
     form.innerHTML = `<div class="dialog-form-grid">
         <label><span class="field-label">Betrag <span aria-hidden="true">*</span></span><input name="amount" inputmode="decimal" required placeholder="0,00"></label>
         <label><span class="field-label">Zweck <span aria-hidden="true">*</span></span><input name="purpose" maxlength="200" required placeholder="z. B. Parkgebühr, Hotel, Maut"></label>
-        <label class="span-all"><span class="field-label">Auftrag (optional)</span><select name="orderId">${orderOptions("")}</select></label>
+        <label class="span-all"><span class="field-label">Auftrag / Kostenstelle (optional)</span><select name="costTarget"></select></label>
         <label class="span-all"><span class="field-label">Beleg als PDF oder Bild (optional)</span><input name="file" type="file" accept="application/pdf,image/*"></label>
       </div><p class="field-error" data-expense-error hidden></p>`;
+    Calight.costTargetSelect(form.elements.costTarget, reference.costTargets);
     const error = form.querySelector("[data-expense-error]");
     CalightModal.openOver({
       title: "Auslage erfassen",
@@ -448,7 +451,9 @@
             data.append("employeeId", state.employee);
             data.append("amount", form.elements.amount.value.trim().replace(",", "."));
             data.append("purpose", form.elements.purpose.value.trim());
-            data.append("orderId", form.elements.orderId.value);
+            const target = Calight.parseCostTarget(form.elements.costTarget.value);
+            data.append("orderId", target.orderId);
+            data.append("costCenterId", target.costCenterId);
             if (form.elements.file.files[0]) data.append("file", form.elements.file.files[0]);
             const response = await fetch("/api/time-tracking/expenses", { method: "POST", credentials: "same-origin", headers: { "X-CSRF-Token": root.dataset.csrf, Accept: "application/json" }, body: data });
             const result = await response.json().catch(() => ({}));
@@ -494,14 +499,14 @@
         <select data-report-order aria-label="Auftrag"><option value="">Alle Aufträge</option>${reference.orders.map((item) => `<option value="${esc(item.id)}"${item.id === order ? " selected" : ""}>${esc(item.orderNumber)} · ${esc(item.title)}</option>`).join("")}</select>
       </div>
       ${summaryTiles(data.totals)}
-      <h3 class="purchase-subheading">Nach Auftrag</h3>
-      <div class="overview-table-wrap"><table class="overview-table"><thead><tr><th class="cell-title">Auftrag</th><th class="cell-money">Nettozeit</th><th class="cell-money">Davon Reise</th><th class="cell-money">Übrige Arbeit</th><th class="cell-status">Herkunft</th></tr></thead>
-        <tbody>${data.byOrder.map((row) => `<tr><td class="cell-title">${row.orderId ? `${esc(row.orderNumber)} · ${esc(row.orderTitle)}` : '<span class="muted">Ohne Auftrag</span>'}</td><td class="cell-money">${hours(row.netMinutes)}</td><td class="cell-money">${hours(row.travelMinutes)}</td><td class="cell-money">${hours(row.workMinutes)}</td>
+      <h3 class="purchase-subheading">Nach Auftrag / Kostenstelle</h3>
+      <div class="overview-table-wrap"><table class="overview-table"><thead><tr><th class="cell-title">Auftrag / Kostenstelle</th><th class="cell-money">Nettozeit</th><th class="cell-money">Davon Reise</th><th class="cell-money">Übrige Arbeit</th><th class="cell-status">Herkunft</th></tr></thead>
+        <tbody>${data.byOrder.map((row) => `<tr><td class="cell-title">${row.orderId ? `${esc(row.orderNumber)} · ${esc(row.orderTitle)}` : row.costCenterId ? `${esc(row.costCenterNumber)} · ${esc(row.costCenterName)} <small class="muted">Kostenstelle</small>` : '<span class="muted">Ohne Zuordnung</span>'}</td><td class="cell-money">${hours(row.netMinutes)}</td><td class="cell-money">${hours(row.travelMinutes)}</td><td class="cell-money">${hours(row.workMinutes)}</td>
           <td class="cell-status">${orderSourceNote(row)}</td></tr>`).join("") || '<tr><td colspan="5" class="muted">Keine Einträge.</td></tr>'}</tbody></table></div>
       <h3 class="purchase-subheading">Buchungen</h3>
       <div class="overview-table-wrap"><table class="overview-table"><thead><tr><th class="cell-date">Datum</th><th class="cell-text">Mitarbeiter</th><th class="cell-text">Zeit</th><th class="cell-type">Herkunft</th><th class="cell-type">Einsatz</th><th class="cell-number">Auftrag</th><th class="cell-money">Netto</th><th class="cell-money">Reise</th></tr></thead>
         <tbody>${data.rows.map((row) => `<tr><td class="cell-date">${format.date(row.date)}</td><td class="cell-text">${esc(row.employeeName)}</td><td class="cell-text">${row.hasTimes ? `${esc(row.start)}–${esc(row.end)}${row.endsNextDay ? " (+1)" : ""}` : untimedLabel(!data.timesOptional)}</td>
-          <td class="cell-type">${row.reportUrl ? `<a href="${esc(row.reportUrl)}">${esc(row.reportLabel)}</a>` : `<span class="${activityClass(row.activity)}">${esc(row.activityLabel)}</span>`}</td><td class="cell-type" title="${esc(row.assignmentLabel)}">${row.assignmentKind === "external" ? "Auswärts" : row.assignmentKind === "regular" ? "Erste T." : "–"}</td><td class="cell-number">${esc(row.orderNumber || "–")}</td><td class="cell-money">${periodHours(row.periodNetMinutes, row.netMinutes)}</td><td class="cell-money">${row.travelMinutes ? periodHours(row.periodTravelMinutes, row.travelMinutes) : "–"}</td></tr>`).join("") || '<tr><td colspan="8" class="muted">Keine Einträge.</td></tr>'}</tbody></table></div>`;
+          <td class="cell-type">${row.reportUrl ? `<a href="${esc(row.reportUrl)}">${esc(row.reportLabel)}</a>` : `<span class="${activityClass(row.activity)}">${esc(row.activityLabel)}</span>`}</td><td class="cell-type" title="${esc(row.assignmentLabel)}">${row.assignmentKind === "external" ? "Auswärts" : row.assignmentKind === "regular" ? "Erste T." : "–"}</td><td class="cell-number">${esc(row.orderNumber || row.costCenterNumber || "–")}</td><td class="cell-money">${periodHours(row.periodNetMinutes, row.netMinutes)}</td><td class="cell-money">${row.travelMinutes ? periodHours(row.periodTravelMinutes, row.travelMinutes) : "–"}</td></tr>`).join("") || '<tr><td colspan="8" class="muted">Keine Einträge.</td></tr>'}</tbody></table></div>`;
     content.querySelector("[data-report-employee]").addEventListener("change", (event) => {
       state.employee = event.target.value;
       render();

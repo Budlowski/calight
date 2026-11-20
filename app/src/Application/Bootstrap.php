@@ -20,6 +20,8 @@ use App\Http\MeasurementController;
 use App\Http\PurchaseOrderController;
 use App\Http\DocumentController;
 use App\Http\TimeTrackingController;
+use App\Http\CostCenterController;
+use App\Infrastructure\Persistence\CostCenterRepository;
 use App\Infrastructure\Persistence\TimeTrackingRepository;
 use App\Infrastructure\Persistence\AttachmentRepository;
 use App\Infrastructure\Persistence\DocumentRepository;
@@ -123,7 +125,8 @@ final readonly class Bootstrap
             new WorkReportController($view,$workReportService,new WorkReportPdfService($workReportService,$documentSettingsRepository,$documentArchive),$documentSettingsRepository),
             new PurchaseOrderController($view,new PurchaseOrderService($this->pdo,new PurchaseOrderRepository($this->pdo),$numberRanges,$documentStore,new PurchaseOrderPdfService($documentSettingsRepository)),$masterDataService),
             new DocumentController($view,new DocumentService($this->pdo,new AttachmentRepository($this->pdo),new DocumentRepository($this->pdo),$documentStore)),
-            new TimeTrackingController($view,new TimeTrackingService(new TimeTrackingRepository($this->pdo),$documentStore)),
+            new TimeTrackingController($view,new TimeTrackingService(new TimeTrackingRepository($this->pdo),$documentStore,new CostTargets($this->pdo))),
+            new CostCenterController($view,new CostCenterService($this->pdo,new CostCenterRepository($this->pdo),dirname(__DIR__,2).'/config/cost-center-template.json')),
         );
     }
 }

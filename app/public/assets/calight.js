@@ -354,5 +354,36 @@
     return { refresh: show };
   }
 
-  globalThis.Calight = Object.freeze({ esc, api, format, exact, collator, normalize, matches, notify, bindProjectToCustomer, createDialog, suggest, searchableSelect, suggestPlacement });
+  // Gemeinsames Kostenziel „Auftrag / Kostenstelle“: ein Suchfeld für Kundenaufträge und
+  // allgemeine Kostenstellen (vorhandene searchableSelect-Komponente). Der Wert trägt Typ und ID
+  // („order:<id>“ bzw. „cost_center:<id>“) – nie wird anhand des Nummernpräfixes entschieden.
+  const costTargetValue = (target) => `${target.type}:${target.id}`;
+  /** Auswahl → { orderId, costCenterId } (höchstens eines gesetzt). */
+  function parseCostTarget(value) {
+    const [type, ...rest] = String(value || "").split(":");
+    const id = rest.join(":");
+    return { orderId: type === "order" ? id : "", costCenterId: type === "cost_center" ? id : "" };
+  }
+  /** Optionen: Aufträge und aktive Kostenstellen; deaktivierte nur, wenn bereits zugeordnet. */
+  function costTargetOptions(targets, { orderId = "", costCenterId = "", emptyLabel = "Ohne Zuordnung" } = {}) {
+    const selected = orderId ? `order:${orderId}` : costCenterId ? `cost_center:${costCenterId}` : "";
+    const visible = (targets || []).filter((target) => target.active || costTargetValue(target) === selected);
+    const options = visible.map((target) => {
+      const value = costTargetValue(target);
+      const suffix = target.type === "cost_center" ? (target.active ? " (Kostenstelle)" : " (Kostenstelle, deaktiviert)") : "";
+      return `<option value="${esc(value)}"${value === selected ? " selected" : ""}>${esc(target.number)} · ${esc(target.label)}${suffix}</option>`;
+    });
+    // Bisherige Zuordnung, die nicht (mehr) in der Liste ist (z. B. abgerechneter Auftrag), bleibt erhalten.
+    if (selected && !visible.some((target) => costTargetValue(target) === selected)) options.push(`<option value="${esc(selected)}" selected>bisherige Zuordnung</option>`);
+    return `<option value="">${esc(emptyLabel)}</option>${options.join("")}`;
+  }
+  /** Füllt ein <select> und macht es durchsuchbar (Nummer und Bezeichnung). */
+  function costTargetSelect(select, targets, options = {}) {
+    select.innerHTML = costTargetOptions(targets, options);
+    searchableSelect(select, { placeholder: "Auftrag oder Kostenstelle: Nummer oder Bezeichnung …" });
+    return { value: () => parseCostTarget(select.value) };
+  }
+
+  globalThis.Calight = Object.freeze({ esc, api, format, exact, collator, normalize, matches, notify, bindProjectToCustomer, createDialog, suggest, searchableSelect, suggestPlacement,
+    costTargetOptions, costTargetSelect, parseCostTarget });
 })();

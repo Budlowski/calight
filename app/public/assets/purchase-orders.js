@@ -25,7 +25,7 @@
       badge("payment", order.paymentStatus, LIST_PAYMENT[order.paymentStatus] || order.paymentLabel),
     ].join("");
   };
-  const jobLabel = (order) => (order.orderId ? `${order.jobNumber} · ${order.jobTitle}` : "Ohne Auftrag");
+  const jobLabel = (order) => (order.orderId ? `${order.jobNumber} · ${order.jobTitle}` : order.costCenterId ? `${order.costCenterNumber} · ${order.costCenterName}` : "Ohne Zuordnung");
   const money = (value) => (value === null || value === undefined || value === "" ? "–" : format.money(value));
   const today = () => {
     const now = new Date();
@@ -135,7 +135,7 @@
   const canCosts = root.dataset.canCosts === "1";
   const supplierFilter = root.querySelector("[data-supplier-filter]");
   const orderFilter = root.querySelector("[data-order-filter]");
-  let reference = { suppliers: [], orders: [] };
+  let reference = { suppliers: [], orders: [], costTargets: [] };
 
   // Bestellwert mit aktuell bestätigtem Wert darunter, wenn er abweicht (spart eine Spalte).
   const orderedValue = (order) => {
@@ -172,7 +172,7 @@
         <td class="cell-number">${esc(order.orderNumber)} ${originBadge(order)}</td>
         <td class="cell-text" title="${esc(order.supplierName)}">${esc(order.supplierName)}${order.externalReference ? `<small class="muted"> · ${esc(order.externalReference)}</small>` : ""}${titleLine(order)}</td>
         <td class="cell-date">${order.orderDate ? format.date(order.orderDate) : '<span class="muted">–</span>'}</td>
-        <td class="cell-number" title="${esc(jobLabel(order))}">${order.orderId ? esc(order.jobNumber) : '<span class="muted">–</span>'}</td>
+        <td class="cell-number" title="${esc(jobLabel(order))}">${order.orderId ? esc(order.jobNumber) : order.costCenterId ? esc(order.costCenterNumber) : '<span class="muted">–</span>'}</td>
         <td class="cell-status"><span class="purchase-status-stack">${listStatus(order)}</span></td>
         ${canCosts ? `<td class="cell-money">${orderedValue(order)}</td><td class="cell-money">${money(order.actualNetTotal)}</td>` : ""}
       </tr>`).join("")}</tbody>`;
@@ -235,14 +235,14 @@
         ${canCosts ? '<label><span class="field-label">Bestellwert netto (optional)</span><input name="expectedNetTotal" inputmode="decimal" placeholder="0,00"></label>' : ""}
         <label${canCosts ? "" : ' class="span-all"'}><span class="field-label">Bestellung oder Bestätigung (optional)</span><input name="file" type="file" accept="application/pdf,image/*"></label>
       </div>` : ""}
-      <label><span class="field-label">Auftrag (optional)</span>
-        <select name="orderId"><option value="">Ohne Auftrag</option>${orderOptions()}</select></label>
+      <label><span class="field-label">Auftrag / Kostenstelle (optional)</span>
+        <select name="orderId">${Calight.costTargetOptions(reference.costTargets)}</select></label>
       ${external ? "" : '<p class="muted">Positionen und Lieferanschrift erfassen Sie anschließend auf der Bestellseite.</p>'}
       <p class="field-error" data-dialog-error hidden></p>`;
     supplierPicker(form.elements.supplierId, reference.suppliers, {
       onCreated: () => { supplierFilter.innerHTML = '<option value="">Alle Lieferanten</option>' + supplierOptions(); },
     });
-    Calight.searchableSelect(form.elements.orderId, { placeholder: "Auftragsnummer oder Bezeichnung …" });
+    Calight.searchableSelect(form.elements.orderId, { placeholder: "Auftrag oder Kostenstelle: Nummer oder Bezeichnung …" });
 
     Calight.createDialog({
       title: external ? "Externe Bestellung aufnehmen" : "Neue Bestellung",
@@ -252,7 +252,7 @@
       initialFocus: ".suggest-select input",
       submit: async () => {
         if (!form.elements.supplierId.value) throw new Error("Bitte einen Lieferanten auswählen oder neu anlegen.");
-        const body = { supplierId: form.elements.supplierId.value, orderId: form.elements.orderId.value };
+        const body = { supplierId: form.elements.supplierId.value, ...Calight.parseCostTarget(form.elements.orderId.value) };
         if (external) {
           Object.assign(body, {
             origin: "external",
