@@ -18,12 +18,10 @@ final readonly class TimeTrackingRepository
      * Der Kunde kommt aus dem Auftrag, sonst aus dem Bericht.
      */
     private const ENTRY_SELECT = "t.*, o.order_number, o.title AS order_title, u.display_name AS updated_by_name, cu.display_name AS created_by_name,
-        ru.display_name AS legacy_resolved_by_name,
         de.report_id AS daily_report_id, de.description AS daily_entry_description, dr.title AS daily_report_title, dr.report_date AS daily_report_date,
         wl.report_id AS work_report_id, wl.activity AS labor_activity, wl.labor_item_name, wr.report_number AS work_report_number, wr.status AS work_report_status,
         CASE WHEN c.customer_type = 'company' THEN c.company_name ELSE trim(c.first_name || ' ' || c.last_name) END AS customer_name";
     private const ENTRY_FROM = 'time_entries t LEFT JOIN orders o ON o.id = t.order_id JOIN users u ON u.id = t.updated_by_user_id JOIN users cu ON cu.id = t.created_by_user_id
-        LEFT JOIN users ru ON ru.id = t.legacy_resolved_by_user_id
         LEFT JOIN daily_report_time_entries de ON de.id = t.daily_report_entry_id LEFT JOIN daily_reports dr ON dr.id = de.report_id
         LEFT JOIN work_report_labor wl ON wl.id = t.work_report_labor_id LEFT JOIN work_reports wr ON wr.id = wl.report_id
         LEFT JOIN customers c ON c.id = COALESCE(o.customer_id, dr.customer_id, wr.customer_id)';
@@ -66,15 +64,6 @@ final readonly class TimeTrackingRepository
     {
         $statement = $this->pdo->prepare("DELETE FROM time_entries WHERE id = :id AND version = :version AND source_kind = 'manual'");
         $statement->execute(['id' => $id, 'version' => $version]);
-        return $statement->rowCount() === 1;
-    }
-
-    /** Altfall klären: zählen (Status leer) oder ausschließen. */
-    public function resolveLegacy(string $id, int $version, ?string $state, string $userId, string $now): bool
-    {
-        $statement = $this->pdo->prepare("UPDATE time_entries SET legacy_state = :state, legacy_resolved_by_user_id = :user, legacy_resolved_at = :now,
-            updated_by_user_id = :user, updated_at = :now, version = version + 1 WHERE id = :id AND version = :version AND legacy_state = 'review'");
-        $statement->execute(['state' => $state, 'user' => $userId, 'now' => $now, 'id' => $id, 'version' => $version]);
         return $statement->rowCount() === 1;
     }
 
@@ -143,7 +132,7 @@ final readonly class TimeTrackingRepository
         $this->pdo->prepare('DELETE FROM time_expenses WHERE id = :id')->execute(['id' => $id]);
     }
 
-    /** Buchungen eines Auftrags (alle Herkünfte, auch Altfälle zur Kennzeichnung). @return list<array<string,mixed>> */
+    /** Buchungen eines Auftrags (alle Herkünfte). @return list<array<string,mixed>> */
     public function orderEntries(string $orderId): array
     {
         $statement = $this->pdo->prepare('SELECT ' . self::ENTRY_SELECT . ', e.display_name AS employee_name FROM ' . self::ENTRY_FROM . ' JOIN employees e ON e.id = t.employee_id

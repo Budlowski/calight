@@ -242,7 +242,7 @@ final class TimeTrackingTest extends TestCase
             $this->assertSame($total, $actual['totals']['netMinutes'], 'Auftragssumme unabhängig von der Aufteilung.');
             $this->assertSame(30 + 30 + 27 + 33, $actual['totals']['travelMinutes']);
             $this->assertSame($total - 120, $actual['totals']['workMinutes']);
-            $this->assertSame('complete', $actual['status']);
+            $this->assertTrue(!array_key_exists('status', $actual) && !array_key_exists('pending', $actual), 'Keine Altfall- oder Quellenwahlangaben mehr.');
             $this->assertSame(['2026-11-30', '2026-12-01'], array_column(array_filter($actual['items'], static fn (array $item): bool => $item['sourceDate'] === '2026-11-30'), 'date'));
             $this->assertSame('42.0000', $actual['items'][0]['hourlyCostRate'], 'Kostensatz-Snapshot mit costs.read.');
             $this->assertSame($total, $actual['byEmployee'][0]['netMinutes']);
@@ -301,7 +301,7 @@ final class TimeTrackingTest extends TestCase
             $this->assertSame($hash, $reports->detail($submitted['id'], $office)['submittedSha256'], 'Uhrzeiten verändern weder Prüfsumme noch Rapport.');
             $this->assertSame('6.000', $reports->detail($submitted['id'], $office)['labor'][0]['hours']);
             $actual = $service->actualHoursForOrder($order, $office);
-            $this->assertSame([1170, 1170, 'complete'], [$actual['totals']['netMinutes'], $actual['bySource']['work_report'], $actual['status']], 'Rapportstunden sind Ist-Stunden (6+2+5+6,5 h).');
+            $this->assertSame([1170, 1170], [$actual['totals']['netMinutes'], $actual['bySource']['work_report']], 'Rapportstunden sind Ist-Stunden (6+2+5+6,5 h).');
 
             // Korrektur: Entwurf ersetzt noch nichts.
             $correction = $reports->create(['correctionOf' => $submitted['id']], $office);
@@ -431,8 +431,9 @@ final class TimeTrackingTest extends TestCase
         });
     }
 
-    public function testCentralBookingMigrationRespectsHistoricDecisions(): void
+    public function testCleanupMigrationRemovesLegacyStateAndSourceChoices(): void
     {
+        // Stand vor 0037 mit früherer Quellenwahl und Altrapporten; danach 0037 und die Bereinigung 0038.
         $tmp = sys_get_temp_dir() . '/calight-time-central-' . bin2hex(random_bytes(6));
         mkdir($tmp . '/migrations', 0770, true);
         try {
@@ -478,34 +479,33 @@ final class TimeTrackingTest extends TestCase
 
             (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate();
             (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate();
-            $state = static fn (string $column, string $reference): array => $pdo->query("SELECT legacy_state, legacy_reason FROM time_entries WHERE {$column} = " . $pdo->quote($reference))->fetch(PDO::FETCH_NUM) ?: ['missing', null];
-            $this->assertSame(['review', 'source_conflict'], $state('daily_report_entry_id', 'd5'), 'Früherer Konflikt: nicht still aufgelöst.');
-            $this->assertSame(['excluded', 'source_choice_time_tracking'], $state('daily_report_entry_id', 'd6'), 'Quellenwahl respektiert.');
-            $this->assertSame([null, null], $state('daily_report_entry_id', 'd7'));
-            $this->assertSame(['excluded', 'source_choice_daily_report'], $state('id', 'm7'), 'Zeitblock nach Wahl „Bautagesbericht“ zählt nicht.');
-            $this->assertSame([[null, null], [null, null]], [$state('id', 'm5'), $state('id', 'm6')]);
-            $this->assertSame(['review', 'order_hours_not_taken_over'], $state('daily_report_entry_id', 'd8'), 'Keine stille Kostenumbuchung.');
-            $this->assertSame([null, null], $state('daily_report_entry_id', 'd9'));
-            $this->assertSame(['missing', null], $state('work_report_labor_id', 'l1'), 'Ersetzte Fassung ohne Buchung.');
-            $this->assertSame(['review', 'historic_work_report'], $state('work_report_labor_id', 'l2'));
-            $this->assertSame([null, null], $state('work_report_labor_id', 'l3'), 'Entwurf ohne Korrekturbezug zählt.');
-            $this->assertSame(['missing', null], $state('work_report_labor_id', 'l4'), 'Korrekturentwurf ohne Buchung.');
-            $this->assertSame('w2', $pdo->query("SELECT superseded_by_id FROM work_reports WHERE id = 'w1'")->fetchColumn());
-            $this->assertSame($hashes, $pdo->query('SELECT id, submitted_sha256 FROM work_reports ORDER BY id')->fetchAll(), 'Prüfsummen unverändert.');
-            $this->assertSame(10, (int) $pdo->query('SELECT COUNT(*) FROM time_entries')->fetchColumn(), 'Keine doppelte Übernahme (3 manuell + 5 Bautagesbericht + 2 Rapport; ersetzte Fassung und Korrekturentwurf ohne Buchung).');
-            $this->assertSame([], $pdo->query('PRAGMA foreign_key_check')->fetchAll());
-            $this->assertSame(1, (int) $pdo->query("SELECT COUNT(*) FROM operational_settings WHERE setting_key = 'time_tracking.times_optional' AND setting_value = '1'")->fetchColumn());
 
-            // Altfall klären: nur Büro, Stunden unverändert, nachvollziehbar.
+            // Quellenwahl-Tabellen und Altfallspalten sind entfernt.
+            $tables = $pdo->query("SELECT name FROM sqlite_master WHERE type = 'table'")->fetchAll(PDO::FETCH_COLUMN);
+            $this->assertTrue(!in_array('time_source_choices', $tables, true) && !in_array('time_source_choice_events', $tables, true));
+            $columns = array_column($pdo->query('PRAGMA table_info(time_entries)')->fetchAll(), 'name');
+            $this->assertSame([], array_values(array_filter($columns, static fn (string $column): bool => str_starts_with($column, 'legacy_'))));
+            foreach (['source_kind', 'daily_report_entry_id', 'work_report_labor_id', 'start_time', 'end_time', 'travel_minutes', 'assignment_kind'] as $column) {
+                $this->assertTrue(in_array($column, $columns, true), $column . ' bleibt Teil der zentralen Stundenbasis.');
+            }
+            // Alle Buchungen bleiben erhalten und zählen regulär genau einmal; ersetzte Fassung und Korrekturentwurf ohne Buchung.
+            $this->assertSame(10, (int) $pdo->query('SELECT COUNT(*) FROM time_entries')->fetchColumn());
+            $this->assertSame(0, (int) $pdo->query("SELECT COUNT(*) FROM time_entries WHERE work_report_labor_id IN ('l1', 'l4')")->fetchColumn());
+            $this->assertSame('w2', $pdo->query("SELECT superseded_by_id FROM work_reports WHERE id = 'w1'")->fetchColumn(), 'Korrekturkette bleibt.');
+            $this->assertSame($hashes, $pdo->query('SELECT id, submitted_sha256 FROM work_reports ORDER BY id')->fetchAll(), 'Prüfsummen unverändert.');
+            $this->assertSame([], $pdo->query('PRAGMA foreign_key_check')->fetchAll());
+            $this->assertSame(1, (int) $pdo->query("SELECT COUNT(*) FROM operational_settings WHERE setting_key = 'time_tracking.times_optional'")->fetchColumn());
+            $this->assertSame(['idx_time_entries_employee_date', 'idx_time_entries_order'], $pdo->query("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'time_entries' AND name LIKE 'idx_%' ORDER BY name")->fetchAll(PDO::FETCH_COLUMN));
+
+            // Auftrags-Ist-Stunden ausschließlich aus time_entries: 3 × 4 h manuell + 2 + 1,5 + 1 + 3 h Bautagesbericht + 8 + 8 h Rapport (w2, w3).
             $service = new TimeTrackingService(new TimeTrackingRepository($pdo), new AttachmentStore($tmp));
             $actual = $service->actualHoursForOrder($order, $office);
-            $this->assertSame(['incomplete', 240 + 240 + 60 + 480], [$actual['status'], $actual['totals']['netMinutes']], 'm5, m6, d7 und Rapportentwurf w3 zählen; Altfälle und Ausgeschlossene nicht.');
-            $review = $pdo->query("SELECT id, version FROM time_entries WHERE daily_report_entry_id = 'd5'")->fetch();
-            $tech = $this->user($pdo, 'technician', $now);
-            $this->assertThrows(AccessDeniedException::class, fn () => $service->resolveLegacy($review['id'], ['version' => $review['version'], 'decision' => 'count'], $tech));
-            $service->resolveLegacy($review['id'], ['version' => $review['version'], 'decision' => 'count'], $office);
-            $this->assertSame(1140, $service->actualHoursForOrder($order, $office)['totals']['netMinutes']);
-            $this->assertThrows(DocumentValidationException::class, fn () => $service->resolveLegacy($review['id'], ['version' => $review['version'] + 1, 'decision' => 'exclude'], $office), 'Nur offene Altfälle.');
+            $this->assertSame([720 + 120 + 90 + 60 + 180 + 960, ['work_report' => 960, 'daily_report' => 450, 'manual' => 720]], [$actual['totals']['netMinutes'], $actual['bySource']]);
+            $this->assertSame(240, $service->day($employee, '2026-01-09', $office)['totals']['netMinutes'], 'Bericht ohne Auftrag zählt als allgemeine Zeit.');
+            // Bestehende Buchungen bleiben bearbeitbar; die Datenbank prüft die Nettozeit weiterhin.
+            $entry = $service->day($employee, '2026-01-05', $office)['entries'];
+            $report = array_values(array_filter($entry, static fn (array $item): bool => $item['sourceKind'] === 'daily_report'))[0];
+            $this->assertSame(120, $service->updateEntry($report['id'], ['version' => $report['version'], 'start' => '13:00', 'end' => '15:00'], $office)['entries'][1]['netMinutes']);
         } finally {
             $this->remove($tmp);
         }

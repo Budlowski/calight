@@ -134,7 +134,6 @@
     if (!totals.bySource) return "";
     const parts = Object.entries(reference.sourceKinds).map(([kind, label]) => (totals.bySource[kind] ? `${label} ${hours(totals.bySource[kind])}` : "")).filter(Boolean);
     if (totals.incompleteMinutes) parts.push(`<span class="time-conflict-text">${hours(totals.incompleteMinutes)} ohne Uhrzeiten</span>`);
-    if (totals.pendingMinutes) parts.push(`<span class="time-conflict-text">${hours(totals.pendingMinutes)} Altfälle in Klärung (nicht enthalten)</span>`);
     return parts.length ? `<p class="muted time-source-line">${parts.join(" · ")}</p>` : "";
   };
   const sourceChip = (entry) => `<span class="time-source time-source-${esc(entry.sourceKind)}">${esc(entry.sourceLabel)}${entry.reportDraft ? " (Entwurf)" : ""}</span>`;
@@ -148,7 +147,7 @@
         <strong class="time-cal-hours">${day.netMinutes ? hours(day.netMinutes).replace(" h", "") : "–"}</strong>
         <small class="time-cal-travel">${travelShort(day.travelMinutes)}</small>
         ${day.privateKm || day.expenseTotal ? '<span class="time-cal-flag" title="Kilometer oder Auslagen erfasst" aria-hidden="true">•</span>' : ""}
-        ${day.incompleteMinutes || day.pendingMinutes ? '<span class="time-cal-flag time-cal-flag-warning" title="Uhrzeiten fehlen oder Altfall in Klärung" aria-hidden="true">!</span>' : ""}
+        ${day.incompleteMinutes ? '<span class="time-cal-flag time-cal-flag-warning" title="Uhrzeiten fehlen" aria-hidden="true">!</span>' : ""}
       </button>`;
   };
 
@@ -203,7 +202,7 @@
           <div class="step-section-actions">${editable ? '<button class="button" type="button" data-add-entry data-icon="plus">Zeitblock</button>' : ""}</div>
         </div>
         ${day.entries.length ? `<ul class="time-blocks">${day.entries.map((entry) => `
-          <li class="time-block${entry.counts ? "" : " is-not-counted"}${entry.timesMissing ? " is-incomplete" : ""}">
+          <li class="time-block${entry.timesMissing ? " is-incomplete" : ""}">
             <span class="time-block-range">${entry.hasTimes ? `${esc(entry.start)}–${esc(entry.end)}${entry.endsNextDay ? ' <small>(+1 Tag)</small>' : ""}` : `<span class="${entry.timesMissing ? "time-conflict-text" : "muted"}">${entry.timesMissing ? "Uhrzeiten fehlen" : "ohne Uhrzeit"}</span>`}</span>
             <span class="time-block-main">${sourceChip(entry)}
               ${entry.sourceKind === "manual" ? `<span class="${activityClass(entry.activity)}">${esc(entry.activityLabel)}</span>` : `<a href="${esc(entry.reportUrl)}">${esc(entry.reportLabel)}</a>`}
@@ -211,12 +210,9 @@
               ${entry.orderNumber ? `<span class="time-block-order">${esc(entry.orderNumber)} · ${esc(entry.orderTitle || "")}</span>` : `<span class="muted">ohne Auftrag${entry.customerName ? ` · ${esc(entry.customerName)}` : ""}</span>`}
               ${entry.reportActivity ? `<small class="muted">${esc(entry.reportActivity)}</small>` : ""}
               ${entry.notes ? `<small class="muted">${esc(entry.notes)}</small>` : ""}
-              ${entry.legacyState ? `<small class="${entry.legacyState === "review" ? "time-conflict-text" : "muted"}">${entry.legacyState === "review" ? "Altfall in Klärung – zählt noch nicht: " : "Zählt nicht: "}${esc(entry.legacyReasonLabel || "")}</small>` : ""}
-              ${!entry.legacyState && entry.legacyResolvedAt ? `<small class="muted">Altfall geklärt von ${esc(entry.legacyResolvedByName)} am ${format.dateTime(entry.legacyResolvedAt)}</small>` : ""}
               ${entry.changedByOther ? `<small class="muted">geändert von ${esc(entry.updatedByName)} am ${format.dateTime(entry.updatedAt)}</small>` : ""}</span>
             <span class="time-block-net"><strong>${hours(entry.netMinutes)}</strong>${entry.durationFixed ? '<small class="muted">laut Bericht</small>' : ""}${entry.travelMinutes ? `<small class="time-travel">davon ${hours(entry.travelMinutes)} Reise</small>` : ""}${entry.breakMinutes ? `<small class="muted">${entry.breakMinutes} min Pause</small>` : ""}</span>
             <span class="time-block-actions">
-              ${day.canResolveLegacy && entry.legacyState === "review" ? `<button class="button button-light button-small" type="button" data-legacy="count" data-entry="${esc(entry.id)}">Zählt</button><button class="button button-light button-small" type="button" data-legacy="exclude" data-entry="${esc(entry.id)}">Zählt nicht</button>` : ""}
               ${entry.canEditTimes ? `<button class="icon-button" type="button" data-edit-entry="${esc(entry.id)}" data-icon="square-pen" title="${entry.durationFixed ? "Uhrzeiten ergänzen" : "Bearbeiten"}" aria-label="${entry.durationFixed ? "Uhrzeiten ergänzen" : "Bearbeiten"}"></button>` : ""}
               ${entry.canDelete ? `<button class="icon-button icon-button-danger" type="button" data-delete-entry="${esc(entry.id)}" data-icon="trash" title="Löschen" aria-label="Zeitblock löschen"></button>` : ""}
             </span>
@@ -454,10 +450,9 @@
     return period === total ? hours(total) : `${hours(period)} <small class="muted" title="Block über Mitternacht an der Zeitraumgrenze">von ${hours(total)}</small>`;
   }
 
-  /** Herkunft der Stunden je Auftrag und offene Punkte (Altfälle, fehlende Uhrzeiten). */
+  /** Herkunft der Stunden je Auftrag und fehlende Uhrzeiten. */
   function orderSourceNote(row) {
     const notes = Object.entries(reference.sourceKinds).map(([kind, label]) => (row.bySource[kind] ? `<span class="muted">${label} ${hours(row.bySource[kind])}</span>` : "")).filter(Boolean);
-    if (row.pendingMinutes) notes.push(`<span class="time-conflict-text">${hours(row.pendingMinutes)} Altfälle in Klärung</span>`);
     if (row.incompleteMinutes) notes.push(`<span class="time-conflict-text">${hours(row.incompleteMinutes)} ohne Uhrzeiten</span>`);
     return notes.join("<br>") || '<span class="muted">–</span>';
   }
@@ -474,10 +469,6 @@
         <select data-report-order aria-label="Auftrag"><option value="">Alle Aufträge</option>${reference.orders.map((item) => `<option value="${esc(item.id)}"${item.id === order ? " selected" : ""}>${esc(item.orderNumber)} · ${esc(item.title)}</option>`).join("")}</select>
       </div>
       ${summaryTiles(data.totals)}
-      ${data.reviews.length ? `<section class="card form-stack time-report-conflicts">
-        <div class="step-section-heading"><div><h2>Altfälle in Klärung (${data.reviews.length})</h2><small>Bestandsdaten aus der Zeit vor der zentralen Stundenbasis. Sie zählen erst, wenn das Büro in der Tagesansicht „Zählt“ wählt; „Zählt nicht“ schließt sie dauerhaft aus. Es wird nichts automatisch zusammengeführt.</small></div></div>
-        <ul class="time-reference-list">${data.reviews.map((row) => `<li class="is-conflict"><a href="/time-tracking?view=day&date=${encodeURIComponent(row.date)}&employee=${encodeURIComponent(row.employeeId)}">${format.date(row.date)} · ${esc(row.employeeName)} · ${esc(row.reportLabel || row.sourceLabel)}</a>
-          <span>${hours(row.netMinutes)}${row.orderNumber ? ` · ${esc(row.orderNumber)}` : ""}</span><small class="time-conflict-text">${esc(row.legacyReasonLabel)}</small></li>`).join("")}</ul></section>` : ""}
       <h3 class="purchase-subheading">Nach Auftrag</h3>
       <div class="overview-table-wrap"><table class="overview-table"><thead><tr><th class="cell-title">Auftrag</th><th class="cell-money">Nettozeit</th><th class="cell-money">Davon Reise</th><th class="cell-money">Übrige Arbeit</th><th class="cell-status">Herkunft</th></tr></thead>
         <tbody>${data.byOrder.map((row) => `<tr><td class="cell-title">${row.orderId ? `${esc(row.orderNumber)} · ${esc(row.orderTitle)}` : '<span class="muted">Ohne Auftrag</span>'}</td><td class="cell-money">${hours(row.netMinutes)}</td><td class="cell-money">${hours(row.travelMinutes)}</td><td class="cell-money">${hours(row.workMinutes)}</td>
@@ -485,7 +476,7 @@
       <h3 class="purchase-subheading">Buchungen</h3>
       <div class="overview-table-wrap"><table class="overview-table"><thead><tr><th class="cell-date">Datum</th><th class="cell-text">Mitarbeiter</th><th class="cell-text">Zeit</th><th class="cell-type">Herkunft</th><th class="cell-type">Einsatz</th><th class="cell-number">Auftrag</th><th class="cell-money">Netto</th><th class="cell-money">Reise</th></tr></thead>
         <tbody>${data.rows.map((row) => `<tr><td class="cell-date">${format.date(row.date)}</td><td class="cell-text">${esc(row.employeeName)}</td><td class="cell-text">${row.hasTimes ? `${esc(row.start)}–${esc(row.end)}${row.endsNextDay ? " (+1)" : ""}` : `<span class="${data.timesOptional ? "muted" : "time-conflict-text"}">ohne Uhrzeit</span>`}</td>
-          <td class="cell-type">${row.reportUrl ? `<a href="${esc(row.reportUrl)}">${esc(row.reportLabel)}</a>` : `<span class="${activityClass(row.activity)}">${esc(row.activityLabel)}</span>`}</td><td class="cell-type" title="${esc(row.assignmentLabel)}">${row.assignmentKind === "external" ? "Auswärts" : row.assignmentKind === "regular" ? "Erste T." : "–"}</td><td class="cell-number">${esc(row.orderNumber || "–")}</td><td class="cell-money">${periodHours(row.periodNetMinutes, row.netMinutes)}${row.legacyState ? ` <span class="time-conflict-text" title="${row.legacyState === "review" ? "Altfall in Klärung – nicht in den Summen" : "zählt nicht"}">${row.legacyState === "review" ? "?" : "×"}</span>` : ""}</td><td class="cell-money">${row.travelMinutes ? periodHours(row.periodTravelMinutes, row.travelMinutes) : "–"}</td></tr>`).join("") || '<tr><td colspan="8" class="muted">Keine Einträge.</td></tr>'}</tbody></table></div>`;
+          <td class="cell-type">${row.reportUrl ? `<a href="${esc(row.reportUrl)}">${esc(row.reportLabel)}</a>` : `<span class="${activityClass(row.activity)}">${esc(row.activityLabel)}</span>`}</td><td class="cell-type" title="${esc(row.assignmentLabel)}">${row.assignmentKind === "external" ? "Auswärts" : row.assignmentKind === "regular" ? "Erste T." : "–"}</td><td class="cell-number">${esc(row.orderNumber || "–")}</td><td class="cell-money">${periodHours(row.periodNetMinutes, row.netMinutes)}</td><td class="cell-money">${row.travelMinutes ? periodHours(row.periodTravelMinutes, row.travelMinutes) : "–"}</td></tr>`).join("") || '<tr><td colspan="8" class="muted">Keine Einträge.</td></tr>'}</tbody></table></div>`;
     content.querySelector("[data-report-employee]").addEventListener("change", (event) => {
       state.employee = event.target.value;
       render();
@@ -523,22 +514,6 @@
       state.date = dayRow.dataset.openDay;
       state.view = "day";
       return render();
-    }
-    const legacy = event.target.closest("[data-legacy]");
-    if (legacy) {
-      const entry = current.entries.find((item) => item.id === legacy.dataset.entry);
-      const counts = legacy.dataset.legacy === "count";
-      const ok = await CalightModal.confirm({ title: counts ? "Altfall: Stunden zählen" : "Altfall: Stunden zählen nicht",
-        content: `${entry.reportLabel || entry.sourceLabel}: ${hours(entry.netMinutes)} ${counts ? "zählen künftig als Ist-Zeit." : "bleiben erhalten, zählen aber nicht als Ist-Zeit."} Die Entscheidung wird mit Benutzer und Zeitpunkt gespeichert.`,
-        confirmLabel: counts ? "Zählt" : "Zählt nicht" });
-      if (!ok) return;
-      try {
-        current = await api(`/api/time-tracking/entries/${encodeURIComponent(entry.id)}/legacy`, { method: "PUT", body: { version: entry.version, decision: legacy.dataset.legacy } });
-        await renderDay();
-      } catch (exception) {
-        notify(message, exception.message);
-      }
-      return;
     }
     if (event.target.closest("[data-add-entry]")) return entryDialog();
     if (event.target.closest("[data-details]")) return detailsDialog();

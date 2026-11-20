@@ -81,7 +81,7 @@ final readonly class DailyReportRepository
     /** @return array<string,mixed>|null */
     public function find(string $id):?array
     {
-        $s=$this->pdo->prepare("SELECT r.*,o.order_number,o.title order_title,o.status order_status,o.basis_json,o.project_id order_project_id,c.customer_number,CASE WHEN c.customer_type='company' THEN c.company_name ELSE trim(c.first_name||' '||c.last_name) END customer_name,p.project_number,p.name project_name,u.display_name creator_name,ua.display_name order_assigned_by_name,ul.display_name labor_assigned_by_name FROM daily_reports r LEFT JOIN orders o ON o.id=r.order_id JOIN customers c ON c.id=r.customer_id LEFT JOIN projects p ON p.id=r.project_id JOIN users u ON u.id=r.created_by_user_id LEFT JOIN users ua ON ua.id=r.order_assigned_by_user_id LEFT JOIN users ul ON ul.id=r.labor_assigned_by_user_id WHERE r.id=:id");$s->execute(['id'=>$id]);$row=$s->fetch();return is_array($row)?$row:null;
+        $s=$this->pdo->prepare("SELECT r.*,o.order_number,o.title order_title,o.status order_status,o.basis_json,o.project_id order_project_id,c.customer_number,CASE WHEN c.customer_type='company' THEN c.company_name ELSE trim(c.first_name||' '||c.last_name) END customer_name,p.project_number,p.name project_name,u.display_name creator_name,ua.display_name order_assigned_by_name FROM daily_reports r LEFT JOIN orders o ON o.id=r.order_id JOIN customers c ON c.id=r.customer_id LEFT JOIN projects p ON p.id=r.project_id JOIN users u ON u.id=r.created_by_user_id LEFT JOIN users ua ON ua.id=r.order_assigned_by_user_id WHERE r.id=:id");$s->execute(['id'=>$id]);$row=$s->fetch();return is_array($row)?$row:null;
     }
 
     /** @return list<array<string,mixed>> */
@@ -189,15 +189,6 @@ final readonly class DailyReportRepository
         return true;
     }
 
-    /** Zentrale Zeitbuchungen der Positionen eines Berichts. @return list<array<string,mixed>> */
-    public function bookings(string $id): array
-    {
-        $statement = $this->pdo->prepare('SELECT b.id, b.daily_report_entry_id, b.net_minutes, b.start_time, b.end_time, b.legacy_state, b.legacy_reason
-            FROM time_entries b JOIN daily_report_time_entries e ON e.id = b.daily_report_entry_id WHERE e.report_id = :id');
-        $statement->execute(['id' => $id]);
-        return $statement->fetchAll();
-    }
-
     /** Protokoll der Auftragszuordnung (älteste zuerst). @return list<array<string,mixed>> */
     public function orderEvents(string $id): array
     {
@@ -246,7 +237,7 @@ final readonly class DailyReportRepository
     /** @return list<array{duration_hours:string,labor_cost:string}> */
     public function costRowsForOrder(string $orderId):array
     {
-        // Nur zählende zentrale Buchungen (keine Altfälle in Klärung oder ausgeschlossene).
-        $s=$this->pdo->prepare('SELECT t.duration_hours,t.labor_cost FROM daily_report_time_entries t JOIN time_entries b ON b.daily_report_entry_id=t.id WHERE b.order_id=:id AND b.legacy_state IS NULL');$s->execute(['id'=>$orderId]);return$s->fetchAll();
+        // Auftragsbezug der zentralen Buchungen (folgt dem Auftrag des Berichts).
+        $s=$this->pdo->prepare('SELECT t.duration_hours,t.labor_cost FROM daily_report_time_entries t JOIN time_entries b ON b.daily_report_entry_id=t.id WHERE b.order_id=:id');$s->execute(['id'=>$orderId]);return$s->fetchAll();
     }
 }

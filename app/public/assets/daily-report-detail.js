@@ -101,9 +101,6 @@
    */
   function renderAssignment() {
     const box = root.querySelector("[data-assignment]");
-    const bookings = report.bookings || [];
-    const pending = bookings.filter((booking) => booking.legacy_state === "review").length;
-    const excluded = bookings.filter((booking) => booking.legacy_state === "excluded").length;
     const lines = [
       `<dt>Kunde</dt><dd>${esc(report.customer_name)}${report.customer_number ? ` <span class="muted">(${esc(report.customer_number)})</span>` : ""}</dd>`,
       report.project_id ? `<dt>Projekt</dt><dd>${esc([report.project_number, report.project_name].filter(Boolean).join(" · "))}</dd>` : "",
@@ -111,8 +108,7 @@
         ? `<a href="/orders/${encodeURIComponent(report.order_id)}">${esc(report.order_number)} · ${esc(report.order_title)}</a>${report.order_assigned_at
           ? ` <small class="muted">zugeordnet von ${esc(report.order_assigned_by_name)} am ${format.dateTime(report.order_assigned_at)}</small>` : ""}`
         : '<span class="muted">Ohne Auftrag</span>'}</dd>`,
-      `<dt>Arbeitszeiten</dt><dd>erscheinen in der Zeiterfassung der Mitarbeiter${report.order_id ? " und zählen als Ist-Stunden dieses Auftrags" : " (ohne Auftrag)"}${pending
-        ? ` <span class="time-conflict-text">· ${pending} Altfall/Altfälle in Klärung (zählen noch nicht)</span>` : ""}${excluded ? ` <span class="muted">· ${excluded} zählen nicht (frühere Entscheidung)</span>` : ""}</dd>`,
+      `<dt>Arbeitszeiten</dt><dd>erscheinen in der Zeiterfassung der Mitarbeiter${report.order_id ? " und zählen als Ist-Stunden dieses Auftrags" : " (ohne Auftrag)"}</dd>`,
     ];
     const events = report.orderEvents || [];
     box.innerHTML = `<dl class="report-assignment">${lines.join("")}</dl>

@@ -118,8 +118,7 @@ final readonly class DailyReportService
         $report['labor_counts_for_order']=(bool)$report['labor_counts_for_order'];
         $report['canAssignOrder']=$this->can($actor,'orders.write');
         $report['orderEvents']=$this->can($actor,'orders.write')?$this->reports->orderEvents($id):[];
-        // Zentrale Zeitbuchungen der Positionen (Status aus der Zeiterfassung: zählt / Altfall in Klärung / ausgeschlossen).
-        $report['bookings']=$this->reports->bookings($id);
+
         unset($report['order_project_id']);return$report;
     }
 
@@ -161,7 +160,7 @@ final readonly class DailyReportService
     /**
      * Auftrag eines Berichts setzen, ändern oder entfernen (Büro, orders.write). Nur Aufträge
      * desselben Kunden und passenden Projekts. Die zugehörigen Zeitbuchungen erhalten denselben
-     * Auftrag (keine neuen Buchungen); Altfälle in Klärung bleiben in Klärung. Protokolliert.
+     * Auftrag (keine neuen Buchungen). Protokolliert.
      *
      * @param array<string,mixed> $input version, orderId ('' = ohne Auftrag)
      * @param array<string,mixed> $actor
