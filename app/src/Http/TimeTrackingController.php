@@ -32,8 +32,8 @@ final readonly class TimeTrackingController
         $router->add('POST', '/api/time-tracking/entries', fn (Request $request): Response => $this->mutate($request, fn (array $data): array => $this->service->createEntry($data, $this->actor()), 201));
         $router->add('PUT', '/api/time-tracking/entries/{id}', fn (Request $request, array $parameters): Response => $this->mutate($request, fn (array $data): array => $this->service->updateEntry($parameters['id'], $data, $this->actor())));
         $router->add('DELETE', '/api/time-tracking/entries/{id}', fn (Request $request, array $parameters): Response => $this->mutate($request, fn (array $data): array => $this->service->deleteEntry($parameters['id'], $data, $this->actor())));
-        // Maßgebliche Stundenquelle bei Zeiterfassung und Bautagesbericht (nur Büro, Prüfung im Service).
-        $router->add('PUT', '/api/time-tracking/source', fn (Request $request): Response => $this->mutate($request, fn (array $data): array => $this->service->chooseSource($data, $this->actor())));
+        // Altfall klären (Büro): Buchung zählt oder zählt nicht; Stunden bleiben unverändert.
+        $router->add('PUT', '/api/time-tracking/entries/{id}/legacy', fn (Request $request, array $parameters): Response => $this->mutate($request, fn (array $data): array => $this->service->resolveLegacy($parameters['id'], $data, $this->actor())));
         $router->add('PUT', '/api/time-tracking/details', fn (Request $request): Response => $this->mutate($request, fn (array $data): array => $this->service->saveDetails($data, $this->actor())));
         $router->add('POST', '/api/time-tracking/expenses', fn (Request $request): Response => $this->expense($request));
         $router->add('DELETE', '/api/time-tracking/expenses/{id}', fn (Request $request, array $parameters): Response => $this->mutate($request, fn (): array => $this->service->deleteExpense($parameters['id'], $this->actor())));

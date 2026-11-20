@@ -28,7 +28,7 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 | 3.4.1.1 | Bestellverwaltung als Vorgang: AB, Lieferungen, Belege, Zahlungen, Lieferantenanschrift | Implementiert (`0030`); Phase 3.4.1 damit abgeschlossen |
 | 3.4.2 | Zentrale Dokumentenübersicht und geschäftsbezogene Anhänge | Implementiert (`0031`) |
 | 3.4.3 | Zeiterfassung: Arbeits- und Reisezeiten, Einsatz, Kilometer und Auslagen | Abgeschlossen (`0032`, Korrekturen `0033`, Quellenwahl-Verlauf `0034`) |
-| 3.4.4 | Monteurs-Interface (mobile Oberfläche für Zeiterfassung, Berichte, Rapporte) | Geplant – nächster Schritt |
+| 3.4.4 | Monteurs-Interface (mobile Oberfläche für Zeiterfassung, Berichte, Rapporte) | Geplant – nächster Schritt (zentrale Stundenbasis `0037` als Grundlage) |
 | 3.5 | Nachkalkulation und Soll-Ist-Vergleich | Geplant |
 | 3.6 | Abrechnungstracking, ohne Rechnungsstellung | Geplant |
 | 3.7 | Lieferscheine mit PDF-Ausgabe (Liefernachweise) | Geplant |
@@ -417,7 +417,18 @@ Bestellungen sind **an Lieferanten gerichtete Beschaffungsdokumente**, keine Rec
 
 **Bewusst offen:** serverseitige SQL-Pagination der Projektion (derzeit Zusammenführung im Server, ausreichend für überschaubare Mengen); Upload-Ereignisse im fachlichen Verlauf der Objekte. Lieferscheine (Phase 3.4.3) werden als weitere Quelle der Projektion ergänzt.
 
-## Phase 3.4.3 – Zeiterfassung (abgeschlossen, Migrationen `0032`, `0033`, `0034`)
+## Zentrale Stundenbasis (Migration `0037`, Abschluss vor Phase 3.4.4)
+
+**Grundsätze:** Rapporte und Bautagesberichte sind eigenständige Quellen tatsächlicher Mitarbeiterstunden. Die Zeiterfassung führt alle Stunden zusammen und ergänzt allgemeine Tätigkeiten sowie Uhrzeiten. Ein Korrekturrapport ersetzt seinen Vorgänger vollständig; ausschließlich die jeweils gültige Fassung ist maßgeblich. Die Stundenmenge eines Berichts kann nicht durch die Zeiterfassung verändert werden. Die Nachkalkulation verwendet nur die zentrale Ist-Stundenbasis.
+
+- **Eine Basis:** `time_entries` mit Herkunft Rapport, Bautagesbericht oder manuell; je Berichtsstundenposition genau eine Buchung (eindeutige Referenz, Löschung per Kaskade). Gleiche Mitarbeiter, Tage oder Aufträge werden nie automatisch zusammengeführt.
+- **Rapport:** Stunden erscheinen sofort am Leistungsdatum (Entwurf als „Entwurf“ gekennzeichnet); das Einreichen erzeugt keine zweite Buchung. Korrekturentwürfe wirken nicht; beim Einreichen ersetzt die Korrektur atomar die Buchungen der Vorgängerfassung. Ergänzte Uhrzeiten werden nur bei eindeutig gleicher Position (Mitarbeiter, Datum, Dauer) übernommen. Ersetzte Fassungen bleiben vollständig erhalten.
+- **Bautagesbericht:** Stunden erscheinen automatisch; Stundenkorrekturen am Bericht wirken sofort (ohne Differenzbuchung, mit Benutzer). Die Auftragszuordnung kann vom Büro gesetzt, geändert oder entfernt werden – die Stunden folgen (protokolliert). Die frühere separate „Stundenübernahme“ entfällt.
+- **Zeiterfassung:** Tag/Woche/Monat zeigen alle Herkünfte mit Kennzeichnung und Link zum Bericht. Für Berichtsbuchungen werden nur Beginn, Ende, Pause, Reisezeit und Einsatzart ergänzt; Ende − Beginn − Pause muss exakt der Berichtsdauer entsprechen (sonst eigener Zeitblock oder Berichtskorrektur). Manuelle Zeitblöcke wie bisher, ohne Uhrzeiten nur mit Dauer, wenn die Betriebseinstellung es erlaubt. Überschneidungsprüfung über alle Buchungen mit Uhrzeiten.
+- **Einstellungen → Betrieb** (nur Administratoren): „Stundenerfassung ohne Uhrzeiten erlauben“ (Standard: an). Aus: Stunden ohne Uhrzeiten zählen voll, sind aber „Uhrzeiten fehlen“; Auswertungen weisen sie gesondert aus.
+- **Altdaten:** Keine stille Umdeutung. Frühere Quellenwahlen bleiben wirksam (`excluded`), frühere Konflikte, nicht übernommene Auftragsstunden, eingereichte Altrapporte und mehrdeutige Korrekturketten werden als Altfall markiert (`review`) und vom Büro einmalig mit „Zählt“ / „Zählt nicht“ geklärt. Prüfsummen, PDFs und Bestätigungen bleiben unverändert.
+
+## Phase 3.4.3 – Zeiterfassung (abgeschlossen, Migrationen `0032`, `0033`, `0034`; seit `0037` zentrale Stundenbasis)
 
 **Grundsatz:** tatsächliche Arbeits- und Reisezeiten je Mitarbeiter und Tag – keine Lohn-, Reisekosten- oder Personalverwaltung, keine Stempeluhr, kein GPS, keine automatischen Pauschalen oder steuerlichen Einstufungen.
 

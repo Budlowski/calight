@@ -11,6 +11,7 @@ use App\Http\AccessDeniedException;
 use App\Infrastructure\Persistence\AttachmentStore;
 use App\Infrastructure\Persistence\NumberRangeRepository;
 use App\Infrastructure\Persistence\OrderRepository;
+use App\Infrastructure\Persistence\ReportTimeBookings;
 use App\Infrastructure\Persistence\WorkReportRepository;
 use App\Security\RolePermissions;
 use App\Support\Clock;
@@ -33,7 +34,12 @@ use Throwable;
  * ohne den Leistungsnachweis zu verändern.
  *
  * Der Leistungsnachweis (Kopf, Stunden, Material) ist ab dem Einreichen
- * unveränderlich und per SHA-256 festgeschrieben. Preise und Beträge werden nur
+ * unveränderlich und per SHA-256 festgeschrieben.
+ *
+ * Stundenpositionen mit Mitarbeiter sind tatsächliche Arbeitszeit: Je maßgeblicher Position gibt
+ * es genau eine zentrale Zeitbuchung (ReportTimeBookings, gleiche Transaktion). Maßgeblich sind
+ * Entwürfe ohne Korrekturbezug und die gültige eingereichte Fassung einer Korrekturkette. Ein
+ * Korrekturrapport ersetzt seinen Vorgänger erst beim Einreichen vollständig (superseded_by_id). Preise und Beträge werden nur
  * mit workreports.process ausgeliefert. Rapporte erzeugen keine Ist-Kosten.
  */
 final readonly class WorkReportService
@@ -114,6 +120,9 @@ final readonly class WorkReportService
             $original = $this->accessibleReport($correctionOf, $actor);
             if ($original['status'] === 'draft') {
                 throw new OrderValidationException(['Korrigiert werden können nur eingereichte Rapporte.']);
+            }
+            if ($original['superseded_by_id'] !== null) {
+                throw new OrderValidationException(['Dieser Rapport wurde bereits durch ' . ($original['superseded_by_number'] ?? 'eine Korrektur') . ' ersetzt. Bitte die gültige Fassung korrigieren.']);
             }
             if (!$this->canProcess($actor) && (string) $original['created_by_user_id'] !== (string) $actor['id']) {
                 throw new AccessDeniedException('workreports.write.own');
@@ -206,7 +215,7 @@ final readonly class WorkReportService
             'projectNumber' => $context['project_number'] ?? null,
             'projectName' => $context['project_name'] ?? null,
             'labor' => array_map(static fn (array $item): array => [
-                'workDate' => $item['work_date'], 'employeeId' => $item['employee_id'], 'workerName' => $item['worker_name'], 'hours' => $item['hours'],
+                'id' => $item['id'], 'workDate' => $item['work_date'], 'employeeId' => $item['employee_id'], 'workerName' => $item['worker_name'], 'hours' => $item['hours'],
                 'laborItemId' => $item['labor_item_id'], 'laborItemName' => $item['labor_item_name'], 'activity' => $item['activity'],
             ], $labor),
             'materials' => array_map(static fn (array $item): array => [
@@ -236,7 +245,7 @@ final readonly class WorkReportService
     public function update(string $id, array $input, array $actor): array
     {
         $current = $this->editableDraft($id, $actor);
-        $labor = $this->validateLabor($input['labor'] ?? [], $id, (string) $current['work_date']);
+        $labor = $this->validateLabor($input['labor'] ?? [], $id, (string) $current['work_date'], $this->reports->laborIds($id));
         $header = $this->validateHeader($input) + self::laborPeriod($labor, (string) $current['work_date']);
         $materials = $this->validateMaterials($input['materials'] ?? [], $id);
         $this->pdo->exec('BEGIN IMMEDIATE');
@@ -245,6 +254,7 @@ final readonly class WorkReportService
                 throw new OrderValidationException(['Der Rapport wurde zwischenzeitlich geändert oder eingereicht. Bitte neu laden.']);
             }
             $this->reports->replaceProof($id, $labor, $materials);
+            (new ReportTimeBookings($this->pdo))->syncWorkReport($id, (string) $actor['id'], Clock::now());
             $this->pdo->commit();
         } catch (Throwable $exception) {
             if ($this->pdo->inTransaction()) {
@@ -313,6 +323,16 @@ final readonly class WorkReportService
             $number = $this->numbers->allocate('work_report', 'work_report', $id, Uuid::v4(), new DateTimeImmutable());
             if (!$this->reports->submit($id, $version, $number, (string) $actor['id'], $now, $this->proofHash($report, $labor, $materials))) {
                 throw new OrderValidationException(['Der Rapport wurde zwischenzeitlich geändert oder eingereicht. Bitte neu laden.']);
+            }
+            $bookings = new ReportTimeBookings($this->pdo);
+            if ($report['correction_of_id'] !== null) {
+                // Gültigkeitswechsel und Buchungen in derselben Transaktion; konkurrierende Korrekturen scheitern hier.
+                if (!$this->reports->supersede((string) $report['correction_of_id'], $id, $now)) {
+                    throw new OrderValidationException(['Der korrigierte Rapport wurde bereits durch eine andere Korrektur ersetzt. Bitte die gültige Fassung erneut korrigieren.']);
+                }
+                $bookings->replaceByCorrection((string) $report['correction_of_id'], $id, (string) $actor['id'], $now);
+            } else {
+                $bookings->syncWorkReport($id, (string) $actor['id'], $now);
             }
             $this->pdo->commit();
         } catch (Throwable $exception) {
@@ -529,8 +549,19 @@ final readonly class WorkReportService
         if ((string) $order['customer_id'] !== (string) $report['customer_id']) {
             throw new OrderValidationException(['Der Auftrag gehört nicht zum Kunden des Rapports.']);
         }
-        if (!$this->reports->assignOrder($id, $this->version($input), (string) $order['id'], (string) $actor['id'], Clock::now())) {
-            throw new OrderValidationException(['Der Rapport wurde zwischenzeitlich geändert. Bitte neu laden.']);
+        $this->pdo->exec('BEGIN IMMEDIATE');
+        try {
+            if (!$this->reports->assignOrder($id, $this->version($input), (string) $order['id'], (string) $actor['id'], Clock::now())) {
+                throw new OrderValidationException(['Der Rapport wurde zwischenzeitlich geändert. Bitte neu laden.']);
+            }
+            // Zeitbuchungen folgen dem Auftrag des Rapports (keine neuen Buchungen).
+            (new ReportTimeBookings($this->pdo))->syncWorkReport($id, (string) $actor['id'], Clock::now());
+            $this->pdo->commit();
+        } catch (Throwable $exception) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $exception;
         }
         return $this->detail($id, $actor);
     }
@@ -740,8 +771,10 @@ final readonly class WorkReportService
     }
 
     /** @return list<array<string,mixed>> */
-    private function validateLabor(mixed $raw, string $reportId, string $defaultDate): array
+    /** @param list<string> $existingIds IDs vorhandener Positionen dieses Rapports (bleiben stabil) */
+    private function validateLabor(mixed $raw, string $reportId, string $defaultDate, array $existingIds = []): array
     {
+        $usedIds = [];
         $rows = $this->rows($raw, 'Arbeitsstunden');
         $result = [];
         foreach ($rows as $index => $row) {
@@ -761,6 +794,13 @@ final readonly class WorkReportService
             $workDate = trim((string) ($row['workDate'] ?? '')) ?: $defaultDate;
             $this->validDate($workDate, $label . ': Leistungsdatum');
             $hours = $this->positive((string) ($row['hours'] ?? ''), Decimal::TIME_SCALE, $label . ': Stunden');
+            // Stunden sind tatsächliche Arbeitszeit in ganzen Minuten (zentrale Zeitbuchung).
+            if (!ReportTimeBookings::wholeMinutes(BigDecimal::of($hours))) {
+                throw new OrderValidationException([$label . ': Stunden müssen ganzen Minuten entsprechen (z. B. 1,5 oder 0,25).']);
+            }
+            $rowId = trim((string) ($row['id'] ?? ''));
+            $rowId = in_array($rowId, $existingIds, true) && !isset($usedIds[$rowId]) ? $rowId : Uuid::v4();
+            $usedIds[$rowId] = true;
             $itemId = trim((string) ($row['laborItemId'] ?? ''));
             $itemName = '';
             if ($itemId !== '') {
@@ -775,7 +815,7 @@ final readonly class WorkReportService
                 throw new OrderValidationException([$label . ': Die Tätigkeit darf höchstens 500 Zeichen lang sein.']);
             }
             $result[] = [
-                'id' => Uuid::v4(), 'report_id' => $reportId, 'employee_id' => $employeeId !== '' ? $employeeId : null, 'worker_name' => $name, 'work_date' => $workDate,
+                'id' => $rowId, 'report_id' => $reportId, 'employee_id' => $employeeId !== '' ? $employeeId : null, 'worker_name' => $name, 'work_date' => $workDate,
                 'hours' => $hours, 'labor_item_id' => $itemId !== '' ? $itemId : null, 'labor_item_name' => $itemName,
                 'activity' => $activity, 'sort_order' => $index,
             ];
@@ -1070,6 +1110,11 @@ final readonly class WorkReportService
             'correctionOfId' => $row['correction_of_id'],
             'correctedNumber' => $row['corrected_number'],
             'correctionCount' => (int) $row['correction_count'],
+            // Korrekturkette: ersetzte Fassungen bleiben vollständig erhalten, zählen aber nicht mehr.
+            'supersededById' => $row['superseded_by_id'] ?? null,
+            'supersededByNumber' => $row['superseded_by_number'] ?? null,
+            'supersededAt' => $row['superseded_at'] ?? null,
+            'valid' => $row['status'] !== 'draft' && ($row['superseded_by_id'] ?? null) === null,
             'creatorName' => $row['creator_name'],
             'createdAt' => $row['created_at'],
             'submittedAt' => $row['submitted_at'],
@@ -1080,7 +1125,7 @@ final readonly class WorkReportService
             'canEdit' => $this->canEditDraft($row, $actor),
             'canProcess' => $this->canProcess($actor),
             'canConfirm' => $row['status'] !== 'draft' && $row['confirmation_status'] === 'none' && ($this->canProcess($actor) || $own),
-            'canCorrect' => $row['status'] !== 'draft' && $this->can($actor, 'workreports.write') && ($this->canProcess($actor) || $own),
+            'canCorrect' => $row['status'] !== 'draft' && ($row['superseded_by_id'] ?? null) === null && $this->can($actor, 'workreports.write') && ($this->canProcess($actor) || $own),
             'canAssignOrder' => $row['order_id'] === null && $this->canProcess($actor),
             'canSign' => $row['status'] !== 'draft' && $row['confirmation_status'] === 'none' && $this->can($actor, 'workreports.write') && ($this->canProcess($actor) || $own),
             'canUploadConfirmation' => $row['status'] !== 'draft' && $row['confirmation_status'] === 'none' && $this->canProcess($actor),

@@ -104,7 +104,8 @@ final class DailyReportTest extends TestCase
             $this->assertSame('Ohne Auftrag', $report['targets'][0]['label']);
             $this->assertSame('2.000', $report['entries'][0]['duration_hours'], 'Mitarbeiterzeiten ohne Auftrag.');
             $this->assertSame($ordersBefore, (int) $pdo->query('SELECT COUNT(*) FROM orders')->fetchColumn());
-            $this->assertTrue(!$report['canAssignOrder'] && !$report['canCountLabor'], 'Monteure ordnen nicht zu.');
+            $this->assertTrue(!$report['canAssignOrder'], 'Monteure ordnen nicht zu.');
+            $this->assertSame(1, (int) $pdo->query("SELECT COUNT(*) FROM time_entries WHERE source_kind = 'daily_report' AND order_id IS NULL")->fetchColumn(), 'Stunden ohne Auftrag in der Zeiterfassung.');
             $updated = $service->update($report['id'], ['version' => $report['version'], 'reportDate' => '2026-11-12', 'title' => 'Besichtigung', 'activities' => 'Bestandsaufnahme ergänzt', 'entries' => [$entry]], $tech);
             $this->assertSame(null, $updated['order_id']);
 
@@ -150,27 +151,24 @@ final class DailyReportTest extends TestCase
             $pdo->prepare("INSERT INTO orders(id,order_number,customer_id,order_type,title,order_date,status,created_at,updated_at) VALUES(:id,'AU9',:customer,'regie','Fremd','2026-11-10','in_progress',:now,:now)")
                 ->execute(['id' => $foreignOrder, 'customer' => $otherCustomer, 'now' => $now]);
             $current = $service->detail($report['id'], $office);
-            $this->assertTrue($current['canAssignOrder'] && !$current['canCountLabor']);
+            $this->assertTrue($current['canAssignOrder']);
             $this->assertThrows(AccessDeniedException::class, fn () => $service->assignOrder($report['id'], ['version' => $current['version'], 'orderId' => $ids['order']], $tech));
             $this->assertThrows(DailyReportValidationException::class, fn () => $service->assignOrder($report['id'], ['version' => $current['version'], 'orderId' => $foreignOrder], $office));
             $this->assertThrows(DailyReportValidationException::class, fn () => $service->assignOrder($report['id'], ['version' => $current['version'] - 1, 'orderId' => $ids['order']], $office));
             $entriesBefore = $pdo->query('SELECT id, duration_hours, labor_cost, hourly_cost_rate_snapshot, updated_at FROM daily_report_time_entries WHERE report_id = ' . $pdo->quote($report['id']))->fetchAll();
             $assigned = $service->assignOrder($report['id'], ['version' => $current['version'], 'orderId' => $ids['order']], $office);
-            $this->assertSame([$ids['order'], 'Büro', false], [$assigned['order_id'], $assigned['order_assigned_by_name'], $assigned['labor_counts_for_order']]);
+            $this->assertSame([$ids['order'], 'Büro', true], [$assigned['order_id'], $assigned['order_assigned_by_name'], $assigned['labor_counts_for_order']], 'Stunden folgen dem Auftrag.');
             $this->assertSame([$report['created_at'], 'Bestandsaufnahme ergänzt', $project], [$assigned['created_at'], $assigned['activities'], $assigned['project_id']], 'Erstellungszeitpunkt, Tätigkeiten und Projekt bleiben.');
             $this->assertSame($entriesBefore, $pdo->query('SELECT id, duration_hours, labor_cost, hourly_cost_rate_snapshot, updated_at FROM daily_report_time_entries WHERE report_id = ' . $pdo->quote($report['id']))->fetchAll(), 'Zeiten unverändert.');
-            $this->assertSame('2.000', $service->orderTotals($ids['order'])['hours'], 'Keine automatische Übernahme als Auftragskosten.');
+            $this->assertSame('4.000', $service->orderTotals($ids['order'])['hours'], 'Nach der Zuordnung zählen die Stunden zum Auftrag – ohne neue Buchung.');
+            $this->assertSame(2, (int) $pdo->query("SELECT COUNT(*) FROM time_entries WHERE source_kind = 'daily_report'")->fetchColumn(), 'Kein Duplikat der Buchung.');
             $this->assertSame(1, (int) $pdo->query('SELECT COUNT(*) FROM daily_reports WHERE id = ' . $pdo->quote($report['id']))->fetchColumn(), 'Kein Duplikat.');
             $this->assertThrows(DailyReportValidationException::class, fn () => $service->assignOrder($report['id'], ['version' => $assigned['version'], 'orderId' => $ids['order']], $office));
             $this->assertSame($report['id'], $service->detail($report['id'], $tech)['id'], 'Ersteller sieht seinen Bericht weiterhin.');
 
-            // Bewusste Übernahme der Stunden (Büro mit timesheet.manage).
-            $this->assertTrue($assigned['canCountLabor']);
-            $this->assertThrows(AccessDeniedException::class, fn () => $service->countLaborForOrder($report['id'], ['version' => $assigned['version']], $tech));
-            $counted = $service->countLaborForOrder($report['id'], ['version' => $assigned['version']], $office);
-            $this->assertTrue($counted['labor_counts_for_order'] && $counted['labor_assigned_at'] !== null);
-            $this->assertSame('4.000', $service->orderTotals($ids['order'])['hours']);
-            $this->assertThrows(DailyReportValidationException::class, fn () => $service->countLaborForOrder($report['id'], ['version' => $counted['version']], $office));
+            // Falsche Zuordnung korrigieren: wieder ohne Auftrag – Stunden folgen.
+            $removed = $service->assignOrder($report['id'], ['version' => $assigned['version'], 'orderId' => ''], $office);
+            $this->assertSame([null, '2.000', 2], [$removed['order_id'], $service->orderTotals($ids['order'])['hours'], count($removed['orderEvents'])]);
         } finally {
             $this->remove($tmp);
         }

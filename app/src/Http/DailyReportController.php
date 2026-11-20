@@ -28,9 +28,8 @@ final readonly class DailyReportController
         $router->add('GET','/api/daily-reports/{id}/attachments/{attachment}',fn(Request $request,array $parameters):Response=>$this->download($parameters['id'],$parameters['attachment']));
         $router->add('DELETE','/api/daily-reports/{id}/attachments/{attachment}',fn(Request $request,array $parameters):Response=>$this->mutate($request,function()use($parameters){$this->service->deleteAttachment($parameters['id'],$parameters['attachment'],$this->actor());return['deleted'=>true];}));
         $router->add('POST','/api/daily-reports',fn(Request $request):Response=>$this->mutate($request,fn(array $data)=>$this->service->create($data,$this->actor()),201));
-        // Organisatorische Zuordnung (Büro) und davon getrennt die bewusste Übernahme der Stunden als Ist-Stunden.
+        // Auftragszuordnung setzen, ändern oder entfernen (Büro); die Stunden folgen dem Auftrag.
         $router->add('POST','/api/daily-reports/{id}/assign-order',fn(Request $request,array $parameters):Response=>$this->mutate($request,fn(array $data)=>$this->service->assignOrder($parameters['id'],$data,$this->actor())));
-        $router->add('POST','/api/daily-reports/{id}/count-labor',fn(Request $request,array $parameters):Response=>$this->mutate($request,fn(array $data)=>$this->service->countLaborForOrder($parameters['id'],$data,$this->actor())));
         $router->add('PUT','/api/daily-reports/{id}',fn(Request $request,array $parameters):Response=>$this->mutate($request,fn(array $data)=>$this->service->update($parameters['id'],$data,$this->actor())));
         $router->add('DELETE','/api/daily-reports/{id}',fn(Request $request,array $parameters):Response=>$this->mutate($request,function(array $data)use($parameters){$this->service->delete($parameters['id'],(int)($data['version']??0),$this->actor());return['deleted'=>true];}));
     }

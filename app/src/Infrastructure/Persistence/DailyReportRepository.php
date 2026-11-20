@@ -105,9 +105,14 @@ final readonly class DailyReportRepository
     /** @param list<array<string,mixed>> $entries */
     public function replaceEntries(string $reportId,array $entries):void
     {
-        $d=$this->pdo->prepare('DELETE FROM daily_report_time_entries WHERE report_id=:id');$d->execute(['id'=>$reportId]);
-        $s=$this->pdo->prepare('INSERT INTO daily_report_time_entries(id,report_id,employee_id,work_date,duration_hours,description,target_kind,target_basis_type,target_basis_id,target_node_id,hourly_cost_rate_snapshot,labor_cost,created_at,updated_at) VALUES(:id,:report_id,:employee_id,:work_date,:duration_hours,:description,:target_kind,:target_basis_type,:target_basis_id,:target_node_id,:hourly_cost_rate_snapshot,:labor_cost,:created_at,:updated_at)');
-        foreach($entries as $entry)$s->execute($entry);
+        // Positionen behalten ihre ID (Upsert), damit die zentrale Zeitbuchung (time_entries.daily_report_entry_id,
+        // ON DELETE CASCADE) mit ergänzten Uhrzeiten erhalten bleibt. Nur entfernte Positionen werden gelöscht.
+        $keep=array_column($entries,'id');$existing=$this->pdo->prepare('SELECT id FROM daily_report_time_entries WHERE report_id=:id');$existing->execute(['id'=>$reportId]);
+        $d=$this->pdo->prepare('DELETE FROM daily_report_time_entries WHERE id=:id AND report_id=:report');foreach($existing->fetchAll(PDO::FETCH_COLUMN) as $id)if(!in_array($id,$keep,true))$d->execute(['id'=>$id,'report'=>$reportId]);
+        $s=$this->pdo->prepare('INSERT INTO daily_report_time_entries(id,report_id,employee_id,work_date,duration_hours,description,target_kind,target_basis_type,target_basis_id,target_node_id,hourly_cost_rate_snapshot,labor_cost,created_at,updated_at,updated_by_user_id) VALUES(:id,:report_id,:employee_id,:work_date,:duration_hours,:description,:target_kind,:target_basis_type,:target_basis_id,:target_node_id,:hourly_cost_rate_snapshot,:labor_cost,:created_at,:updated_at,:updated_by_user_id)
+            ON CONFLICT(id) DO UPDATE SET employee_id=excluded.employee_id,work_date=excluded.work_date,duration_hours=excluded.duration_hours,description=excluded.description,target_kind=excluded.target_kind,target_basis_type=excluded.target_basis_type,target_basis_id=excluded.target_basis_id,target_node_id=excluded.target_node_id,hourly_cost_rate_snapshot=excluded.hourly_cost_rate_snapshot,labor_cost=excluded.labor_cost,updated_at=excluded.updated_at,updated_by_user_id=excluded.updated_by_user_id
+            WHERE daily_report_time_entries.report_id=excluded.report_id');
+        foreach($entries as $entry)$s->execute($entry+['updated_by_user_id'=>null]);
     }
 
     public function delete(string $id,int $version):bool
@@ -167,24 +172,40 @@ final readonly class DailyReportRepository
     }
 
     /**
-     * Nachträgliche organisatorische Auftragszuordnung (nur solange kein Auftrag gesetzt ist).
-     * Stunden werden dadurch nicht kostenrelevant (labor_counts_for_order bleibt unverändert).
+     * Auftragszuordnung setzen, ändern oder aufheben (Büro). Die Stunden folgen dem Auftrag des
+     * Berichts (labor_counts_for_order = 1 mit Auftrag); jede Änderung wird protokolliert.
      */
-    public function assignOrder(string $id, int $version, string $orderId, ?string $projectId, string $userId, string $at): bool
+    public function setOrder(string $id, int $version, ?string $previousOrderId, ?string $orderId, ?string $projectId, string $userId, string $at): bool
     {
-        $statement = $this->pdo->prepare('UPDATE daily_reports SET order_id = :order_id, project_id = COALESCE(project_id, :project_id), order_assigned_at = :at,
-            order_assigned_by_user_id = :user, version = version + 1, updated_at = :at WHERE id = :id AND version = :version AND order_id IS NULL');
-        $statement->execute(['order_id' => $orderId, 'project_id' => $projectId, 'at' => $at, 'user' => $userId, 'id' => $id, 'version' => $version]);
-        return $statement->rowCount() === 1;
+        $statement = $this->pdo->prepare('UPDATE daily_reports SET order_id = :order_id, project_id = COALESCE(:project_id, project_id),
+            labor_counts_for_order = CASE WHEN :order_id IS NULL THEN 0 ELSE 1 END, order_assigned_at = :at, order_assigned_by_user_id = :user,
+            version = version + 1, updated_at = :at WHERE id = :id AND version = :version AND order_id IS :previous');
+        $statement->execute(['order_id' => $orderId, 'project_id' => $projectId, 'at' => $at, 'user' => $userId, 'id' => $id, 'version' => $version, 'previous' => $previousOrderId]);
+        if ($statement->rowCount() !== 1) {
+            return false;
+        }
+        $this->pdo->prepare('INSERT INTO daily_report_order_events (report_id, previous_order_id, order_id, changed_by_user_id, changed_at) VALUES (:id, :previous, :order, :user, :at)')
+            ->execute(['id' => $id, 'previous' => $previousOrderId, 'order' => $orderId, 'user' => $userId, 'at' => $at]);
+        return true;
     }
 
-    /** Bewusste Übernahme der Berichtsstunden als Ist-Stunden des zugeordneten Auftrags. */
-    public function countLaborForOrder(string $id, int $version, string $userId, string $at): bool
+    /** Zentrale Zeitbuchungen der Positionen eines Berichts. @return list<array<string,mixed>> */
+    public function bookings(string $id): array
     {
-        $statement = $this->pdo->prepare('UPDATE daily_reports SET labor_counts_for_order = 1, labor_assigned_at = :at, labor_assigned_by_user_id = :user,
-            version = version + 1, updated_at = :at WHERE id = :id AND version = :version AND order_id IS NOT NULL AND labor_counts_for_order = 0');
-        $statement->execute(['at' => $at, 'user' => $userId, 'id' => $id, 'version' => $version]);
-        return $statement->rowCount() === 1;
+        $statement = $this->pdo->prepare('SELECT b.id, b.daily_report_entry_id, b.net_minutes, b.start_time, b.end_time, b.legacy_state, b.legacy_reason
+            FROM time_entries b JOIN daily_report_time_entries e ON e.id = b.daily_report_entry_id WHERE e.report_id = :id');
+        $statement->execute(['id' => $id]);
+        return $statement->fetchAll();
+    }
+
+    /** Protokoll der Auftragszuordnung (älteste zuerst). @return list<array<string,mixed>> */
+    public function orderEvents(string $id): array
+    {
+        $statement = $this->pdo->prepare('SELECT ev.previous_order_id, po.order_number AS previous_order_number, ev.order_id, o.order_number, ev.changed_at, u.display_name AS changed_by_name
+            FROM daily_report_order_events ev LEFT JOIN orders po ON po.id = ev.previous_order_id LEFT JOIN orders o ON o.id = ev.order_id JOIN users u ON u.id = ev.changed_by_user_id
+            WHERE ev.report_id = :id ORDER BY ev.id');
+        $statement->execute(['id' => $id]);
+        return $statement->fetchAll();
     }
 
     /** Aktive Kunden nur mit Nummer und Name (Auswahl auch für Monteure). @return list<array{id:string,customer_number:?string,name:string}> */
@@ -225,6 +246,7 @@ final readonly class DailyReportRepository
     /** @return list<array{duration_hours:string,labor_cost:string}> */
     public function costRowsForOrder(string $orderId):array
     {
-        $s=$this->pdo->prepare('SELECT t.duration_hours,t.labor_cost FROM daily_report_time_entries t JOIN daily_reports r ON r.id=t.report_id WHERE r.order_id=:id AND r.labor_counts_for_order=1');$s->execute(['id'=>$orderId]);return$s->fetchAll();
+        // Nur zählende zentrale Buchungen (keine Altfälle in Klärung oder ausgeschlossene).
+        $s=$this->pdo->prepare('SELECT t.duration_hours,t.labor_cost FROM daily_report_time_entries t JOIN time_entries b ON b.daily_report_entry_id=t.id WHERE b.order_id=:id AND b.legacy_state IS NULL');$s->execute(['id'=>$orderId]);return$s->fetchAll();
     }
 }

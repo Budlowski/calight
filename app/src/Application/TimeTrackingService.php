@@ -18,19 +18,21 @@ use InvalidArgumentException;
 use Throwable;
 
 /**
- * Zeiterfassung (Phase 3.4.3): tatsächliche Arbeits- und Reisezeiten, Einsatzangaben und Auslagen.
- * Keine Lohn-, Reisekosten- oder Personalverwaltung, keine automatische Bewertung.
+ * Zeiterfassung: zentrale Basis tatsächlich geleisteter Mitarbeiterstunden (time_entries).
  *
- * Fachregeln:
- * - Zeitblöcke mit Beginn, Ende (ggf. Folgetag), Pause, Tätigkeit, optional Einsatzart und
- *   „davon Reisezeit“. Nettozeit = Ende − Beginn − Pause; Reisezeit ist Teil der Nettozeit,
- *   übrige Arbeitszeit = Nettozeit − Reisezeit. Keine Überschneidungen (auch über Mitternacht).
- * - Ist-Stunden je Mitarbeiter + Tag + Auftrag: eine Quelle oder die ausdrücklich gewählte;
- *   Zeiterfassung und Bautagesbericht ohne Auswahl sind ein Konflikt (actualHoursForOrder).
- *   Bautagesberichte selbst bleiben unverändert.
- * - Rapportstunden sind abrechenbare Leistung und erscheinen nur als Referenz.
- * - Rechte: timesheet.own (eigene Zeiten), timesheet.manage (alle Mitarbeiter, Korrekturen,
- *   Auswertung). Kostensatz-Snapshots nur mit costs.read.
+ * Herkunft je Buchung (source_kind), jede Stunde zählt genau einmal:
+ * - work_report:  Stundenposition eines Rapports (gültige Fassung bzw. Entwurf ohne Korrekturbezug),
+ * - daily_report: Stundenposition eines Bautagesberichts,
+ * - manual:       direkt erfasster Zeitblock (Büroarbeit, Rüstzeit, Vorbereitung …).
+ * Berichtsbuchungen werden von den Berichtsdiensten gepflegt (ReportTimeBookings). Ihre Dauer ist
+ * vorgegeben; hier werden nur Beginn, Ende, Pause, Reisezeit und Einsatzart ergänzt – mit Uhrzeiten
+ * muss Ende − Beginn − Pause exakt der Berichtsdauer entsprechen. Reisezeit ist Teil der Nettozeit.
+ *
+ * Uhrzeiten sind optional, solange die Betriebseinstellung „Stundenerfassung ohne Uhrzeiten“
+ * aktiv ist; sonst sind Buchungen ohne Uhrzeiten „Uhrzeiten fehlen“ (zählen trotzdem voll).
+ * Altdaten (legacy_state): review = zählt bis zur Klärung durch das Büro nicht, excluded = zählt nicht.
+ * Rechte: timesheet.own (eigene Zeiten), timesheet.manage (alle, Auswertung, Altfälle);
+ * Kostensatz-Snapshots nur mit costs.read.
  */
 final readonly class TimeTrackingService
 {
@@ -39,7 +41,16 @@ final readonly class TimeTrackingService
     public const SELECTABLE_ACTIVITIES = ['work', 'preparation', 'internal', 'other'];
     public const ASSIGNMENTS = ['regular' => 'Erste Tätigkeitsstätte', 'external' => 'Auswärtstätigkeit / wechselnder Einsatzort'];
     public const TRAVEL_DAYS = ['none' => 'Kein besonderer Reisetag', 'arrival' => 'Anreisetag', 'departure' => 'Abreisetag'];
-    public const SOURCES = ['time_tracking' => 'Zeiterfassung', 'daily_report' => 'Bautagesbericht'];
+    public const SOURCE_KINDS = ['work_report' => 'Rapport', 'daily_report' => 'Bautagesbericht', 'manual' => 'Manuell'];
+    public const LEGACY_REASONS = [
+        'historic_work_report' => 'Rapport vor Einführung der zentralen Stundenbasis – Rapportstunden zählten bisher nicht als Ist-Zeit. Bitte prüfen, ob dieselbe Arbeit zusätzlich erfasst wurde.',
+        'correction_branch' => 'Mehrere eingereichte Korrekturen desselben Rapports (Altbestand) – bitte gültige Fassung prüfen.',
+        'source_conflict' => 'Früherer ungeklärter Konflikt zwischen Zeitblock und Bautagesbericht.',
+        'order_hours_not_taken_over' => 'Bautagesbericht wurde nachträglich einem Auftrag zugeordnet, die Stunden aber bisher nicht übernommen.',
+        'rounded_duration' => 'Berichtsstunden entsprachen keinen ganzen Minuten und wurden gerundet.',
+        'source_choice_time_tracking' => 'Frühere Quellenwahl: Zeiterfassung maßgeblich (Berichtsstunden zählen nicht).',
+        'source_choice_daily_report' => 'Frühere Quellenwahl: Bautagesbericht maßgeblich (Zeitblock zählt nicht).',
+    ];
     public const RECEIPT_TYPES = DocumentService::ALLOWED_TYPES;
     private const LONG_DAY_MINUTES = 600;
     private const MIN_REST_MINUTES = 660;
@@ -64,6 +75,8 @@ final readonly class TimeTrackingService
             'activityLabels' => self::ACTIVITIES,
             'assignments' => self::ASSIGNMENTS,
             'travelDays' => self::TRAVEL_DAYS,
+            'sourceKinds' => self::SOURCE_KINDS,
+            'timesOptional' => $this->times->timesOptional(),
             'ownEmployeeId' => $own['id'] ?? null,
             'canManage' => $manage,
             'employees' => $manage ? array_map(static fn (array $employee): array => [
@@ -74,43 +87,42 @@ final readonly class TimeTrackingService
         ];
     }
 
-    /** Tagesansicht mit Blöcken, Summen, Einsatz/Auslagen und Referenzzeiten. @param array<string,mixed> $actor @return array<string,mixed> */
+    /** Tagesansicht mit allen Buchungen (alle Herkünfte), Summen, Einsatz/Auslagen. @param array<string,mixed> $actor @return array<string,mixed> */
     public function day(?string $employeeId, string $date, array $actor): array
     {
         $employee = $this->employee($employeeId, $actor);
         $date = $this->date($date);
         $costs = $this->can($actor, 'costs.read');
+        $timesOptional = $this->times->timesOptional();
         $previous = (new DateTimeImmutable($date))->modify('-1 day')->format('Y-m-d');
         $withPrevious = $this->times->entries((string) $employee['id'], $previous, $date);
         $entries = array_values(array_filter($withPrevious, static fn (array $entry): bool => $entry['work_date'] === $date));
         // Blöcke des Vortags, die über Mitternacht in diesen Tag reichen.
         $carried = [];
         foreach ($withPrevious as $entry) {
-            if ($entry['work_date'] === $previous && (bool) $entry['ends_next_day']) {
+            if ($entry['work_date'] === $previous && (bool) $entry['ends_next_day'] && self::counts($entry)) {
                 $share = self::split($entry)[1];
-                $carried[] = ['start' => $entry['start_time'], 'end' => $entry['end_time'], 'netMinutes' => $share['net'], 'travelMinutes' => $share['travel']];
+                $carried[] = ['start' => $entry['start_time'], 'end' => $entry['end_time'], 'netMinutes' => $share['net'], 'travelMinutes' => $share['travel'],
+                    'sourceKind' => $entry['source_kind'], 'sourceLabel' => self::SOURCE_KINDS[$entry['source_kind']]];
             }
         }
         $details = $this->times->details((string) $employee['id'], $date);
         $expenses = $this->times->expenses((string) $employee['id'], $date, $date);
+        $canEdit = $this->canEdit($employee, $actor);
         return [
             'employee' => ['id' => $employee['id'], 'name' => $employee['display_name'], 'active' => (bool) $employee['active']],
             'date' => $date,
-            'entries' => array_map(fn (array $entry): array => $this->mapEntry($entry, $employee, $costs), $entries),
+            'timesOptional' => $timesOptional,
+            'entries' => array_map(fn (array $entry): array => $this->mapEntry($entry, $employee, $costs, $timesOptional, $canEdit), $entries),
             'carriedOver' => $carried,
-            // Summen nach Kalendertag (über Mitternacht anteilig, siehe split()).
-            'totals' => $this->dayShares($withPrevious, $date, $date)[$date],
+            // Summen nach Kalendertag (über Mitternacht anteilig, siehe split()); nur zählende Buchungen.
+            'totals' => $this->dayShares($withPrevious, $date, $date, $timesOptional)[$date],
             'details' => $details !== null ? $this->mapDetails($details) : null,
             'expenses' => array_map(fn (array $expense): array => $this->mapExpense($expense), $expenses),
             'expenseTotal' => $this->sum(array_column($expenses, 'amount')),
-            'dailyReportTimes' => $this->sourceStatus((string) $employee['id'], $date, $entries),
-            'workReportTimes' => array_map(static fn (array $row): array => [
-                'reportId' => $row['report_id'], 'reportNumber' => $row['report_number'], 'status' => $row['status'], 'hours' => $row['hours'], 'activity' => $row['activity'],
-                'orderNumber' => $row['order_number'], 'dateTo' => $row['work_date_to'],
-            ], $this->times->workReportTimes((string) $employee['id'], $date, $date)),
             'warnings' => $this->warnings((string) $employee['id'], $date, $entries),
-            'canEdit' => $this->canEdit($employee, $actor),
-            'canChooseSource' => $this->can($actor, 'timesheet.manage'),
+            'canEdit' => $canEdit,
+            'canResolveLegacy' => $this->can($actor, 'timesheet.manage'),
         ];
     }
 
@@ -125,31 +137,34 @@ final readonly class TimeTrackingService
     {
         $employee = $this->employee($employeeId, $actor);
         [$from, $to] = $this->period($from, $to);
+        $timesOptional = $this->times->timesOptional();
         $entries = $this->times->entries((string) $employee['id'], (new DateTimeImmutable($from))->modify('-1 day')->format('Y-m-d'), $to);
-        $shares = $this->dayShares($entries, $from, $to);
+        $shares = $this->dayShares($entries, $from, $to, $timesOptional);
         $details = array_column($this->times->detailsRange((string) $employee['id'], $from, $to), null, 'work_date');
         $expenses = $this->times->expenses((string) $employee['id'], $from, $to);
-        $reports = $this->times->dailyReportTimes((string) $employee['id'], $from, $to);
         $days = [];
-        $totals = ['netMinutes' => 0, 'travelMinutes' => 0, 'workMinutes' => 0];
+        $totals = ['netMinutes' => 0, 'travelMinutes' => 0, 'workMinutes' => 0, 'incompleteMinutes' => 0, 'pendingMinutes' => 0,
+            'bySource' => ['work_report' => 0, 'daily_report' => 0, 'manual' => 0]];
         foreach ($shares as $key => $share) {
             $dayExpenses = array_filter($expenses, static fn (array $expense): bool => $expense['work_date'] === $key);
-            $dayReports = array_filter($reports, static fn (array $report): bool => $report['work_date'] === $key);
-            foreach ($totals as $field => $value) {
-                $totals[$field] = $value + $share[$field];
+            foreach (['netMinutes', 'travelMinutes', 'workMinutes', 'incompleteMinutes', 'pendingMinutes'] as $field) {
+                $totals[$field] += $share[$field];
+            }
+            foreach ($share['bySource'] as $kind => $minutes) {
+                $totals['bySource'][$kind] += $minutes;
             }
             $days[] = $share + [
                 'date' => $key,
                 'privateKm' => $details[$key]['private_km'] ?? null,
                 'expenseTotal' => $dayExpenses === [] ? null : $this->sum(array_column($dayExpenses, 'amount')),
                 'hasDetails' => isset($details[$key]),
-                'dailyReportHours' => $dayReports === [] ? null : $this->decimalSum(array_column($dayReports, 'duration_hours'), 3),
             ];
         }
         return [
             'employee' => ['id' => $employee['id'], 'name' => $employee['display_name']],
             'from' => $from,
             'to' => $to,
+            'timesOptional' => $timesOptional,
             'days' => $days,
             'totals' => $totals + [
                 'privateKm' => $this->decimalSum(array_filter(array_column($details, 'private_km'), static fn (?string $value): bool => $value !== null), 1),
@@ -159,13 +174,10 @@ final readonly class TimeTrackingService
     }
 
     /**
-     * Büroauswertung nach Zeitraum, Mitarbeiter und Auftrag.
-     *
-     * Summen nach Kalendertag wie Tag/Woche/Monat (split): Ein Block über Mitternacht zählt nur
-     * mit seinem Anteil im Zeitraum. Zeilen zeigen den vollständigen Block und den Anteil im
-     * Zeitraum. Stehen Zeitblöcke und Bautagesbericht für Mitarbeiter + Beginntag + Auftrag ohne
-     * Quellenwahl nebeneinander, bleiben die Minuten in der Zeiterfassungssumme, werden aber als
-     * „ungeklärt“ ausgewiesen (unresolvedMinutes, conflicts).
+     * Büroauswertung nach Zeitraum, Mitarbeiter und Auftrag – alle Herkünfte aus der zentralen
+     * Basis. Summen nach Kalendertag wie Tag/Woche/Monat (split). Altfälle in Klärung zählen nicht
+     * und werden gesondert ausgewiesen (pendingMinutes, reviews); Buchungen ohne Uhrzeiten bei
+     * deaktivierter Betriebseinstellung zählen und werden als unvollständig ausgewiesen.
      *
      * @param array<string,mixed> $actor
      * @return array<string,mixed>
@@ -174,52 +186,99 @@ final readonly class TimeTrackingService
     {
         $this->require($actor, 'timesheet.manage');
         [$from, $to] = $this->period($from, $to, 370);
-        $employeeId = $employeeId ?: null;
-        $orderId = $orderId ?: null;
-        $entries = $this->times->report($from, $to, $employeeId, $orderId);
-        $status = $this->rangeSourceStatus($entries, $from, $to, $employeeId, $orderId);
-
+        $timesOptional = $this->times->timesOptional();
+        $entries = $this->times->report($from, $to, $employeeId ?: null, $orderId ?: null);
         $rows = [];
+        $reviews = [];
         $byOrder = [];
-        $totals = ['netMinutes' => 0, 'travelMinutes' => 0, 'workMinutes' => 0, 'unresolvedMinutes' => 0, 'dailyReportChosenMinutes' => 0];
+        $empty = ['netMinutes' => 0, 'travelMinutes' => 0, 'workMinutes' => 0, 'incompleteMinutes' => 0, 'pendingMinutes' => 0,
+            'bySource' => ['work_report' => 0, 'daily_report' => 0, 'manual' => 0]];
+        $totals = $empty;
         foreach ($entries as $entry) {
             [$net, $travel] = $this->shareInPeriod($entry, $from, $to);
             if ($net === 0 && ((string) $entry['work_date'] < $from)) {
                 continue; // Vortagsblock ohne Anteil im Zeitraum
             }
-            $key = $entry['order_id'] !== null ? $entry['employee_id'] . '|' . $entry['work_date'] . '|' . $entry['order_id'] : null;
-            $sourceStatus = $key !== null ? ($status['byKey'][$key] ?? null) : null;
             $orderKey = (string) ($entry['order_id'] ?? '');
-            $byOrder[$orderKey] ??= ['orderId' => $entry['order_id'], 'orderNumber' => $entry['order_number'], 'orderTitle' => $entry['order_title'],
-                'netMinutes' => 0, 'travelMinutes' => 0, 'workMinutes' => 0, 'unresolvedMinutes' => 0, 'dailyReportChosenMinutes' => 0];
-            self::addShare($byOrder[$orderKey], $net, $travel, $sourceStatus);
-            self::addShare($totals, $net, $travel, $sourceStatus);
-            $rows[] = [
+            $byOrder[$orderKey] ??= ['orderId' => $entry['order_id'], 'orderNumber' => $entry['order_number'], 'orderTitle' => $entry['order_title']] + $empty;
+            self::addShare($byOrder[$orderKey], $entry, $net, $travel, $timesOptional);
+            self::addShare($totals, $entry, $net, $travel, $timesOptional);
+            $row = [
                 'id' => $entry['id'], 'date' => $entry['work_date'], 'employeeName' => $entry['employee_name'], 'start' => $entry['start_time'], 'end' => $entry['end_time'],
                 'endsNextDay' => (bool) $entry['ends_next_day'], 'breakMinutes' => (int) $entry['break_minutes'], 'netMinutes' => (int) $entry['net_minutes'],
                 'travelMinutes' => (int) $entry['travel_minutes'], 'periodNetMinutes' => $net, 'periodTravelMinutes' => $travel,
                 'activity' => $entry['activity'], 'activityLabel' => self::ACTIVITIES[$entry['activity']] ?? $entry['activity'],
                 'assignmentKind' => $entry['assignment_kind'], 'assignmentLabel' => $entry['assignment_kind'] !== null ? self::ASSIGNMENTS[$entry['assignment_kind']] ?? '' : '',
-                'orderNumber' => $entry['order_number'], 'notes' => $entry['notes'], 'sourceStatus' => $sourceStatus,
-            ];
+                'orderNumber' => $entry['order_number'], 'notes' => $entry['notes'], 'hasTimes' => $entry['start_time'] !== null,
+                'legacyState' => $entry['legacy_state'],
+            ] + self::source($entry);
+            $rows[] = $row;
+            if ($entry['legacy_state'] === 'review') {
+                $reviews[] = $row + ['legacyReason' => $entry['legacy_reason'], 'legacyReasonLabel' => self::LEGACY_REASONS[$entry['legacy_reason']] ?? (string) $entry['legacy_reason'],
+                    'employeeId' => $entry['employee_id'], 'version' => (int) $entry['version']];
+            }
         }
         $byOrder = array_values($byOrder);
         foreach ($byOrder as &$order) {
-            $order['complete'] = $order['unresolvedMinutes'] === 0;
+            $order['complete'] = $order['pendingMinutes'] === 0;
         }
         unset($order);
-        return ['from' => $from, 'to' => $to, 'rows' => $rows, 'byOrder' => $byOrder, 'totals' => $totals,
-            'conflicts' => $status['conflicts'], 'complete' => $status['conflicts'] === []];
+        return ['from' => $from, 'to' => $to, 'timesOptional' => $timesOptional, 'rows' => $rows, 'byOrder' => $byOrder, 'totals' => $totals,
+            'reviews' => $reviews, 'complete' => $reviews === []];
     }
 
-    /** @param array<string,mixed> $sum */
-    private static function addShare(array &$sum, int $net, int $travel, ?string $sourceStatus): void
+    /** @param array<string,mixed> $sum @param array<string,mixed> $entry */
+    private static function addShare(array &$sum, array $entry, int $net, int $travel, bool $timesOptional): void
     {
+        if (!self::counts($entry)) {
+            $sum['pendingMinutes'] += $entry['legacy_state'] === 'review' ? $net : 0;
+            return;
+        }
         $sum['netMinutes'] += $net;
         $sum['travelMinutes'] += $travel;
         $sum['workMinutes'] += $net - $travel;
-        $sum['unresolvedMinutes'] += $sourceStatus === 'conflict' ? $net : 0;
-        $sum['dailyReportChosenMinutes'] += $sourceStatus === 'chosen_daily_report' ? $net : 0;
+        $sum['incompleteMinutes'] += !$timesOptional && $entry['start_time'] === null ? $net : 0;
+        $sum['bySource'][$entry['source_kind']] += $net;
+    }
+
+    /** Zählt die Buchung als Ist-Zeit? (Altfälle in Klärung oder ausgeschlossene nicht.) @param array<string,mixed> $entry */
+    private static function counts(array $entry): bool
+    {
+        return ($entry['legacy_state'] ?? null) === null;
+    }
+
+    /**
+     * Herkunftsangaben einer Buchung für Anzeige und Verlinkung.
+     *
+     * @param array<string,mixed> $entry
+     * @return array<string,mixed>
+     */
+    private static function source(array $entry): array
+    {
+        $kind = (string) $entry['source_kind'];
+        return [
+            'sourceKind' => $kind,
+            'sourceLabel' => self::SOURCE_KINDS[$kind] ?? $kind,
+            'reportId' => $kind === 'work_report' ? $entry['work_report_id'] : ($kind === 'daily_report' ? $entry['daily_report_id'] : null),
+            'reportUrl' => match ($kind) {
+                'work_report' => '/work-reports/' . rawurlencode((string) $entry['work_report_id']),
+                'daily_report' => '/daily-reports/' . rawurlencode((string) $entry['daily_report_id']),
+                default => null,
+            },
+            'reportLabel' => match ($kind) {
+                'work_report' => 'Rapport ' . ($entry['work_report_number'] ?? 'Entwurf'),
+                'daily_report' => 'Bautagesbericht ' . (new DateTimeImmutable((string) $entry['daily_report_date']))->format('d.m.Y') . (($entry['daily_report_title'] ?? '') !== '' ? ' · ' . $entry['daily_report_title'] : ''),
+                default => null,
+            },
+            // Rapportentwurf: Quelle ist noch nicht eingereicht.
+            'reportDraft' => $kind === 'work_report' && $entry['work_report_status'] === 'draft',
+            'reportActivity' => match ($kind) {
+                'work_report' => trim(implode(' · ', array_filter([(string) ($entry['labor_item_name'] ?? ''), (string) ($entry['labor_activity'] ?? '')]))),
+                'daily_report' => (string) ($entry['daily_entry_description'] ?? ''),
+                default => '',
+            },
+            'customerName' => $entry['customer_name'] ?? null,
+        ];
     }
 
     /**
@@ -258,63 +317,15 @@ final readonly class TimeTrackingService
     }
 
     /**
-     * Quellenstatus je Mitarbeiter + Beginntag + Auftrag für die Büroauswertung.
+     * Ist-Stunden eines Auftrags für die spätere Nachkalkulation (Phase 3.5) – ausschließlich aus
+     * der zentralen Basis: alle zählenden Buchungen mit diesem Auftrag (Rapport, Bautagesbericht,
+     * manuell), jede genau einmal. Ersetzte Rapportfassungen haben keine Buchungen. Altfälle in
+     * Klärung zählen nicht und setzen status = 'incomplete'. Buchungen ohne Uhrzeiten zählen voll;
+     * bei deaktivierter Betriebseinstellung werden sie zusätzlich als unvollständig ausgewiesen.
      *
-     * @param list<array<string,mixed>> $entries
-     * @return array{byKey:array<string,string>,conflicts:list<array<string,mixed>>}
-     */
-    private function rangeSourceStatus(array $entries, string $from, string $to, ?string $employeeId, ?string $orderId): array
-    {
-        $tracked = [];
-        foreach ($entries as $entry) {
-            if ($entry['order_id'] === null || (string) $entry['work_date'] < $from) {
-                continue;
-            }
-            $key = $entry['employee_id'] . '|' . $entry['work_date'] . '|' . $entry['order_id'];
-            $tracked[$key] ??= ['employeeId' => $entry['employee_id'], 'employeeName' => $entry['employee_name'], 'date' => $entry['work_date'],
-                'orderId' => $entry['order_id'], 'orderNumber' => $entry['order_number'], 'trackingMinutes' => 0, 'reportMinutes' => 0];
-            $tracked[$key]['trackingMinutes'] += (int) $entry['net_minutes'];
-        }
-        $reported = [];
-        foreach ($this->times->dailyReportTimesInRange($from, $to, $employeeId, $orderId) as $row) {
-            $key = $row['employee_id'] . '|' . $row['work_date'] . '|' . $row['order_id'];
-            $reported[$key] = ($reported[$key] ?? 0) + self::hoursToMinutes((string) $row['duration_hours']);
-        }
-        $choices = [];
-        foreach ($this->times->choicesInRange($from, $to) as $choice) {
-            $choices[$choice['employee_id'] . '|' . $choice['work_date'] . '|' . $choice['order_id']] = $choice['source'];
-        }
-        $byKey = [];
-        $conflicts = [];
-        foreach ($tracked as $key => $group) {
-            if (!isset($reported[$key])) {
-                continue;
-            }
-            if (isset($choices[$key])) {
-                $byKey[$key] = 'chosen_' . $choices[$key];
-                continue;
-            }
-            $byKey[$key] = 'conflict';
-            $conflicts[] = ['reportMinutes' => $reported[$key]] + $group;
-        }
-        return ['byKey' => $byKey, 'conflicts' => $conflicts];
-    }
-
-    /**
-     * Ist-Stunden eines Auftrags für die spätere Nachkalkulation (Phase 3.5).
-     *
-     * Quellenregel je Mitarbeiter + Beginntag (wie Tagesansicht und Quellenwahl):
-     * - nur Zeitblöcke oder nur Bautagesbericht → diese Quelle;
-     * - beide vorhanden → die ausdrücklich gewählte Quelle (time_source_choices);
-     * - beide vorhanden und keine Auswahl → Konflikt: nicht in den Summen, sondern in conflicts;
-     *   status = 'incomplete', complete = false.
-     * Rapportstunden zählen nie. Es wird nichts addiert und nichts still verworfen. Spesen und
-     * Kilometer sind nicht enthalten.
-     *
-     * Zeitblöcke werden wie in Tag/Woche/Monat nach Kalendertag aufgeteilt (split); items sind
-     * Anteile je Kalendertag mit Beginntag (sourceDate). Der optionale Zeitraum filtert nach
-     * Kalendertag. Kostensatz-Snapshots (hourlyCostRate) nur mit costs.read – sie werden hier
-     * nicht verrechnet.
+     * Kalendertag-Aufteilung wie Tag/Woche/Monat (split); items sind Anteile je Kalendertag mit
+     * Beginntag (sourceDate). Kostensatz-Snapshots (hourlyCostRate) nur mit costs.read – sie werden
+     * hier nicht verrechnet. Spesen und Kilometer sind nicht enthalten.
      *
      * @param array<string,mixed> $actor
      * @return array<string,mixed>
@@ -328,159 +339,86 @@ final readonly class TimeTrackingService
             throw new DocumentValidationException(['Ungültiger Zeitraum.']);
         }
         $costs = $this->can($actor, 'costs.read');
-        $inRange = static fn (string $date): bool => ($from === null || $date >= $from) && ($to === null || $date <= $to);
-        $sources = $this->times->orderTimes($orderId);
-        $groups = [];
-        foreach ($sources['entries'] as $entry) {
-            $key = $entry['employee_id'] . '|' . $entry['work_date'];
-            $groups[$key] ??= ['employeeId' => $entry['employee_id'], 'employeeName' => $entry['employee_name'], 'date' => $entry['work_date'], 'tracking' => [], 'report' => []];
-            $groups[$key]['tracking'][] = $entry;
-        }
-        foreach ($sources['reports'] as $report) {
-            $key = $report['employee_id'] . '|' . $report['work_date'];
-            $groups[$key] ??= ['employeeId' => $report['employee_id'], 'employeeName' => $report['employee_name'], 'date' => $report['work_date'], 'tracking' => [], 'report' => []];
-            $groups[$key]['report'][] = $report;
-        }
-        $choices = [];
-        foreach ($sources['choices'] as $choice) {
-            $choices[$choice['employee_id'] . '|' . $choice['work_date']] = $choice;
-        }
-        ksort($groups);
+        $timesOptional = $this->times->timesOptional();
         $items = [];
-        $conflicts = [];
-        foreach ($groups as $key => $group) {
-            $both = $group['tracking'] !== [] && $group['report'] !== [];
-            $choice = $both ? ($choices[$key] ?? null) : null;
-            $source = match (true) {
-                $group['report'] === [] => 'time_tracking',
-                $group['tracking'] === [] => 'daily_report',
-                default => $choice['source'] ?? null,
-            };
-            $base = ['employeeId' => $group['employeeId'], 'employeeName' => $group['employeeName'], 'sourceDate' => $group['date']];
-            if ($source === null) {
-                $segmentDates = [];
-                $trackingMinutes = 0;
-                $trackingTravel = 0;
-                foreach ($group['tracking'] as $entry) {
-                    $trackingMinutes += (int) $entry['net_minutes'];
-                    $trackingTravel += (int) $entry['travel_minutes'];
-                    foreach (self::segments($entry) as [$date]) {
-                        $segmentDates[$date] = true;
-                    }
-                }
-                if (!$inRange($group['date']) && array_filter(array_keys($segmentDates), $inRange) === []) {
+        $pending = [];
+        foreach ($this->times->orderEntries($orderId) as $entry) {
+            if ($entry['legacy_state'] === 'excluded') {
+                continue;
+            }
+            $base = ['entryId' => $entry['id'], 'employeeId' => $entry['employee_id'], 'employeeName' => $entry['employee_name'], 'sourceDate' => $entry['work_date']] + self::source($entry);
+            foreach (self::segments($entry) as [$date, $share]) {
+                if (($from !== null && $date < $from) || ($to !== null && $date > $to)) {
                     continue;
                 }
-                $conflicts[] = $base + ['date' => $group['date'], 'trackingMinutes' => $trackingMinutes, 'trackingTravelMinutes' => $trackingTravel,
-                    'reportMinutes' => array_sum(array_map(static fn (array $row): int => self::hoursToMinutes((string) $row['duration_hours']), $group['report']))];
-                continue;
-            }
-            $base += ['source' => $source, 'chosen' => $choice !== null, 'chosenByName' => $choice['chosen_by_name'] ?? null, 'chosenAt' => $choice['chosen_at'] ?? null];
-            if ($source === 'time_tracking') {
-                foreach ($group['tracking'] as $entry) {
-                    foreach (self::segments($entry) as [$date, $share]) {
-                        if ($inRange($date)) {
-                            $items[] = $base + ['date' => $date, 'entryId' => $entry['id'], 'netMinutes' => $share['net'], 'travelMinutes' => $share['travel'],
-                                'workMinutes' => $share['net'] - $share['travel']] + ($costs ? ['hourlyCostRate' => $entry['hourly_cost_rate_snapshot']] : []);
-                        }
-                    }
-                }
-                continue;
-            }
-            foreach ($group['report'] as $row) {
-                if ($inRange((string) $row['work_date'])) {
-                    $minutes = self::hoursToMinutes((string) $row['duration_hours']);
-                    $items[] = $base + ['date' => $row['work_date'], 'reportEntryId' => $row['id'], 'netMinutes' => $minutes, 'travelMinutes' => 0, 'workMinutes' => $minutes]
-                        + ($costs ? ['hourlyCostRate' => $row['hourly_cost_rate_snapshot']] : []);
+                $item = $base + ['date' => $date, 'netMinutes' => $share['net'], 'travelMinutes' => $share['travel'], 'workMinutes' => $share['net'] - $share['travel'],
+                    'hasTimes' => $entry['start_time'] !== null, 'timesMissing' => !$timesOptional && $entry['start_time'] === null]
+                    + ($costs ? ['hourlyCostRate' => $entry['hourly_cost_rate_snapshot']] : []);
+                if ($entry['legacy_state'] === 'review') {
+                    $pending[] = $item + ['legacyReason' => $entry['legacy_reason'], 'legacyReasonLabel' => self::LEGACY_REASONS[$entry['legacy_reason']] ?? (string) $entry['legacy_reason']];
+                } else {
+                    $items[] = $item;
                 }
             }
         }
         usort($items, static fn (array $a, array $b): int => [$a['date'], $a['employeeName']] <=> [$b['date'], $b['employeeName']]);
         $byEmployee = [];
+        $bySource = ['work_report' => 0, 'daily_report' => 0, 'manual' => 0];
         foreach ($items as $item) {
             $byEmployee[$item['employeeId']] ??= ['employeeId' => $item['employeeId'], 'employeeName' => $item['employeeName'], 'netMinutes' => 0, 'travelMinutes' => 0, 'workMinutes' => 0];
             $byEmployee[$item['employeeId']]['netMinutes'] += $item['netMinutes'];
             $byEmployee[$item['employeeId']]['travelMinutes'] += $item['travelMinutes'];
             $byEmployee[$item['employeeId']]['workMinutes'] += $item['workMinutes'];
+            $bySource[$item['sourceKind']] += $item['netMinutes'];
         }
         $net = array_sum(array_column($items, 'netMinutes'));
         $travel = array_sum(array_column($items, 'travelMinutes'));
         return [
             'orderId' => $orderId, 'from' => $from, 'to' => $to,
-            'status' => $conflicts === [] ? 'complete' : 'incomplete',
-            'complete' => $conflicts === [],
+            'status' => $pending === [] ? 'complete' : 'incomplete',
+            'complete' => $pending === [],
             'items' => $items,
             'byEmployee' => array_values($byEmployee),
-            'conflicts' => $conflicts,
-            'totals' => ['netMinutes' => $net, 'travelMinutes' => $travel, 'workMinutes' => $net - $travel],
-            'unresolved' => ['trackingMinutes' => array_sum(array_column($conflicts, 'trackingMinutes')), 'reportMinutes' => array_sum(array_column($conflicts, 'reportMinutes'))],
+            'bySource' => $bySource,
+            'pending' => $pending,
+            'totals' => ['netMinutes' => $net, 'travelMinutes' => $travel, 'workMinutes' => $net - $travel,
+                'timesMissingMinutes' => array_sum(array_map(static fn (array $item): int => $item['timesMissing'] ? $item['netMinutes'] : 0, $items))],
+            'pendingMinutes' => array_sum(array_column($pending, 'netMinutes')),
             'totalMinutes' => $net,
             'travelMinutes' => $travel,
         ];
     }
 
     /**
-     * Maßgebliche Quelle für Mitarbeiter + Tag + Auftrag festlegen (nur Büro). null hebt die Wahl auf.
+     * Altfall klären (Büro): Buchung zählt künftig („count“) oder bleibt ausgeschlossen („exclude“).
+     * Stunden werden dabei nicht verändert; Benutzer und Zeitpunkt werden gespeichert.
      *
-     * @param array<string,mixed> $input employeeId, date, orderId, source
+     * @param array<string,mixed> $input version, decision
      * @param array<string,mixed> $actor
      * @return array<string,mixed>
      */
-    public function chooseSource(array $input, array $actor): array
+    public function resolveLegacy(string $id, array $input, array $actor): array
     {
         $this->require($actor, 'timesheet.manage');
-        $employee = $this->employee((string) ($input['employeeId'] ?? ''), $actor);
-        $date = $this->date((string) ($input['date'] ?? ''));
-        $order = $this->times->order(trim((string) ($input['orderId'] ?? ''))) ?? throw new DocumentValidationException(['Der Auftrag wurde nicht gefunden.']);
-        $source = (string) ($input['source'] ?? '');
-        if ($source !== '' && !isset(self::SOURCES[$source])) {
-            throw new DocumentValidationException(['Ungültige Quelle.']);
+        $entry = $this->times->entry($id) ?? throw new DocumentValidationException(['Die Buchung wurde nicht gefunden.']);
+        $decision = (string) ($input['decision'] ?? '');
+        if (!in_array($decision, ['count', 'exclude'], true)) {
+            throw new DocumentValidationException(['Bitte „zählt“ oder „zählt nicht“ wählen.']);
         }
-        $this->times->saveChoice((string) $employee['id'], $date, (string) $order['id'], $source !== '' ? $source : null, (string) $actor['id'], Clock::now());
-        return $this->day((string) $employee['id'], $date, $actor);
-    }
-
-    /**
-     * Bautagesbericht-Zeiten eines Tages mit ihrem Status gegenüber der Zeiterfassung.
-     *
-     * @param list<array<string,mixed>> $entries Zeitblöcke des Tages
-     * @return list<array<string,mixed>>
-     */
-    private function sourceStatus(string $employeeId, string $date, array $entries): array
-    {
-        $tracked = [];
-        foreach ($entries as $entry) {
-            if ($entry['order_id'] !== null) {
-                $tracked[$entry['order_id']] = ($tracked[$entry['order_id']] ?? 0) + (int) $entry['net_minutes'];
-            }
+        if ($entry['legacy_state'] !== 'review') {
+            throw new DocumentValidationException(['Diese Buchung ist kein offener Altfall.']);
         }
-        $choices = array_column($this->times->choices($employeeId, $date, $date), null, 'order_id');
-        $times = $this->times;
-        return array_map(static function (array $row) use ($tracked, $choices, $times, $employeeId, $date): array {
-            // Berichte ohne Auftrag bzw. ohne übernommene Stunden sind nur Referenz: keine Ist-Stunden, kein Konflikt.
-            $countable = $row['order_id'] !== null && (int) $row['labor_counts_for_order'] === 1;
-            $choice = $countable ? ($choices[$row['order_id']] ?? null) : null;
-            $status = match (true) {
-                $row['order_id'] === null => 'no_order',
-                !$countable => 'not_order_hours',
-                !isset($tracked[$row['order_id']]) => 'report_only',
-                $choice === null => 'conflict',
-                default => 'chosen_' . $choice['source'],
-            };
-            return [
-                'reportId' => $row['report_id'], 'orderId' => $row['order_id'], 'orderNumber' => $row['order_number'], 'orderTitle' => $row['order_title'], 'customerName' => $row['customer_name'],
-                'hours' => $row['duration_hours'], 'description' => $row['description'], 'status' => $status,
-                'trackedMinutes' => $row['order_id'] !== null ? ($tracked[$row['order_id']] ?? 0) : 0, 'chosenByName' => $choice['chosen_by_name'] ?? null, 'chosenAt' => $choice['chosen_at'] ?? null,
-                'history' => !in_array($status, ['conflict', 'chosen_time_tracking', 'chosen_daily_report'], true) ? [] : array_map(static fn (array $event): array => ['previousSource' => $event['previous_source'], 'source' => $event['source'],
-                    'changedByName' => $event['changed_by_name'], 'changedAt' => $event['changed_at']], $times->choiceEvents($employeeId, $date, (string) $row['order_id'])),
-            ];
-        }, $this->times->dailyReportTimes($employeeId, $date, $date));
+        if (!$this->times->resolveLegacy($id, $this->version($input), $decision === 'count' ? null : 'excluded', (string) $actor['id'], Clock::now())) {
+            throw new DocumentValidationException(['Die Buchung wurde zwischenzeitlich geändert. Bitte neu laden.']);
+        }
+        return $this->day((string) $entry['employee_id'], (string) $entry['work_date'], $actor);
     }
 
     /**
      * Verteilt einen Block auf Beginntag und Folgetag. Bruttozeit (Ende − Beginn) nach Uhrzeit;
      * Pause und Reisezeit sind ohne Uhrzeit erfasst und werden im Verhältnis der Bruttozeit
      * aufgeteilt (Rundung auf Minuten, Rest am Beginntag). Netto je Tag = Brutto − Pausenanteil.
+     * Buchungen ohne Uhrzeiten zählen vollständig am Buchungstag.
      *
      * @param array<string,mixed> $entry
      * @return array{0:array{net:int,travel:int},1:array{net:int,travel:int}}
@@ -489,8 +427,11 @@ final readonly class TimeTrackingService
     {
         $net = (int) $entry['net_minutes'];
         $travel = (int) ($entry['travel_minutes'] ?? 0);
-        $break = (int) $entry['break_minutes'];
+        $break = (int) ($entry['break_minutes'] ?? 0);
         $gross = $net + $break;
+        if (($entry['start_time'] ?? null) === null) {
+            return [['net' => $net, 'travel' => $travel], ['net' => 0, 'travel' => 0]];
+        }
         $start = self::minutes((string) $entry['start_time']);
         $firstGross = min($gross, 1440 - $start);
         if (!(bool) $entry['ends_next_day'] || $firstGross >= $gross) {
@@ -503,41 +444,36 @@ final readonly class TimeTrackingService
     }
 
     /**
-     * Summen je Kalendertag im Zeitraum (Blöcke ab dem Vortag berücksichtigen).
+     * Summen je Kalendertag im Zeitraum (Blöcke ab dem Vortag berücksichtigen). Nur zählende
+     * Buchungen; Altfälle in Klärung als pendingMinutes, fehlende Uhrzeiten als incompleteMinutes.
      *
      * @param list<array<string,mixed>> $entries
-     * @return array<string,array{netMinutes:int,travelMinutes:int,workMinutes:int,entryCount:int}>
+     * @return array<string,array<string,mixed>>
      */
-    private function dayShares(array $entries, string $from, string $to): array
+    private function dayShares(array $entries, string $from, string $to, bool $timesOptional): array
     {
         $days = [];
         for ($day = new DateTimeImmutable($from); $day->format('Y-m-d') <= $to; $day = $day->modify('+1 day')) {
-            $days[$day->format('Y-m-d')] = ['netMinutes' => 0, 'travelMinutes' => 0, 'workMinutes' => 0, 'entryCount' => 0];
+            $days[$day->format('Y-m-d')] = ['netMinutes' => 0, 'travelMinutes' => 0, 'workMinutes' => 0, 'incompleteMinutes' => 0, 'pendingMinutes' => 0,
+                'bySource' => ['work_report' => 0, 'daily_report' => 0, 'manual' => 0], 'entryCount' => 0];
         }
         foreach ($entries as $entry) {
             foreach (self::segments($entry) as $index => [$key, $share]) {
                 if (!isset($days[$key])) {
                     continue;
                 }
-                $days[$key]['netMinutes'] += $share['net'];
-                $days[$key]['travelMinutes'] += $share['travel'];
-                $days[$key]['workMinutes'] += $share['net'] - $share['travel'];
-                $days[$key]['entryCount'] += $index === 0 ? 1 : 0;
+                self::addShare($days[$key], $entry, $share['net'], $share['travel'], $timesOptional);
+                $days[$key]['entryCount'] += $index === 0 && self::counts($entry) ? 1 : 0;
             }
         }
         return $days;
-    }
-
-    private static function hoursToMinutes(string $hours): int
-    {
-        return (int) BigDecimal::of($hours)->multipliedBy(60)->toScale(0, \Brick\Math\RoundingMode::HalfUp)->toInt();
     }
 
     // -------------------------------------------------------------------------
     // Zeitblöcke
     // -------------------------------------------------------------------------
 
-    /** @param array<string,mixed> $input @param array<string,mixed> $actor @return array<string,mixed> */
+    /** Manueller Zeitblock (mit Uhrzeiten oder – wenn erlaubt – nur mit Dauer). @param array<string,mixed> $input @param array<string,mixed> $actor @return array<string,mixed> */
     public function createEntry(array $input, array $actor): array
     {
         $employee = $this->employee(isset($input['employeeId']) ? (string) $input['employeeId'] : null, $actor);
@@ -545,32 +481,44 @@ final readonly class TimeTrackingService
         $values = $this->entryValues($input, (string) $employee['id'], null, $actor);
         $now = Clock::now();
         $this->times->insertEntry($values + [
-            'id' => Uuid::v4(), 'employee_id' => $employee['id'],
+            'id' => Uuid::v4(), 'employee_id' => $employee['id'], 'source_kind' => 'manual',
             'hourly_cost_rate_snapshot' => $employee['hourly_cost_rate'],
             'created_by_user_id' => (string) $actor['id'], 'created_at' => $now, 'updated_by_user_id' => (string) $actor['id'], 'updated_at' => $now,
         ]);
         return $this->day((string) $employee['id'], $values['work_date'], $actor);
     }
 
-    /** @param array<string,mixed> $input @param array<string,mixed> $actor @return array<string,mixed> */
+    /**
+     * Manuelle Buchung bearbeiten bzw. bei Berichtsbuchungen nur die zeitliche Einordnung
+     * (Beginn, Ende, Pause, Reisezeit, Einsatzart, Bemerkung) ergänzen. Die Berichtsdauer bleibt.
+     *
+     * @param array<string,mixed> $input
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
     public function updateEntry(string $id, array $input, array $actor): array
     {
         $entry = $this->times->entry($id) ?? throw new DocumentValidationException(['Der Zeitblock wurde nicht gefunden.']);
         $employee = $this->employee((string) $entry['employee_id'], $actor);
         $this->assertEditable($employee, $actor);
-        $values = $this->entryValues($input, (string) $employee['id'], $entry, $actor);
+        $values = $entry['source_kind'] === 'manual'
+            ? $this->entryValues($input, (string) $employee['id'], $entry, $actor)
+            : $this->reportTimeValues($input, $entry);
         if (!$this->times->updateEntry($id, $this->version($input), $values + ['updated_by_user_id' => (string) $actor['id'], 'updated_at' => Clock::now()])) {
             throw new DocumentValidationException(['Der Zeitblock wurde zwischenzeitlich geändert. Bitte neu laden.']);
         }
-        return $this->day((string) $employee['id'], $values['work_date'], $actor);
+        return $this->day((string) $employee['id'], (string) $entry['work_date'], $actor);
     }
 
-    /** @param array<string,mixed> $input @param array<string,mixed> $actor @return array<string,mixed> */
+    /** Nur manuelle Buchungen; Berichtsstunden werden am Bericht geändert. @param array<string,mixed> $input @param array<string,mixed> $actor @return array<string,mixed> */
     public function deleteEntry(string $id, array $input, array $actor): array
     {
         $entry = $this->times->entry($id) ?? throw new DocumentValidationException(['Der Zeitblock wurde nicht gefunden.']);
         $employee = $this->employee((string) $entry['employee_id'], $actor);
         $this->assertEditable($employee, $actor);
+        if ($entry['source_kind'] !== 'manual') {
+            throw new DocumentValidationException(['Stunden aus ' . self::SOURCE_KINDS[$entry['source_kind']] . 'en werden im Bericht geändert, nicht in der Zeiterfassung.']);
+        }
         if (!$this->times->deleteEntry($id, $this->version($input))) {
             throw new DocumentValidationException(['Der Zeitblock wurde zwischenzeitlich geändert. Bitte neu laden.']);
         }
@@ -695,7 +643,9 @@ final readonly class TimeTrackingService
     // -------------------------------------------------------------------------
 
     /**
-     * Prüft und berechnet einen Zeitblock. Ende ≤ Beginn bedeutet „endet am Folgetag“.
+     * Prüft und berechnet einen manuellen Zeitblock. Mit Uhrzeiten: Ende ≤ Beginn bedeutet
+     * „endet am Folgetag“, Nettozeit = Ende − Beginn − Pause. Ohne Uhrzeiten (nur wenn die
+     * Betriebseinstellung es erlaubt): Dauer in Minuten (durationMinutes).
      *
      * @param array<string,mixed> $input
      * @param array<string,mixed>|null $existing
@@ -705,8 +655,66 @@ final readonly class TimeTrackingService
     private function entryValues(array $input, string $employeeId, ?array $existing, array $actor): array
     {
         $date = $this->date((string) ($input['date'] ?? $existing['work_date'] ?? ''));
-        $start = $this->time((string) ($input['start'] ?? ''), 'Beginn');
-        $end = $this->time((string) ($input['end'] ?? ''), 'Ende');
+        $timing = $this->timing($input, $employeeId, $date, $existing['id'] ?? null, null);
+        $activity = (string) ($input['activity'] ?? '');
+        // „travel“ nur für unveränderte Bestandsblöcke; neu ist Reisezeit ein Feld.
+        if (!in_array($activity, self::SELECTABLE_ACTIVITIES, true) && !($activity === 'travel' && ($existing['activity'] ?? null) === 'travel')) {
+            throw new DocumentValidationException(['Bitte die Art der Tätigkeit wählen.']);
+        }
+        return $timing + [
+            'work_date' => $date, 'activity' => $activity,
+            'travel_minutes' => $this->travel($input, $timing['net_minutes']),
+            'order_id' => $this->optionalOrder($input['orderId'] ?? '', $actor, $existing['order_id'] ?? null),
+            'assignment_kind' => $this->assignment($input),
+            'notes' => $this->text($input['notes'] ?? '', 500, 'Bemerkung'),
+        ];
+    }
+
+    /**
+     * Zeitliche Einordnung einer Berichtsbuchung. Dauer, Datum, Mitarbeiter und Auftrag kommen aus
+     * dem Bericht und bleiben unverändert; Uhrzeiten müssen exakt zur Berichtsdauer passen.
+     *
+     * @param array<string,mixed> $input
+     * @param array<string,mixed> $entry
+     * @return array<string,mixed>
+     */
+    private function reportTimeValues(array $input, array $entry): array
+    {
+        $net = (int) $entry['net_minutes'];
+        $timing = $this->timing($input, (string) $entry['employee_id'], (string) $entry['work_date'], (string) $entry['id'], $net);
+        return $timing + [
+            'travel_minutes' => $this->travel($input, $net),
+            'assignment_kind' => $this->assignment($input),
+            'notes' => $this->text($input['notes'] ?? '', 500, 'Bemerkung'),
+        ];
+    }
+
+    /**
+     * Beginn/Ende/Pause oder – ohne Uhrzeiten – nur die Dauer. Bei vorgegebener Dauer ($fixedNet)
+     * muss die Nettozeit exakt passen; ohne Uhrzeiten bleibt die Dauer.
+     *
+     * @param array<string,mixed> $input
+     * @return array{start_time:?string,end_time:?string,ends_next_day:int,break_minutes:int,net_minutes:int}
+     */
+    private function timing(array $input, string $employeeId, string $date, ?string $ignoreId, ?int $fixedNet): array
+    {
+        $rawStart = trim((string) ($input['start'] ?? ''));
+        $rawEnd = trim((string) ($input['end'] ?? ''));
+        if ($rawStart === '' && $rawEnd === '') {
+            if ($fixedNet !== null) {
+                return ['start_time' => null, 'end_time' => null, 'ends_next_day' => 0, 'break_minutes' => 0, 'net_minutes' => $fixedNet];
+            }
+            if (!$this->times->timesOptional()) {
+                throw new DocumentValidationException(['Bitte Beginn und Ende angeben (Stundenerfassung ohne Uhrzeiten ist in den Betriebseinstellungen deaktiviert).']);
+            }
+            $duration = filter_var(trim((string) ($input['durationMinutes'] ?? '')), FILTER_VALIDATE_INT);
+            if ($duration === false || $duration < 1 || $duration > 1440) {
+                throw new DocumentValidationException(['Bitte Beginn und Ende oder eine Dauer (1 bis 1.440 Minuten) angeben.']);
+            }
+            return ['start_time' => null, 'end_time' => null, 'ends_next_day' => 0, 'break_minutes' => 0, 'net_minutes' => $duration];
+        }
+        $start = $this->time($rawStart, 'Beginn');
+        $end = $this->time($rawEnd, 'Ende');
         if ($start === $end) {
             throw new DocumentValidationException(['Beginn und Ende dürfen nicht gleich sein.']);
         }
@@ -722,55 +730,66 @@ final readonly class TimeTrackingService
         if ($break >= $span) {
             throw new DocumentValidationException(['Die Pause muss kürzer als der Zeitblock sein.']);
         }
-        $activity = (string) ($input['activity'] ?? '');
-        // „travel“ nur für unveränderte Bestandsblöcke; neu ist Reisezeit ein Feld.
-        if (!in_array($activity, self::SELECTABLE_ACTIVITIES, true) && !($activity === 'travel' && ($existing['activity'] ?? null) === 'travel')) {
-            throw new DocumentValidationException(['Bitte die Art der Tätigkeit wählen.']);
-        }
         $net = $span - $break;
+        if ($fixedNet !== null && $net !== $fixedNet) {
+            throw new DocumentValidationException([sprintf('Ende − Beginn − Pause ergibt %s, der Bericht dokumentiert %s. Die Berichtsdauer kann hier nicht geändert werden – '
+                . 'zusätzliche Zeit bitte als eigenen Zeitblock erfassen oder den Bericht korrigieren.', self::hours($net), self::hours($fixedNet))]);
+        }
+        $this->assertNoOverlap($employeeId, $date, $startMinutes, $span, $ignoreId);
+        return ['start_time' => $start, 'end_time' => $end, 'ends_next_day' => $nextDay ? 1 : 0, 'break_minutes' => $break, 'net_minutes' => $net];
+    }
+
+    /** @param array<string,mixed> $input */
+    private function travel(array $input, int $net): int
+    {
         $rawTravel = trim((string) ($input['travelMinutes'] ?? ''));
         $travel = $rawTravel === '' ? 0 : filter_var($rawTravel, FILTER_VALIDATE_INT);
         if ($travel === false || $travel < 0) {
             throw new DocumentValidationException(['Die Reisezeit muss eine ganze Zahl von Minuten (0 oder mehr) sein.']);
         }
         if ($travel > $net) {
-            throw new DocumentValidationException(['Die Reisezeit darf die Nettozeit nicht überschreiten.']);
+            throw new DocumentValidationException(['Die Reisezeit ist Teil der Arbeitszeit und darf die Nettozeit nicht überschreiten.']);
         }
+        return $travel;
+    }
+
+    /** @param array<string,mixed> $input */
+    private function assignment(array $input): ?string
+    {
         $assignment = trim((string) ($input['assignmentKind'] ?? ''));
         if ($assignment !== '' && !isset(self::ASSIGNMENTS[$assignment])) {
             throw new DocumentValidationException(['Ungültige Einsatzart.']);
         }
-        $order = $this->optionalOrder($input['orderId'] ?? '', $actor, $existing['order_id'] ?? null);
-        $this->assertNoOverlap($employeeId, $date, $startMinutes, $span, $existing['id'] ?? null);
-        return [
-            'work_date' => $date, 'start_time' => $start, 'end_time' => $end, 'ends_next_day' => $nextDay ? 1 : 0,
-            'break_minutes' => $break, 'net_minutes' => $net, 'travel_minutes' => $travel, 'activity' => $activity, 'order_id' => $order,
-            'assignment_kind' => $assignment !== '' ? $assignment : null,
-            'notes' => $this->text($input['notes'] ?? '', 500, 'Bemerkung'),
-        ];
+        return $assignment !== '' ? $assignment : null;
     }
 
-    /** Überschneidungen mit eigenen Blöcken desselben, des vorigen und des nächsten Tages. */
+    private static function hours(int $minutes): string
+    {
+        return sprintf('%d:%02d h', intdiv($minutes, 60), $minutes % 60);
+    }
+
+    /** Überschneidungen mit eigenen Buchungen mit Uhrzeiten (alle Herkünfte) desselben, des vorigen und des nächsten Tages. */
     private function assertNoOverlap(string $employeeId, string $date, int $start, int $span, ?string $ignoreId): void
     {
         $day = new DateTimeImmutable($date);
         $neighbours = $this->times->entries($employeeId, $day->modify('-1 day')->format('Y-m-d'), $day->modify('+1 day')->format('Y-m-d'));
         foreach ($neighbours as $other) {
-            if ($other['id'] === $ignoreId) {
+            if ($other['id'] === $ignoreId || $other['start_time'] === null || $other['legacy_state'] === 'excluded') {
                 continue;
             }
             $offset = (int) (new DateTimeImmutable((string) $other['work_date']))->diff($day)->format('%r%a') * -1440;
             $otherStart = $offset + self::minutes((string) $other['start_time']);
             $otherEnd = $otherStart + (int) $other['net_minutes'] + (int) $other['break_minutes'];
             if ($start < $otherEnd && $otherStart < $start + $span) {
-                throw new DocumentValidationException([sprintf('Der Zeitblock überschneidet sich mit %s–%s am %s.', $other['start_time'], $other['end_time'],
-                    (new DateTimeImmutable((string) $other['work_date']))->format('d.m.Y'))]);
+                throw new DocumentValidationException([sprintf('Der Zeitblock überschneidet sich mit %s–%s am %s (%s).', $other['start_time'], $other['end_time'],
+                    (new DateTimeImmutable((string) $other['work_date']))->format('d.m.Y'), self::SOURCE_KINDS[$other['source_kind']] ?? '')]);
             }
         }
     }
 
     /**
-     * Einfache Hinweise (keine arbeitsrechtliche Prüfung): langer Tag, kurze Ruhezeit.
+     * Einfache Hinweise (keine arbeitsrechtliche Prüfung): langer Tag, kurze Ruhezeit. Ohne
+     * Uhrzeiten wird nur die Tagessumme geprüft; Buchungen werden nie verändert.
      *
      * @param list<array<string,mixed>> $entries
      * @return list<string>
@@ -778,18 +797,23 @@ final readonly class TimeTrackingService
     private function warnings(string $employeeId, string $date, array $entries): array
     {
         $warnings = [];
-        $total = array_sum(array_map('intval', array_column($entries, 'net_minutes')));
+        $counted = array_filter($entries, static fn (array $entry): bool => self::counts($entry));
+        $total = array_sum(array_map('intval', array_column($counted, 'net_minutes')));
         if ($total > self::LONG_DAY_MINUTES) {
-            $warnings[] = 'Mehr als 10 Stunden erfasst – bitte prüfen.';
+            $warnings[] = 'Mehr als 10 Stunden erfasst (alle Herkünfte zusammen) – bitte prüfen, ob Arbeit doppelt dokumentiert wurde.';
         }
-        if ($entries !== []) {
-            $previous = $this->times->entries($employeeId, (new DateTimeImmutable($date))->modify('-1 day')->format('Y-m-d'), (new DateTimeImmutable($date))->modify('-1 day')->format('Y-m-d'));
+        $timed = array_filter($counted, static fn (array $entry): bool => $entry['start_time'] !== null);
+        if ($timed !== []) {
+            $day = (new DateTimeImmutable($date))->modify('-1 day')->format('Y-m-d');
             $lastEnd = null;
-            foreach ($previous as $entry) {
+            foreach ($this->times->entries($employeeId, $day, $day) as $entry) {
+                if ($entry['start_time'] === null || !self::counts($entry)) {
+                    continue;
+                }
                 $end = self::minutes((string) $entry['start_time']) + (int) $entry['net_minutes'] + (int) $entry['break_minutes'] - 1440;
                 $lastEnd = $lastEnd === null ? $end : max($lastEnd, $end);
             }
-            $firstStart = min(array_map(static fn (array $entry): int => self::minutes((string) $entry['start_time']), $entries));
+            $firstStart = min(array_map(static fn (array $entry): int => self::minutes((string) $entry['start_time']), $timed));
             if ($lastEnd !== null && $firstStart - $lastEnd < self::MIN_REST_MINUTES) {
                 $warnings[] = 'Weniger als 11 Stunden Ruhezeit seit dem Vortag – bitte prüfen.';
             }
@@ -797,21 +821,34 @@ final readonly class TimeTrackingService
         return $warnings;
     }
 
-    /** @param array<string,mixed> $entry @param array<string,mixed> $employee @return array<string,mixed> */
-    private function mapEntry(array $entry, array $employee, bool $costs): array
+    /**
+     * @param array<string,mixed> $entry
+     * @param array<string,mixed> $employee
+     * @return array<string,mixed>
+     */
+    private function mapEntry(array $entry, array $employee, bool $costs, bool $timesOptional, bool $canEdit): array
     {
+        $manual = $entry['source_kind'] === 'manual';
         return [
             'id' => $entry['id'], 'version' => (int) $entry['version'], 'date' => $entry['work_date'], 'start' => $entry['start_time'], 'end' => $entry['end_time'],
+            'hasTimes' => $entry['start_time'] !== null,
+            // Bei deaktivierter Betriebseinstellung: Stunden zählen, Uhrzeiten fehlen noch.
+            'timesMissing' => !$timesOptional && $entry['start_time'] === null,
             'endsNextDay' => (bool) $entry['ends_next_day'], 'breakMinutes' => (int) $entry['break_minutes'], 'netMinutes' => (int) $entry['net_minutes'],
             'travelMinutes' => (int) $entry['travel_minutes'], 'workMinutes' => (int) $entry['net_minutes'] - (int) $entry['travel_minutes'],
             'assignmentKind' => $entry['assignment_kind'], 'assignmentLabel' => $entry['assignment_kind'] !== null ? (self::ASSIGNMENTS[$entry['assignment_kind']] ?? '') : null,
             'activity' => $entry['activity'], 'activityLabel' => self::ACTIVITIES[$entry['activity']] ?? $entry['activity'],
             'orderId' => $entry['order_id'], 'orderNumber' => $entry['order_number'], 'orderTitle' => $entry['order_title'], 'notes' => $entry['notes'],
+            // Dauer ist bei Berichtsbuchungen vorgegeben; Löschen nur bei manuellen Buchungen.
+            'durationFixed' => !$manual, 'canEditTimes' => $canEdit, 'canDelete' => $canEdit && $manual,
+            'counts' => self::counts($entry), 'legacyState' => $entry['legacy_state'], 'legacyReason' => $entry['legacy_reason'],
+            'legacyReasonLabel' => $entry['legacy_reason'] !== null ? (self::LEGACY_REASONS[$entry['legacy_reason']] ?? (string) $entry['legacy_reason']) : null,
+            'legacyResolvedByName' => $entry['legacy_resolved_by_name'], 'legacyResolvedAt' => $entry['legacy_resolved_at'],
             // Nachvollziehbarkeit von Korrekturen durch Büro/Admin.
             'changedByOther' => $employee['user_id'] === null || $entry['updated_by_user_id'] !== $employee['user_id'],
             'updatedByName' => $entry['updated_by_name'], 'updatedAt' => $entry['updated_at'],
             'hourlyCostRate' => $costs ? $entry['hourly_cost_rate_snapshot'] : null,
-        ];
+        ] + self::source($entry);
     }
 
     /** @param array<string,mixed> $details @return array<string,mixed> */

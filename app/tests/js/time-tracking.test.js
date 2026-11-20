@@ -41,4 +41,12 @@ assert(monthGrid("2026-12-10").flat().at(-1) === "2027-01-03", "Jahreswechsel im
 assert(addDays("2027-01-01", -1) === "2026-12-31" && addDays("2028-02-28", 1) === "2028-02-29", "Tag zurück/weiter über Grenzen");
 assert(addMonths("2026-12-15", 1) === "2027-01-01" && addMonths("2027-01-15", -1) === "2026-12-01", "Monatswechsel über Jahresgrenze");
 assert(travelShort(90) === "R 1:30" && travelShort(0) === "", "Reisezeit kurz in Kalenderzellen");
+// Uhrzeiten zu Berichtsstunden: Nettozeit muss exakt der Berichtsdauer entsprechen.
+const { netFromTimes } = globalThis.CalightTimeTracking;
+assert(netFromTimes("08:00", "14:30", 30, 360).valid, "6 h Bericht: 08:00–14:30 mit 30 min Pause passt");
+assert(!netFromTimes("08:00", "15:30", 30, 360).valid && netFromTimes("08:00", "15:30", 30, 360).net === 420, "7 h passen nicht zu 6 h Bericht");
+const night = netFromTimes("22:00", "02:00", 0, null);
+assert(night.nextDay && night.net === 240 && night.valid, "über Mitternacht");
+assert(netFromTimes("", "", 0, 360) === null, "ohne Uhrzeiten keine Berechnung");
+assert(!netFromTimes("08:00", "09:00", 60, null).valid, "Pause so lang wie der Block ist ungültig");
 console.log("time-tracking.test.js ok");

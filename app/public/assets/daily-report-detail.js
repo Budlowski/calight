@@ -95,27 +95,29 @@
   }
 
   /**
-   * Zuordnung: Kunde, Projekt, Auftrag (auch „nachträglich zugeordnet“) und ob die Stunden als
-   * Ist-Stunden des Auftrags zählen. Büroaktionen: Auftrag zuordnen, Stunden bewusst übernehmen.
+   * Zuordnung: Kunde, Projekt und Auftrag. Die Arbeitszeiten sind tatsächliche Arbeitszeit und
+   * erscheinen genau einmal in der Zeiterfassung der Mitarbeiter; sie folgen dem Auftrag des
+   * Berichts. Büro: Auftrag zuordnen, ändern oder entfernen (protokolliert).
    */
   function renderAssignment() {
     const box = root.querySelector("[data-assignment]");
+    const bookings = report.bookings || [];
+    const pending = bookings.filter((booking) => booking.legacy_state === "review").length;
+    const excluded = bookings.filter((booking) => booking.legacy_state === "excluded").length;
     const lines = [
       `<dt>Kunde</dt><dd>${esc(report.customer_name)}${report.customer_number ? ` <span class="muted">(${esc(report.customer_number)})</span>` : ""}</dd>`,
       report.project_id ? `<dt>Projekt</dt><dd>${esc([report.project_number, report.project_name].filter(Boolean).join(" · "))}</dd>` : "",
       `<dt>Auftrag</dt><dd>${report.order_id
         ? `<a href="/orders/${encodeURIComponent(report.order_id)}">${esc(report.order_number)} · ${esc(report.order_title)}</a>${report.order_assigned_at
-          ? ` <small class="muted">nachträglich zugeordnet von ${esc(report.order_assigned_by_name)} am ${format.dateTime(report.order_assigned_at)}</small>` : ""}`
+          ? ` <small class="muted">zugeordnet von ${esc(report.order_assigned_by_name)} am ${format.dateTime(report.order_assigned_at)}</small>` : ""}`
         : '<span class="muted">Ohne Auftrag</span>'}</dd>`,
-      report.order_id ? `<dt>Arbeitszeiten</dt><dd>${report.labor_counts_for_order
-        ? `zählen als Ist-Stunden des Auftrags${report.labor_assigned_at ? ` <small class="muted">(übernommen von ${esc(report.labor_assigned_by_name)} am ${format.dateTime(report.labor_assigned_at)})</small>` : ""}`
-        : '<span class="time-conflict-text">zählen nicht als Ist-Stunden des Auftrags</span> <small class="muted">(vor der Zuordnung erfasst)</small>'}</dd>` : "",
+      `<dt>Arbeitszeiten</dt><dd>erscheinen in der Zeiterfassung der Mitarbeiter${report.order_id ? " und zählen als Ist-Stunden dieses Auftrags" : " (ohne Auftrag)"}${pending
+        ? ` <span class="time-conflict-text">· ${pending} Altfall/Altfälle in Klärung (zählen noch nicht)</span>` : ""}${excluded ? ` <span class="muted">· ${excluded} zählen nicht (frühere Entscheidung)</span>` : ""}</dd>`,
     ];
-    const actions = [
-      report.canAssignOrder ? '<button class="button button-light button-small" type="button" data-assign-order data-icon="clipboard-list">Auftrag zuordnen …</button>' : "",
-      report.canCountLabor ? '<button class="button button-light button-small" type="button" data-count-labor data-icon="clock">Stunden als Auftragsstunden übernehmen …</button>' : "",
-    ].join("");
-    box.innerHTML = `<dl class="report-assignment">${lines.join("")}</dl>${actions ? `<div class="report-assignment-actions">${actions}</div>` : ""}`;
+    const events = report.orderEvents || [];
+    box.innerHTML = `<dl class="report-assignment">${lines.join("")}</dl>
+      ${report.canAssignOrder ? `<div class="report-assignment-actions"><button class="button button-light button-small" type="button" data-assign-order data-icon="clipboard-list">${report.order_id ? "Auftrag ändern …" : "Auftrag zuordnen …"}</button></div>` : ""}
+      ${events.length ? `<details class="report-order-events"><summary>Verlauf der Auftragszuordnung (${events.length})</summary><ul>${events.map((event) => `<li>${format.dateTime(event.changed_at)} · ${esc(event.changed_by_name)}: ${esc(event.previous_order_number || "ohne Auftrag")} → ${esc(event.order_number || "ohne Auftrag")}</li>`).join("")}</ul></details>` : ""}`;
   }
 
   // ---------------------------------------------------------------------------
@@ -228,43 +230,35 @@
     },
   }));
 
-  // Nachträgliche Zuordnung (Büro): nur Aufträge desselben Kunden; Tätigkeiten und Zeiten bleiben unverändert.
+  // Auftragszuordnung (Büro): nur Aufträge desselben Kunden; Tätigkeiten und Stunden bleiben unverändert,
+  // die zugehörigen Zeitbuchungen folgen dem Auftrag (keine neuen Buchungen).
   root.querySelector("[data-assignment]").addEventListener("click", async (event) => {
-    if (event.target.closest("[data-assign-order]")) {
-      if (dirty) {
-        notify(message, "Bitte zuerst die Änderungen speichern.", "warning");
-        return;
-      }
-      const candidates = referenceOrders.filter((order) => order.customer_id === report.customer_id
-        && (!report.project_id || !order.project_id || order.project_id === report.project_id));
-      if (!candidates.length) {
-        notify(message, "Für diesen Kunden gibt es keinen passenden Auftrag.", "warning");
-        return;
-      }
-      const dialog = document.createElement("form");
-      dialog.className = "form-stack";
-      dialog.innerHTML = `
-        <p>Die Zuordnung ist organisatorisch: Tätigkeiten, Arbeitszeiten und Anhänge bleiben unverändert. Die Arbeitszeiten zählen dadurch <strong>nicht</strong> automatisch als Ist-Stunden des Auftrags.</p>
-        <label><span class="field-label">Auftrag von ${esc(report.customer_name)} <span aria-hidden="true">*</span></span>
-          <select name="orderId" required><option value="">Auftrag auswählen …</option>${candidates.map((order) => `<option value="${esc(order.id)}">${esc(order.order_number)} · ${esc(order.title)}</option>`).join("")}</select></label>`;
-      Calight.searchableSelect(dialog.elements.orderId, { placeholder: "Auftragsnummer oder Bezeichnung …" });
-      const ok = await CalightModal.open({ title: "Auftrag zuordnen", content: dialog, actions: [{ label: "Abbrechen", value: false }, { label: "Zuordnen", value: true, primary: true, validate: true }] });
-      if (!ok) return;
+    if (!event.target.closest("[data-assign-order]")) return;
+    if (dirty) {
+      notify(message, "Bitte zuerst die Änderungen speichern.", "warning");
+      return;
+    }
+    const candidates = referenceOrders.filter((order) => order.customer_id === report.customer_id && order.id !== report.order_id
+      && (report.order_id || !report.project_id || !order.project_id || order.project_id === report.project_id));
+    const dialog = document.createElement("form");
+    dialog.className = "form-stack";
+    dialog.innerHTML = `
+      <p>Die Zuordnung ändert weder Tätigkeiten noch Stunden. Die Arbeitszeiten dieses Berichts gehören danach zum gewählten Auftrag – bzw. ohne Auftrag zu keinem – und zählen dort genau einmal. Die Änderung wird mit Benutzer und Zeitpunkt protokolliert.</p>
+      <label><span class="field-label">Auftrag von ${esc(report.customer_name)}</span>
+        <select name="orderId">${report.order_id ? '<option value="">Ohne Auftrag (Zuordnung entfernen)</option>' : '<option value="">Auftrag auswählen …</option>'}${candidates.map((order) => `<option value="${esc(order.id)}">${esc(order.order_number)} · ${esc(order.title)}</option>`).join("")}</select></label>`;
+    if (candidates.length) Calight.searchableSelect(dialog.elements.orderId, { placeholder: "Auftragsnummer oder Bezeichnung …" });
+    const ok = await CalightModal.open({ title: report.order_id ? "Auftrag ändern" : "Auftrag zuordnen", content: dialog, actions: [{ label: "Abbrechen", value: false }, { label: "Übernehmen", value: true, primary: true }] });
+    if (!ok) return;
+    if (!report.order_id && !dialog.elements.orderId.value) {
+      notify(message, "Bitte einen Auftrag auswählen.", "warning");
+      return;
+    }
+    try {
       await api(`/api/daily-reports/${encodeURIComponent(report.id)}/assign-order`, { method: "POST", body: { version: report.version, orderId: dialog.elements.orderId.value } });
       await load();
-      notify(message, `Der Bericht wurde dem Auftrag ${report.order_number} zugeordnet.`, "success");
-    } else if (event.target.closest("[data-count-labor]")) {
-      if (dirty) {
-        notify(message, "Bitte zuerst die Änderungen speichern.", "warning");
-        return;
-      }
-      const ok = await CalightModal.confirm({ title: "Stunden als Auftragsstunden übernehmen",
-        content: `Die Arbeitszeiten dieses Berichts zählen danach als Ist-Stunden des Auftrags ${report.order_number}. Bestehen für dieselben Tage auch Zeitblöcke in der Zeiterfassung, muss das Büro wie üblich die maßgebliche Quelle wählen. Die Übernahme wird mit Benutzer und Zeitpunkt gespeichert.`,
-        confirmLabel: "Übernehmen" });
-      if (!ok) return;
-      await api(`/api/daily-reports/${encodeURIComponent(report.id)}/count-labor`, { method: "POST", body: { version: report.version } });
-      await load();
-      notify(message, "Die Stunden zählen jetzt als Ist-Stunden des Auftrags.", "success");
+      notify(message, report.order_id ? `Der Bericht gehört jetzt zum Auftrag ${report.order_number}.` : "Der Bericht ist keinem Auftrag mehr zugeordnet.", "success");
+    } catch (exception) {
+      notify(message, exception.message);
     }
   });
 

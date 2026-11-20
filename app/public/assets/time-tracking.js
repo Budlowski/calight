@@ -60,7 +60,20 @@
   /** Reisezeit kurz für Kalenderzellen („R 1:30“). */
   const travelShort = (minutes) => (minutes ? `R ${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}` : "");
 
-  globalThis.CalightTimeTracking = Object.freeze({ addDays, weekStart, monthRange, addMonths, hours, weekday, toMinutes, toTime, isoWeek, monthGrid, travelShort });
+  /**
+   * Nettozeit aus Beginn, Ende und Pause (Ende ≤ Beginn = Folgetag). Bei vorgegebener Dauer
+   * (Berichtsbuchung) muss die Nettozeit exakt passen. Ohne Uhrzeiten: null.
+   */
+  const netFromTimes = (start, end, breakMinutes = 0, fixed = null) => {
+    if (!start || !end || start === end) return null;
+    let span = toMinutes(end) - toMinutes(start);
+    const nextDay = span <= 0;
+    if (nextDay) span += 1440;
+    const net = span - Number(breakMinutes || 0);
+    return { net, nextDay, valid: net > 0 && (fixed === null || net === fixed) };
+  };
+
+  globalThis.CalightTimeTracking = Object.freeze({ addDays, weekStart, monthRange, addMonths, hours, weekday, toMinutes, toTime, isoWeek, monthGrid, travelShort, netFromTimes });
 
   const root = document.querySelector("#time-tracking-app");
   if (!root) return;
@@ -115,7 +128,16 @@
       <div class="total"><span>Nettozeit gesamt</span><strong>${hours(totals.netMinutes)}</strong></div>
       <div><span>Davon Reisezeit</span><strong>${hours(totals.travelMinutes)}</strong></div>
       <div><span>Übrige Arbeitszeit</span><strong>${hours(totals.workMinutes)}</strong></div>${extra}
-    </div>`;
+    </div>${sourceLine(totals)}`;
+  /** Herkunft der Summe (Rapport, Bautagesbericht, manuell) und offene Punkte. */
+  const sourceLine = (totals) => {
+    if (!totals.bySource) return "";
+    const parts = Object.entries(reference.sourceKinds).map(([kind, label]) => (totals.bySource[kind] ? `${label} ${hours(totals.bySource[kind])}` : "")).filter(Boolean);
+    if (totals.incompleteMinutes) parts.push(`<span class="time-conflict-text">${hours(totals.incompleteMinutes)} ohne Uhrzeiten</span>`);
+    if (totals.pendingMinutes) parts.push(`<span class="time-conflict-text">${hours(totals.pendingMinutes)} Altfälle in Klärung (nicht enthalten)</span>`);
+    return parts.length ? `<p class="muted time-source-line">${parts.join(" · ")}</p>` : "";
+  };
+  const sourceChip = (entry) => `<span class="time-source time-source-${esc(entry.sourceKind)}">${esc(entry.sourceLabel)}${entry.reportDraft ? " (Entwurf)" : ""}</span>`;
 
   const calendarCell = (day, { outside = false, showWeek = false } = {}) => {
     const today = day.date === localToday();
@@ -126,6 +148,7 @@
         <strong class="time-cal-hours">${day.netMinutes ? hours(day.netMinutes).replace(" h", "") : "–"}</strong>
         <small class="time-cal-travel">${travelShort(day.travelMinutes)}</small>
         ${day.privateKm || day.expenseTotal ? '<span class="time-cal-flag" title="Kilometer oder Auslagen erfasst" aria-hidden="true">•</span>' : ""}
+        ${day.incompleteMinutes || day.pendingMinutes ? '<span class="time-cal-flag time-cal-flag-warning" title="Uhrzeiten fehlen oder Altfall in Klärung" aria-hidden="true">!</span>' : ""}
       </button>`;
   };
 
@@ -176,21 +199,29 @@
       ${!day.employee.active ? '<p class="notice notice-warning">Dieser Mitarbeiter ist archiviert.</p>' : ""}
       <section class="card form-stack">
         <div class="step-section-heading">
-          <div><h2>Zeitblöcke</h2><small>${reference.canManage && state.employee ? esc(day.employee.name) : "Beginn, Ende, Pause und Tätigkeit"}</small></div>
+          <div><h2>Arbeitszeiten</h2><small>${reference.canManage && state.employee ? `${esc(day.employee.name)} · ` : ""}Rapporte, Bautagesberichte und eigene Zeitblöcke – jede Stunde genau einmal</small></div>
           <div class="step-section-actions">${editable ? '<button class="button" type="button" data-add-entry data-icon="plus">Zeitblock</button>' : ""}</div>
         </div>
         ${day.entries.length ? `<ul class="time-blocks">${day.entries.map((entry) => `
-          <li class="time-block">
-            <span class="time-block-range">${esc(entry.start)}–${esc(entry.end)}${entry.endsNextDay ? ' <small>(+1 Tag)</small>' : ""}</span>
-            <span class="time-block-main"><span class="${activityClass(entry.activity)}">${esc(entry.activityLabel)}</span>
+          <li class="time-block${entry.counts ? "" : " is-not-counted"}${entry.timesMissing ? " is-incomplete" : ""}">
+            <span class="time-block-range">${entry.hasTimes ? `${esc(entry.start)}–${esc(entry.end)}${entry.endsNextDay ? ' <small>(+1 Tag)</small>' : ""}` : `<span class="${entry.timesMissing ? "time-conflict-text" : "muted"}">${entry.timesMissing ? "Uhrzeiten fehlen" : "ohne Uhrzeit"}</span>`}</span>
+            <span class="time-block-main">${sourceChip(entry)}
+              ${entry.sourceKind === "manual" ? `<span class="${activityClass(entry.activity)}">${esc(entry.activityLabel)}</span>` : `<a href="${esc(entry.reportUrl)}">${esc(entry.reportLabel)}</a>`}
               ${entry.assignmentKind ? `<span class="time-assignment" title="${esc(entry.assignmentLabel)}">${entry.assignmentKind === "external" ? "Auswärts" : "Erste Tätigkeitsstätte"}</span>` : ""}
-              ${entry.orderNumber ? `<span class="time-block-order">${esc(entry.orderNumber)} · ${esc(entry.orderTitle || "")}</span>` : '<span class="muted">ohne Auftrag</span>'}
+              ${entry.orderNumber ? `<span class="time-block-order">${esc(entry.orderNumber)} · ${esc(entry.orderTitle || "")}</span>` : `<span class="muted">ohne Auftrag${entry.customerName ? ` · ${esc(entry.customerName)}` : ""}</span>`}
+              ${entry.reportActivity ? `<small class="muted">${esc(entry.reportActivity)}</small>` : ""}
               ${entry.notes ? `<small class="muted">${esc(entry.notes)}</small>` : ""}
+              ${entry.legacyState ? `<small class="${entry.legacyState === "review" ? "time-conflict-text" : "muted"}">${entry.legacyState === "review" ? "Altfall in Klärung – zählt noch nicht: " : "Zählt nicht: "}${esc(entry.legacyReasonLabel || "")}</small>` : ""}
+              ${!entry.legacyState && entry.legacyResolvedAt ? `<small class="muted">Altfall geklärt von ${esc(entry.legacyResolvedByName)} am ${format.dateTime(entry.legacyResolvedAt)}</small>` : ""}
               ${entry.changedByOther ? `<small class="muted">geändert von ${esc(entry.updatedByName)} am ${format.dateTime(entry.updatedAt)}</small>` : ""}</span>
-            <span class="time-block-net"><strong>${hours(entry.netMinutes)}</strong>${entry.travelMinutes ? `<small class="time-travel">davon ${hours(entry.travelMinutes)} Reise</small>` : ""}${entry.breakMinutes ? `<small class="muted">${entry.breakMinutes} min Pause</small>` : ""}</span>
-            ${editable ? `<span class="time-block-actions"><button class="icon-button" type="button" data-edit-entry="${esc(entry.id)}" data-icon="square-pen" title="Bearbeiten" aria-label="Bearbeiten"></button><button class="icon-button icon-button-danger" type="button" data-delete-entry="${esc(entry.id)}" data-icon="trash" title="Löschen" aria-label="Zeitblock löschen"></button></span>` : ""}
-          </li>`).join("")}</ul>` : '<p class="empty-state">Noch keine Zeitblöcke an diesem Tag.</p>'}
-        ${day.carriedOver.map((block) => `<p class="muted time-carried">Fortsetzung vom Vortag ${esc(block.start)}–${esc(block.end)}: anteilig ${hours(block.netMinutes)}${block.travelMinutes ? `, davon ${hours(block.travelMinutes)} Reise` : ""} (in den Summen enthalten)</p>`).join("")}
+            <span class="time-block-net"><strong>${hours(entry.netMinutes)}</strong>${entry.durationFixed ? '<small class="muted">laut Bericht</small>' : ""}${entry.travelMinutes ? `<small class="time-travel">davon ${hours(entry.travelMinutes)} Reise</small>` : ""}${entry.breakMinutes ? `<small class="muted">${entry.breakMinutes} min Pause</small>` : ""}</span>
+            <span class="time-block-actions">
+              ${day.canResolveLegacy && entry.legacyState === "review" ? `<button class="button button-light button-small" type="button" data-legacy="count" data-entry="${esc(entry.id)}">Zählt</button><button class="button button-light button-small" type="button" data-legacy="exclude" data-entry="${esc(entry.id)}">Zählt nicht</button>` : ""}
+              ${entry.canEditTimes ? `<button class="icon-button" type="button" data-edit-entry="${esc(entry.id)}" data-icon="square-pen" title="${entry.durationFixed ? "Uhrzeiten ergänzen" : "Bearbeiten"}" aria-label="${entry.durationFixed ? "Uhrzeiten ergänzen" : "Bearbeiten"}"></button>` : ""}
+              ${entry.canDelete ? `<button class="icon-button icon-button-danger" type="button" data-delete-entry="${esc(entry.id)}" data-icon="trash" title="Löschen" aria-label="Zeitblock löschen"></button>` : ""}
+            </span>
+          </li>`).join("")}</ul>` : '<p class="empty-state">Noch keine Stunden an diesem Tag – weder aus Berichten noch manuell.</p>'}
+        ${day.carriedOver.map((block) => `<p class="muted time-carried">Fortsetzung vom Vortag (${esc(block.sourceLabel)}) ${esc(block.start)}–${esc(block.end)}: anteilig ${hours(block.netMinutes)}${block.travelMinutes ? `, davon ${hours(block.travelMinutes)} Reise` : ""} (in den Summen enthalten)</p>`).join("")}
       </section>
       <section class="card form-stack">
         <div class="step-section-heading">
@@ -198,37 +229,7 @@
           <div class="step-section-actions">${editable ? `<button class="button button-light button-small" type="button" data-details data-icon="square-pen">${details || day.expenses.length ? "Bearbeiten" : "Erfassen"}</button>` : ""}</div>
         </div>
         ${day.expenses.length ? `<ul class="time-expenses">${day.expenses.map((expense) => `<li><span>${esc(expense.purpose)}${expense.orderNumber ? ` <small class="muted">· ${esc(expense.orderNumber)}</small>` : ""}${expense.hasReceipt ? ` <a href="/api/time-tracking/expenses/${encodeURIComponent(expense.id)}/receipt" target="_blank" rel="noopener" data-icon="file-down">Beleg</a>` : ""}</span><strong>${money(expense.amount)}</strong></li>`).join("")}</ul><p class="time-expense-total">Auslagen gesamt: <strong>${money(day.expenseTotal)}</strong></p>` : ""}
-      </section>
-      ${renderReferences(day)}`;
-  }
-
-  const SOURCE_TEXT = {
-    report_only: "zählt als Ist-Zeit (keine Zeitblöcke zu diesem Auftrag)",
-    conflict: "Konflikt: Zeitblöcke und Bautagesbericht für denselben Auftrag – fließt erst nach Auswahl der maßgeblichen Quelle in die Ist-Stunden ein",
-    chosen_time_tracking: "maßgeblich: Zeiterfassung",
-    chosen_daily_report: "maßgeblich: Bautagesbericht",
-    no_order: "ohne Auftrag – nur Dokumentation, keine Ist-Stunden eines Auftrags",
-    not_order_hours: "nachträglich zugeordnet – Stunden noch nicht als Auftragsstunden übernommen",
-  };
-
-  const SOURCE_LABEL = { time_tracking: "Zeiterfassung", daily_report: "Bautagesbericht" };
-
-  function renderReferences(day) {
-    if (!day.dailyReportTimes.length && !day.workReportTimes.length) return "";
-    return `<section class="card form-stack time-references">
-      <div class="step-section-heading"><div><h2>Zeiten aus anderen Modulen</h2><small>Nur zur Kontrolle – werden hier nicht addiert</small></div></div>
-      <ul class="time-reference-list">
-        ${day.dailyReportTimes.map((row) => `<li class="${row.status === "conflict" ? "is-conflict" : ""}"><a href="/daily-reports/${encodeURIComponent(row.reportId)}">Bautagesbericht · ${row.orderNumber ? esc(row.orderNumber) : `ohne Auftrag · ${esc(row.customerName)}`}</a>
-          <span>${format.number(row.hours, 2)} h${row.trackedMinutes ? ` · Zeiterfassung ${hours(row.trackedMinutes)}` : ""}</span>
-          <small class="${row.status === "conflict" ? "time-conflict-text" : "muted"}">${SOURCE_TEXT[row.status]}${row.chosenByName ? ` (gewählt von ${esc(row.chosenByName)}${row.chosenAt ? ` am ${format.dateTime(row.chosenAt)}` : ""})` : ""}</small>
-          ${row.history && row.history.length ? `<details class="time-source-history"><summary>Verlauf der Quellenwahl (${row.history.length})</summary><ul>${row.history.map((event) => `<li>${format.dateTime(event.changedAt)} · ${esc(event.changedByName)}: ${SOURCE_LABEL[event.previousSource] || "keine Wahl"} → ${SOURCE_LABEL[event.source] || "Wahl aufgehoben"}</li>`).join("")}</ul></details>` : ""}
-          ${day.canChooseSource && ["conflict", "chosen_time_tracking", "chosen_daily_report"].includes(row.status) ? `<span class="time-source-actions">
-            <button class="button button-light button-small" type="button" data-source="time_tracking" data-order="${esc(row.orderId)}"${row.status === "chosen_time_tracking" ? " disabled" : ""}>Zeiterfassung maßgeblich</button>
-            <button class="button button-light button-small" type="button" data-source="daily_report" data-order="${esc(row.orderId)}"${row.status === "chosen_daily_report" ? " disabled" : ""}>Bautagesbericht maßgeblich</button></span>` : ""}</li>`).join("")}
-        ${day.workReportTimes.map((row) => `<li><a href="/work-reports/${encodeURIComponent(row.reportId)}">Rapport ${esc(row.reportNumber || "Entwurf")}${row.orderNumber ? ` · ${esc(row.orderNumber)}` : ""}</a>
-          <span>${format.number(row.hours, 2)} h</span>
-          <small class="muted">abrechenbare Leistung, keine Ist-Zeit${row.dateTo ? ` · Zeitraum bis ${format.date(row.dateTo)}` : ""}</small></li>`).join("")}
-      </ul></section>`;
+      </section>`;
   }
 
   // ---------------------------------------------------------------------------
@@ -238,69 +239,90 @@
     .map((order) => `<option value="${esc(order.id)}"${order.id === selected ? " selected" : ""}>${esc(order.orderNumber)} · ${esc(order.title)}</option>`).join("")
     + (selected && !reference.orders.some((order) => order.id === selected) ? `<option value="${esc(selected)}" selected>bisheriger Auftrag</option>` : "");
 
+  /** Dauer als „7:30“ bzw. „7,5“ → Minuten (für Buchungen ohne Uhrzeiten). */
+  const parseDuration = (value) => {
+    const text = String(value || "").trim().replace(",", ".");
+    if (/^\d{1,2}:\d{2}$/.test(text)) return Number(text.split(":")[0]) * 60 + Number(text.split(":")[1]);
+    return /^\d+(\.\d+)?$/.test(text) ? Math.round(Number(text) * 60) : NaN;
+  };
+
+  /**
+   * Manuelle Buchung erfassen/bearbeiten oder bei Berichtsbuchungen nur die zeitliche Einordnung
+   * ergänzen (Dauer laut Bericht, unveränderlich). Uhrzeiten sind optional, wenn die
+   * Betriebseinstellung es erlaubt.
+   */
   function entryDialog(entry = null, preset = {}) {
-    const lastEnd = current.entries.length ? current.entries[current.entries.length - 1].end : "07:00";
+    const fixed = entry?.durationFixed ? entry.netMinutes : null;
+    const timed = current.entries.filter((item) => item.hasTimes);
+    const lastEnd = timed.length ? timed[timed.length - 1].end : "07:00";
     // Einsatzart des vorigen Blocks vorschlagen (jederzeit änderbar).
     const lastAssignment = current.entries.length ? current.entries[current.entries.length - 1].assignmentKind || "" : "";
     const values = {
-      start: entry?.start ?? preset.start ?? lastEnd, end: entry?.end ?? "", breakMinutes: entry?.breakMinutes ?? 0, travelMinutes: entry?.travelMinutes ?? 0,
+      start: entry ? entry.start || "" : preset.start ?? (fixed === null ? lastEnd : ""), end: entry?.end ?? "", breakMinutes: entry?.breakMinutes ?? 0, travelMinutes: entry?.travelMinutes ?? 0,
       activity: entry?.activity ?? preset.activity ?? "work", assignmentKind: entry ? entry.assignmentKind || "" : preset.assignmentKind ?? lastAssignment,
       orderId: entry?.orderId ?? preset.orderId ?? "", notes: entry?.notes ?? "",
+      duration: entry && !entry.hasTimes && fixed === null ? hours(entry.netMinutes).replace(" h", "") : "",
     };
+    const timesRequired = !current.timesOptional && fixed === null;
     // Bestandsblöcke „Fahrt“ behalten ihre Tätigkeit; neu wird sie nicht angeboten.
     const activities = values.activity === "travel" ? { ...reference.activities, travel: reference.activityLabels.travel } : reference.activities;
     const form = document.createElement("form");
     form.className = "form-stack";
     form.noValidate = true;
     form.innerHTML = `
+      ${fixed !== null ? `<p class="notice">${esc(entry.reportLabel)}: <strong>${hours(fixed)}</strong> laut Bericht. Die Dauer wird im Bericht geändert; hier werden nur Uhrzeiten, Pause, Reisezeit und Einsatzart ergänzt. Ende − Beginn − Pause muss genau ${hours(fixed)} ergeben.</p>` : ""}
       <div class="time-entry-grid">
-        <label><span class="field-label">Beginn <span aria-hidden="true">*</span></span><input name="start" type="time" required value="${esc(values.start)}"></label>
-        <label><span class="field-label">Ende <span aria-hidden="true">*</span></span><input name="end" type="time" required value="${esc(values.end)}"></label>
+        <label><span class="field-label">Beginn${timesRequired ? ' <span aria-hidden="true">*</span>' : " (optional)"}</span><input name="start" type="time"${timesRequired ? " required" : ""} value="${esc(values.start)}"></label>
+        <label><span class="field-label">Ende${timesRequired ? ' <span aria-hidden="true">*</span>' : " (optional)"}</span><input name="end" type="time"${timesRequired ? " required" : ""} value="${esc(values.end)}"></label>
         <label><span class="field-label">Pause (Min.)</span><input name="breakMinutes" type="number" min="0" step="5" inputmode="numeric" value="${esc(values.breakMinutes)}"></label>
         <label><span class="field-label">Davon Reisezeit (Min.)</span><input name="travelMinutes" type="number" min="0" step="5" inputmode="numeric" value="${esc(values.travelMinutes)}"></label>
+        ${fixed === null && !timesRequired ? `<label data-duration-field><span class="field-label">Dauer ohne Uhrzeiten</span><input name="duration" inputmode="decimal" placeholder="z. B. 1:30 oder 1,5" value="${esc(values.duration)}"></label>` : ""}
       </div>
       <p class="muted" data-net></p>
-      <fieldset class="time-activity-choice"><legend class="field-label">Tätigkeit <span aria-hidden="true">*</span></legend>
+      ${fixed === null ? `<fieldset class="time-activity-choice"><legend class="field-label">Tätigkeit <span aria-hidden="true">*</span></legend>
         ${Object.entries(activities).map(([key, label]) => `<label class="${activityClass(key)}"><input type="radio" name="activity" value="${key}"${key === values.activity ? " checked" : ""}> ${esc(label)}</label>`).join("")}
-      </fieldset>
+      </fieldset>` : ""}
       <label><span class="field-label">Einsatzart (optional)</span><select name="assignmentKind"><option value="">Keine Angabe</option>${Object.entries(reference.assignments).map(([key, label]) => `<option value="${key}"${key === values.assignmentKind ? " selected" : ""}>${esc(label)}</option>`).join("")}</select></label>
-      <label><span class="field-label">Auftrag (optional)</span><select name="orderId">${orderOptions(values.orderId)}</select></label>
-      <label><span class="field-label">Bemerkung (optional)</span><input name="notes" maxlength="500" value="${esc(values.notes)}" placeholder="z. B. Verteilung montiert"></label>
+      ${fixed === null ? `<label><span class="field-label">Auftrag (optional)</span><select name="orderId">${orderOptions(values.orderId)}</select></label>` : ""}
+      <label><span class="field-label">Bemerkung (optional)</span><input name="notes" maxlength="500" value="${esc(values.notes)}" placeholder="${fixed === null ? "z. B. Angebotsbearbeitung" : "Ergänzung zur Zeiterfassung"}"></label>
       <p class="field-error" data-dialog-error hidden></p>`;
     const net = () => {
-      const start = form.elements.start.value;
-      const end = form.elements.end.value;
-      if (!start || !end || start === end) {
-        form.querySelector("[data-net]").textContent = "";
-        return;
-      }
-      let span = toMinutes(end) - toMinutes(start);
-      if (span <= 0) span += 1440;
-      const value = span - Number(form.elements.breakMinutes.value || 0);
+      const result = netFromTimes(form.elements.start.value, form.elements.end.value, form.elements.breakMinutes.value, fixed);
       const travel = Number(form.elements.travelMinutes.value || 0);
-      form.querySelector("[data-net]").textContent = value > 0
-        ? `Nettozeit ${hours(value)} · davon Reisezeit ${hours(Math.max(0, travel))} · übrige Arbeitszeit ${travel <= value ? hours(value - Math.max(0, travel)) : "–"}${toMinutes(end) <= toMinutes(start) ? " (endet am Folgetag)" : ""}${travel > value ? " – Reisezeit größer als Nettozeit" : ""}`
-        : "Nettozeit: –";
+      const durationField = form.querySelector("[data-duration-field]");
+      if (durationField) durationField.hidden = Boolean(form.elements.start.value || form.elements.end.value);
+      const base = result ? result.net : fixed ?? parseDuration(form.elements.duration?.value);
+      form.querySelector("[data-net]").textContent = !result && Number.isNaN(base)
+        ? ""
+        : result && result.net <= 0
+          ? "Nettozeit: –"
+          : `Nettozeit ${hours(base)} · davon Reisezeit ${hours(Math.max(0, travel))} · übrige Arbeitszeit ${travel <= base ? hours(base - Math.max(0, travel)) : "–"}${result?.nextDay ? " (endet am Folgetag)" : ""}${travel > base ? " – Reisezeit größer als Nettozeit" : ""}${result && fixed !== null && result.net !== fixed ? ` – passt nicht zu ${hours(fixed)} laut Bericht` : ""}`;
     };
     form.addEventListener("input", net);
     net();
-    Calight.searchableSelect(form.elements.orderId, { placeholder: "Auftragsnummer oder Bezeichnung …" });
-    const body = () => ({
-      date: state.date, employeeId: state.employee, start: form.elements.start.value, end: form.elements.end.value,
-      breakMinutes: form.elements.breakMinutes.value, travelMinutes: form.elements.travelMinutes.value, assignmentKind: form.elements.assignmentKind.value, activity: form.elements.activity.value, orderId: form.elements.orderId.value, notes: form.elements.notes.value.trim(),
-      ...(entry ? { version: entry.version } : {}),
-    });
+    if (form.elements.orderId) Calight.searchableSelect(form.elements.orderId, { placeholder: "Auftragsnummer oder Bezeichnung …" });
+    const body = () => {
+      const timesGiven = Boolean(form.elements.start.value || form.elements.end.value);
+      const duration = form.elements.duration && !timesGiven ? parseDuration(form.elements.duration.value) : NaN;
+      return {
+        date: state.date, employeeId: state.employee, start: form.elements.start.value, end: form.elements.end.value,
+        breakMinutes: timesGiven ? form.elements.breakMinutes.value : 0, travelMinutes: form.elements.travelMinutes.value, assignmentKind: form.elements.assignmentKind.value,
+        activity: form.elements.activity?.value ?? entry?.activity, orderId: form.elements.orderId?.value ?? "", notes: form.elements.notes.value.trim(),
+        ...(Number.isNaN(duration) ? {} : { durationMinutes: duration }),
+        ...(entry ? { version: entry.version } : {}),
+      };
+    };
     const save = async () => {
       current = entry
         ? await api(`/api/time-tracking/entries/${encodeURIComponent(entry.id)}`, { method: "PUT", body: body() })
         : await api("/api/time-tracking/entries", { method: "POST", body: body() });
     };
     Calight.createDialog({
-      title: entry ? "Zeitblock bearbeiten" : "Zeitblock erfassen",
+      title: fixed !== null ? "Uhrzeiten ergänzen" : entry ? "Zeitblock bearbeiten" : "Zeitblock erfassen",
       form,
       submitLabel: "Speichern",
       discardMessage: "Eingaben verwerfen?",
-      initialFocus: entry ? '[name="start"]' : '[name="end"]',
+      initialFocus: '[name="start"]',
       // Schnelle wiederholte Erfassung: nächster Block beginnt mit dem Ende des vorigen.
       extraActions: entry ? [] : [{
         label: "Speichern und weiter",
@@ -432,11 +454,12 @@
     return period === total ? hours(total) : `${hours(period)} <small class="muted" title="Block über Mitternacht an der Zeitraumgrenze">von ${hours(total)}</small>`;
   }
 
+  /** Herkunft der Stunden je Auftrag und offene Punkte (Altfälle, fehlende Uhrzeiten). */
   function orderSourceNote(row) {
-    const notes = [];
-    if (row.unresolvedMinutes) notes.push(`<span class="time-conflict-text">${hours(row.unresolvedMinutes)} ungeklärt</span>`);
-    if (row.dailyReportChosenMinutes) notes.push(`<span class="muted">${hours(row.dailyReportChosenMinutes)} durch Bautagesbericht ersetzt</span>`);
-    return notes.join("<br>") || '<span class="muted">eindeutig</span>';
+    const notes = Object.entries(reference.sourceKinds).map(([kind, label]) => (row.bySource[kind] ? `<span class="muted">${label} ${hours(row.bySource[kind])}</span>` : "")).filter(Boolean);
+    if (row.pendingMinutes) notes.push(`<span class="time-conflict-text">${hours(row.pendingMinutes)} Altfälle in Klärung</span>`);
+    if (row.incompleteMinutes) notes.push(`<span class="time-conflict-text">${hours(row.incompleteMinutes)} ohne Uhrzeiten</span>`);
+    return notes.join("<br>") || '<span class="muted">–</span>';
   }
 
   async function renderReport() {
@@ -451,18 +474,18 @@
         <select data-report-order aria-label="Auftrag"><option value="">Alle Aufträge</option>${reference.orders.map((item) => `<option value="${esc(item.id)}"${item.id === order ? " selected" : ""}>${esc(item.orderNumber)} · ${esc(item.title)}</option>`).join("")}</select>
       </div>
       ${summaryTiles(data.totals)}
-      ${data.conflicts.length ? `<section class="card form-stack time-report-conflicts">
-        <div class="step-section-heading"><div><h2>Ungeklärte Quellen (${data.conflicts.length})</h2><small>Zeitblöcke und Bautagesbericht für denselben Mitarbeiter, Tag und Auftrag ohne Auswahl der maßgeblichen Quelle. Die Zeiterfassung ist unten enthalten, aber als ungeklärt markiert; in die Ist-Stunden je Auftrag fließt der Tag erst nach der Auswahl ein.</small></div></div>
-        <ul class="time-reference-list">${data.conflicts.map((row) => `<li class="is-conflict"><a href="/time-tracking?view=day&date=${encodeURIComponent(row.date)}&employee=${encodeURIComponent(row.employeeId)}">${format.date(row.date)} · ${esc(row.employeeName)} · ${esc(row.orderNumber)}</a>
-          <span>Zeiterfassung ${hours(row.trackingMinutes)} · Bautagesbericht ${hours(row.reportMinutes)}</span><small class="time-conflict-text">Quelle in der Tagesansicht wählen</small></li>`).join("")}</ul></section>` : ""}
+      ${data.reviews.length ? `<section class="card form-stack time-report-conflicts">
+        <div class="step-section-heading"><div><h2>Altfälle in Klärung (${data.reviews.length})</h2><small>Bestandsdaten aus der Zeit vor der zentralen Stundenbasis. Sie zählen erst, wenn das Büro in der Tagesansicht „Zählt“ wählt; „Zählt nicht“ schließt sie dauerhaft aus. Es wird nichts automatisch zusammengeführt.</small></div></div>
+        <ul class="time-reference-list">${data.reviews.map((row) => `<li class="is-conflict"><a href="/time-tracking?view=day&date=${encodeURIComponent(row.date)}&employee=${encodeURIComponent(row.employeeId)}">${format.date(row.date)} · ${esc(row.employeeName)} · ${esc(row.reportLabel || row.sourceLabel)}</a>
+          <span>${hours(row.netMinutes)}${row.orderNumber ? ` · ${esc(row.orderNumber)}` : ""}</span><small class="time-conflict-text">${esc(row.legacyReasonLabel)}</small></li>`).join("")}</ul></section>` : ""}
       <h3 class="purchase-subheading">Nach Auftrag</h3>
-      <div class="overview-table-wrap"><table class="overview-table"><thead><tr><th class="cell-title">Auftrag</th><th class="cell-money">Nettozeit</th><th class="cell-money">Davon Reise</th><th class="cell-money">Übrige Arbeit</th><th class="cell-status">Quelle</th></tr></thead>
+      <div class="overview-table-wrap"><table class="overview-table"><thead><tr><th class="cell-title">Auftrag</th><th class="cell-money">Nettozeit</th><th class="cell-money">Davon Reise</th><th class="cell-money">Übrige Arbeit</th><th class="cell-status">Herkunft</th></tr></thead>
         <tbody>${data.byOrder.map((row) => `<tr><td class="cell-title">${row.orderId ? `${esc(row.orderNumber)} · ${esc(row.orderTitle)}` : '<span class="muted">Ohne Auftrag</span>'}</td><td class="cell-money">${hours(row.netMinutes)}</td><td class="cell-money">${hours(row.travelMinutes)}</td><td class="cell-money">${hours(row.workMinutes)}</td>
           <td class="cell-status">${orderSourceNote(row)}</td></tr>`).join("") || '<tr><td colspan="5" class="muted">Keine Einträge.</td></tr>'}</tbody></table></div>
-      <h3 class="purchase-subheading">Zeitblöcke</h3>
-      <div class="overview-table-wrap"><table class="overview-table"><thead><tr><th class="cell-date">Datum</th><th class="cell-text">Mitarbeiter</th><th class="cell-text">Zeit</th><th class="cell-type">Tätigkeit</th><th class="cell-type">Einsatz</th><th class="cell-number">Auftrag</th><th class="cell-money">Netto</th><th class="cell-money">Reise</th></tr></thead>
-        <tbody>${data.rows.map((row) => `<tr><td class="cell-date">${format.date(row.date)}</td><td class="cell-text">${esc(row.employeeName)}</td><td class="cell-text">${esc(row.start)}–${esc(row.end)}${row.endsNextDay ? " (+1)" : ""}</td>
-          <td class="cell-type"><span class="${activityClass(row.activity)}">${esc(row.activityLabel)}</span></td><td class="cell-type" title="${esc(row.assignmentLabel)}">${row.assignmentKind === "external" ? "Auswärts" : row.assignmentKind === "regular" ? "Erste T." : "–"}</td><td class="cell-number">${esc(row.orderNumber || "–")}</td><td class="cell-money">${periodHours(row.periodNetMinutes, row.netMinutes)}${row.sourceStatus === "conflict" ? ' <span class="time-conflict-text" title="Quelle ungeklärt">!</span>' : ""}</td><td class="cell-money">${row.travelMinutes ? periodHours(row.periodTravelMinutes, row.travelMinutes) : "–"}</td></tr>`).join("") || '<tr><td colspan="8" class="muted">Keine Einträge.</td></tr>'}</tbody></table></div>`;
+      <h3 class="purchase-subheading">Buchungen</h3>
+      <div class="overview-table-wrap"><table class="overview-table"><thead><tr><th class="cell-date">Datum</th><th class="cell-text">Mitarbeiter</th><th class="cell-text">Zeit</th><th class="cell-type">Herkunft</th><th class="cell-type">Einsatz</th><th class="cell-number">Auftrag</th><th class="cell-money">Netto</th><th class="cell-money">Reise</th></tr></thead>
+        <tbody>${data.rows.map((row) => `<tr><td class="cell-date">${format.date(row.date)}</td><td class="cell-text">${esc(row.employeeName)}</td><td class="cell-text">${row.hasTimes ? `${esc(row.start)}–${esc(row.end)}${row.endsNextDay ? " (+1)" : ""}` : `<span class="${data.timesOptional ? "muted" : "time-conflict-text"}">ohne Uhrzeit</span>`}</td>
+          <td class="cell-type">${row.reportUrl ? `<a href="${esc(row.reportUrl)}">${esc(row.reportLabel)}</a>` : `<span class="${activityClass(row.activity)}">${esc(row.activityLabel)}</span>`}</td><td class="cell-type" title="${esc(row.assignmentLabel)}">${row.assignmentKind === "external" ? "Auswärts" : row.assignmentKind === "regular" ? "Erste T." : "–"}</td><td class="cell-number">${esc(row.orderNumber || "–")}</td><td class="cell-money">${periodHours(row.periodNetMinutes, row.netMinutes)}${row.legacyState ? ` <span class="time-conflict-text" title="${row.legacyState === "review" ? "Altfall in Klärung – nicht in den Summen" : "zählt nicht"}">${row.legacyState === "review" ? "?" : "×"}</span>` : ""}</td><td class="cell-money">${row.travelMinutes ? periodHours(row.periodTravelMinutes, row.travelMinutes) : "–"}</td></tr>`).join("") || '<tr><td colspan="8" class="muted">Keine Einträge.</td></tr>'}</tbody></table></div>`;
     content.querySelector("[data-report-employee]").addEventListener("change", (event) => {
       state.employee = event.target.value;
       render();
@@ -501,10 +524,16 @@
       state.view = "day";
       return render();
     }
-    const source = event.target.closest("[data-source]");
-    if (source) {
+    const legacy = event.target.closest("[data-legacy]");
+    if (legacy) {
+      const entry = current.entries.find((item) => item.id === legacy.dataset.entry);
+      const counts = legacy.dataset.legacy === "count";
+      const ok = await CalightModal.confirm({ title: counts ? "Altfall: Stunden zählen" : "Altfall: Stunden zählen nicht",
+        content: `${entry.reportLabel || entry.sourceLabel}: ${hours(entry.netMinutes)} ${counts ? "zählen künftig als Ist-Zeit." : "bleiben erhalten, zählen aber nicht als Ist-Zeit."} Die Entscheidung wird mit Benutzer und Zeitpunkt gespeichert.`,
+        confirmLabel: counts ? "Zählt" : "Zählt nicht" });
+      if (!ok) return;
       try {
-        current = await api("/api/time-tracking/source", { method: "PUT", body: { employeeId: current.employee.id, date: state.date, orderId: source.dataset.order, source: source.dataset.source } });
+        current = await api(`/api/time-tracking/entries/${encodeURIComponent(entry.id)}/legacy`, { method: "PUT", body: { version: entry.version, decision: legacy.dataset.legacy } });
         await renderDay();
       } catch (exception) {
         notify(message, exception.message);
@@ -518,7 +547,7 @@
     const remove = event.target.closest("[data-delete-entry]");
     if (remove) {
       const entry = current.entries.find((item) => item.id === remove.dataset.deleteEntry);
-      if (!(await CalightModal.confirm({ title: "Zeitblock löschen", content: `${entry.start}–${entry.end} (${entry.activityLabel}) wird gelöscht.`, confirmLabel: "Löschen", danger: true }))) return;
+      if (!(await CalightModal.confirm({ title: "Zeitblock löschen", content: `${entry.hasTimes ? `${entry.start}–${entry.end}` : hours(entry.netMinutes)} (${entry.activityLabel}) wird gelöscht.`, confirmLabel: "Löschen", danger: true }))) return;
       try {
         current = await api(`/api/time-tracking/entries/${encodeURIComponent(entry.id)}`, { method: "DELETE", body: { version: entry.version } });
         await renderDay();

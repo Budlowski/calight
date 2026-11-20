@@ -16,13 +16,14 @@ final readonly class WorkReportRepository
     private const CUSTOMER_NAME = "CASE WHEN c.customer_type='company' THEN c.company_name ELSE trim(c.first_name || ' ' || c.last_name) END";
     private const SELECT = 'w.*, o.order_number, o.title AS order_title, o.status AS order_status, o.order_type, c.customer_number, %s AS customer_name,
         u.display_name AS creator_name, su.display_name AS submitted_by_name, pu.display_name AS processed_by_name, au.display_name AS order_assigned_by_name,
-        corrected.report_number AS corrected_number,
+        corrected.report_number AS corrected_number, superseding.report_number AS superseded_by_number,
         (SELECT COUNT(*) FROM work_reports later WHERE later.correction_of_id = w.id) AS correction_count,
         (SELECT group_concat(l.hours, \'|\') FROM work_report_labor l WHERE l.report_id = w.id) AS hour_values';
     // Kunde direkt am Rapport; der Auftrag ist optional (eigenständige Rapporte).
     private const FROM = 'work_reports w JOIN customers c ON c.id = w.customer_id LEFT JOIN orders o ON o.id = w.order_id
         JOIN users u ON u.id = w.created_by_user_id LEFT JOIN users su ON su.id = w.submitted_by_user_id LEFT JOIN users au ON au.id = w.order_assigned_by_user_id
-        LEFT JOIN users pu ON pu.id = w.processed_by_user_id LEFT JOIN work_reports corrected ON corrected.id = w.correction_of_id';
+        LEFT JOIN users pu ON pu.id = w.processed_by_user_id LEFT JOIN work_reports corrected ON corrected.id = w.correction_of_id
+        LEFT JOIN work_reports superseding ON superseding.id = w.superseded_by_id';
 
     public function __construct(private PDO $pdo)
     {
@@ -135,19 +136,53 @@ final readonly class WorkReportRepository
     /** @param list<array<string,mixed>> $labor @param list<array<string,mixed>> $materials */
     public function replaceProof(string $reportId, array $labor, array $materials): void
     {
-        $this->pdo->prepare('DELETE FROM work_report_labor WHERE report_id = :id')->execute(['id' => $reportId]);
+        // Stundenpositionen behalten ihre ID (Upsert): Die zugehörige zentrale Zeitbuchung
+        // (time_entries.work_report_labor_id, ON DELETE CASCADE) bleibt so mit ihren ergänzten
+        // Uhrzeiten erhalten. Nur entfernte Positionen werden gelöscht.
+        $keep = array_column($labor, 'id');
+        $existing = $this->pdo->prepare('SELECT id FROM work_report_labor WHERE report_id = :id');
+        $existing->execute(['id' => $reportId]);
+        $delete = $this->pdo->prepare('DELETE FROM work_report_labor WHERE id = :id AND report_id = :report');
+        foreach ($existing->fetchAll(PDO::FETCH_COLUMN) as $id) {
+            if (!in_array($id, $keep, true)) {
+                $delete->execute(['id' => $id, 'report' => $reportId]);
+            }
+        }
         $this->pdo->prepare('DELETE FROM work_report_materials WHERE report_id = :id')->execute(['id' => $reportId]);
-        $insertLabor = $this->pdo->prepare('INSERT INTO work_report_labor
+        $upsertLabor = $this->pdo->prepare('INSERT INTO work_report_labor
             (id, report_id, employee_id, worker_name, work_date, hours, labor_item_id, labor_item_name, activity, sort_order)
-            VALUES (:id, :report_id, :employee_id, :worker_name, :work_date, :hours, :labor_item_id, :labor_item_name, :activity, :sort_order)');
+            VALUES (:id, :report_id, :employee_id, :worker_name, :work_date, :hours, :labor_item_id, :labor_item_name, :activity, :sort_order)
+            ON CONFLICT(id) DO UPDATE SET employee_id = excluded.employee_id, worker_name = excluded.worker_name, work_date = excluded.work_date, hours = excluded.hours,
+                labor_item_id = excluded.labor_item_id, labor_item_name = excluded.labor_item_name, activity = excluded.activity, sort_order = excluded.sort_order
+            WHERE work_report_labor.report_id = excluded.report_id');
         foreach ($labor as $row) {
-            $insertLabor->execute($row + ['work_date' => null]);
+            $upsertLabor->execute($row + ['work_date' => null]);
         }
         $insertMaterial = $this->pdo->prepare('INSERT INTO work_report_materials (id, report_id, quantity, unit, description, sort_order)
             VALUES (:id, :report_id, :quantity, :unit, :description, :sort_order)');
         foreach ($materials as $row) {
             $insertMaterial->execute($row);
         }
+    }
+
+    /**
+     * Gültigkeitswechsel: Die Korrektur ersetzt ihren Vorgänger. Nur eine eingereichte, noch nicht
+     * ersetzte Fassung kann ersetzt werden (atomar; schützt vor konkurrierenden Korrekturen).
+     */
+    public function supersede(string $previousId, string $correctionId, string $at): bool
+    {
+        $statement = $this->pdo->prepare("UPDATE work_reports SET superseded_by_id = :correction, superseded_at = :at
+            WHERE id = :id AND status <> 'draft' AND superseded_by_id IS NULL");
+        $statement->execute(['correction' => $correctionId, 'at' => $at, 'id' => $previousId]);
+        return $statement->rowCount() === 1;
+    }
+
+    /** IDs der Stundenpositionen eines Rapports. @return list<string> */
+    public function laborIds(string $reportId): array
+    {
+        $statement = $this->pdo->prepare('SELECT id FROM work_report_labor WHERE report_id = :id');
+        $statement->execute(['id' => $reportId]);
+        return $statement->fetchAll(PDO::FETCH_COLUMN);
     }
 
     public function submit(string $id, int $version, string $number, string $userId, string $at, string $hash): bool

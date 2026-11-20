@@ -109,7 +109,7 @@ final readonly class Bootstrap
             $masterData,
             $customerProjects,
             new OfferCalculationController(new OfferCalculationService($masterDataService,new OfferValidator(),$offerCalculator)),
-            new SettingsController($view,$settingsService),
+            new SettingsController($view,$settingsService,new OperationalSettingsService($this->pdo)),
             $offerPdfService,
             new InternalCalculationPdfService($this->pdo,$documentSettingsRepository,new OfferValidator(),$offerCalculator),
             new OrderController($view,$orderService,$dailyReportService,$materialRequestService,$measurementService,$workReportService),

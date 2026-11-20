@@ -56,4 +56,17 @@ assert(DECIMAL_PATTERN.test("3,5") && !DECIMAL_PATTERN.test("3,5 h"), "decimal p
   assert(exact.fromUnits(exact.lineCents(exact.toUnits("3", 3), "0.0050"), 2) === "0.02", "3 × 0,005 € = 0,015 € → 0,02 €");
 }
 
+// Vorschlagsliste in Dialogen: unterhalb des Feldes, bei zu wenig Platz nach oben, Höhe begrenzt.
+{
+  const { suggestPlacement } = globalThis.Calight;
+  const below = suggestPlacement({ top: 100, bottom: 130, left: 20.4, width: 300 }, 200, 800);
+  assert(!below.up && below.top === 132 && below.bottom === null && below.maxHeight === 300 && below.left === 20, `unterhalb: ${JSON.stringify(below)}`);
+  const up = suggestPlacement({ top: 600, bottom: 630, left: 0, width: 200 }, 250, 700);
+  assert(up.up && up.top === null && up.bottom === 102 && up.maxHeight === 300, `oberhalb bei Platzmangel (Dialogfuß): ${JSON.stringify(up)}`);
+  const tight = suggestPlacement({ top: 60, bottom: 90, left: 0, width: 200 }, 400, 300);
+  assert(!tight.up && tight.maxHeight === 200, `unten mehr Platz: begrenzte Höhe ${JSON.stringify(tight)}`);
+  const tiny = suggestPlacement({ top: 10, bottom: 40, left: 0, width: 200 }, 50, 60);
+  assert(tiny.maxHeight === 80, "Mindesthöhe bleibt bedienbar");
+}
+
 console.log("calight helper tests passed");

@@ -150,6 +150,27 @@
   // Die Daten liefert immer der Server (Berechtigungen bleiben dort); die Komponente
   // regelt nur Darstellung und Bedienung: Pfeiltasten, Enter, Escape, Leeren-Knopf.
   let suggestCount = 0;
+
+  /**
+   * Lage einer am Bildschirm ausgerichteten Vorschlagsliste: unterhalb des Feldes, bei zu wenig
+   * Platz (und mehr Platz oberhalb) nach oben; Höhe auf den verfügbaren Platz begrenzt.
+   *
+   * @param {{top:number,bottom:number,left:number,width:number}} rect Feld (getBoundingClientRect)
+   * @param {number} contentHeight benötigte Höhe der Liste
+   * @param {number} viewportHeight
+   */
+  function suggestPlacement(rect, contentHeight, viewportHeight, gap = 2, margin = 8, limit = 300) {
+    const below = viewportHeight - rect.bottom - gap - margin;
+    const above = rect.top - gap - margin;
+    const wanted = Math.min(contentHeight, limit);
+    const up = below < wanted && above > below;
+    const maxHeight = Math.max(80, Math.floor(Math.min(limit, up ? above : below)));
+    return {
+      left: Math.round(rect.left), width: Math.round(rect.width), up, maxHeight,
+      top: up ? null : Math.round(rect.bottom + gap),
+      bottom: up ? Math.round(viewportHeight - rect.top + gap) : null,
+    };
+  }
   function suggest({ input, list, clear = null, load, render, choose, minLength = 2, empty = "Keine Treffer.", onError = null }) {
     const id = `suggest-${++suggestCount}`;
     let items = [];
@@ -165,10 +186,31 @@
     input.setAttribute("aria-expanded", "false");
 
     const options = () => [...list.querySelectorAll("[data-suggest-index]")];
+    // In Dialogen und scrollenden Containern würde die Liste abgeschnitten oder vom Dialogfuß
+    // überdeckt: dann am Bildschirm ausrichten (position: fixed, ohne extreme z-index-Werte)
+    // und bei zu wenig Platz unterhalb nach oben aufklappen. Beim Scrollen mitführen.
+    const clipped = () => Boolean(input.closest("dialog, .global-modal-content, .overview-table-wrap, .table-wrap"));
+    const place = () => {
+      if (list.hidden || !list.classList.contains("suggest-list-fixed")) return;
+      const geometry = suggestPlacement(input.getBoundingClientRect(), list.scrollHeight, innerHeight);
+      list.style.left = `${geometry.left}px`;
+      list.style.width = `${geometry.width}px`;
+      list.style.top = geometry.top === null ? "" : `${geometry.top}px`;
+      list.style.bottom = geometry.bottom === null ? "" : `${geometry.bottom}px`;
+      list.style.maxHeight = `${geometry.maxHeight}px`;
+      list.classList.toggle("suggest-list-up", geometry.up);
+    };
     const open = (value) => {
       list.hidden = !value;
       input.setAttribute("aria-expanded", String(value));
-      if (!value) {
+      if (value) {
+        list.classList.toggle("suggest-list-fixed", clipped());
+        place();
+        addEventListener("scroll", place, true);
+        addEventListener("resize", place);
+      } else {
+        removeEventListener("scroll", place, true);
+        removeEventListener("resize", place);
         active = -1;
         input.removeAttribute("aria-activedescendant");
       }
@@ -312,5 +354,5 @@
     return { refresh: show };
   }
 
-  globalThis.Calight = Object.freeze({ esc, api, format, exact, collator, normalize, matches, notify, bindProjectToCustomer, createDialog, suggest, searchableSelect });
+  globalThis.Calight = Object.freeze({ esc, api, format, exact, collator, normalize, matches, notify, bindProjectToCustomer, createDialog, suggest, searchableSelect, suggestPlacement });
 })();

@@ -18,6 +18,8 @@ final class AuthorizationPolicy
         if ($path === '/dashboard') return ['dashboard.read'];
         if (str_starts_with($path, '/api/users')) return ['users.manage'];
         if ($path === '/settings/employees' || str_starts_with($path, '/api/employees')) return ['employees.manage', 'costs.read'];
+        // Betriebseinstellungen (Einstellungen → Betrieb): nur Administratoren.
+        if ($path === '/settings/operations' || str_starts_with($path, '/api/operational-settings')) return ['operations.manage'];
         if (str_starts_with($path, '/daily-reports') || str_starts_with($path, '/api/daily-reports')) return [$write ? 'reports.write' : 'reports.read'];
         // Rapporte: Leistungsnachweis erfassen (workreports.write); Preise, Abrechnung und Abschluss nur mit workreports.process.
         if (preg_match('#^/api/work-reports/([^/]+/(billing|process|reopen|assign-order|confirmation-document|confirmation-request)|catalog)$#', $path) === 1) return ['workreports.read', 'workreports.process'];

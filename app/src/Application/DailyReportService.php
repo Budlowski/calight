@@ -10,6 +10,7 @@ use App\Infrastructure\Persistence\AttachmentStore;
 use App\Infrastructure\Persistence\DailyReportRepository;
 use App\Infrastructure\Persistence\EmployeeRepository;
 use App\Infrastructure\Persistence\OrderRepository;
+use App\Infrastructure\Persistence\ReportTimeBookings;
 use App\Http\AccessDeniedException;
 use App\Support\Clock;
 use App\Support\ListQuery;
@@ -23,10 +24,11 @@ use Throwable;
  * Bautagesberichte: interne Dokumentation tatsächlicher Arbeiten und Termine.
  *
  * Kunde ist Pflicht; Projekt und Auftrag sind optional – auch dauerhaft (z. B. Besichtigung vor
- * dem Angebot). Ein Auftrag kann später vom Büro organisatorisch zugeordnet werden. Das macht die
- * Berichtsstunden nicht automatisch zu Ist-Stunden des Auftrags: dafür ist die bewusste Übernahme
- * (labor_counts_for_order) nötig. Berichte, die mit Auftrag angelegt werden, zählen wie bisher.
- * PDFs werden bei jedem Abruf neu erzeugt und nicht archiviert.
+ * dem Angebot). Jede Mitarbeiterstundenposition ist tatsächliche Arbeitszeit und hat genau eine
+ * zentrale Zeitbuchung (ReportTimeBookings, gleiche Transaktion); Stundenkorrekturen am Bericht
+ * wirken unmittelbar. Die Stunden folgen dem Auftrag des Berichts; das Büro kann den Auftrag
+ * nachträglich setzen, ändern oder entfernen (protokolliert). PDFs werden bei jedem Abruf neu
+ * erzeugt und nicht archiviert.
  */
 final readonly class DailyReportService
 {
@@ -114,8 +116,10 @@ final readonly class DailyReportService
         $entries=$this->reports->entries($id);foreach($entries as &$entry)$entry['targetKey']=$entry['target_kind']==='order'?'order':$entry['target_basis_type'].':'.$entry['target_basis_id'].':'.$entry['target_node_id'];unset($entry);if(!$this->canReadCosts($actor))foreach($entries as &$entry)unset($entry['hourly_cost_rate_snapshot'],$entry['labor_cost']);unset($entry);
         unset($report['basis_json']);$report['entries']=$entries;$report['attachments']=array_map($this->mapAttachment(...),$this->reports->attachments($id));$report['targets']=$this->targets($report['order_id']!==null?(string)$report['order_id']:null);$report['canEdit']=$this->canEdit($report,$actor);
         $report['labor_counts_for_order']=(bool)$report['labor_counts_for_order'];
-        $report['canAssignOrder']=$report['order_id']===null&&$this->can($actor,'orders.write');
-        $report['canCountLabor']=$report['order_id']!==null&&!$report['labor_counts_for_order']&&$this->can($actor,'timesheet.manage');
+        $report['canAssignOrder']=$this->can($actor,'orders.write');
+        $report['orderEvents']=$this->can($actor,'orders.write')?$this->reports->orderEvents($id):[];
+        // Zentrale Zeitbuchungen der Positionen (Status aus der Zeiterfassung: zählt / Altfall in Klärung / ausgeschlossen).
+        $report['bookings']=$this->reports->bookings($id);
         unset($report['order_project_id']);return$report;
     }
 
@@ -127,7 +131,7 @@ final readonly class DailyReportService
         $this->pdo->exec('BEGIN IMMEDIATE');try{$this->reports->insertReport(['id'=>$id,'customer_id'=>$customerId,'project_id'=>$projectId,'order_id'=>$orderId,
             // Mit Auftrag angelegt: Stunden zählen wie bisher als Ist-Stunden. Ohne Auftrag: nie automatisch.
             'labor_counts_for_order'=>$orderId!==null?1:0,
-            'report_date'=>$values['report_date'],'title'=>$values['title'],'activities'=>$values['activities'],'notes'=>$values['notes'],'created_by_user_id'=>$actor['id'],'created_at'=>$now,'updated_at'=>$now]);$this->reports->replaceEntries($id,$entries);$this->pdo->commit();}catch(Throwable $e){if($this->pdo->inTransaction())$this->pdo->rollBack();throw$e;}
+            'report_date'=>$values['report_date'],'title'=>$values['title'],'activities'=>$values['activities'],'notes'=>$values['notes'],'created_by_user_id'=>$actor['id'],'created_at'=>$now,'updated_at'=>$now]);$this->reports->replaceEntries($id,$entries);(new ReportTimeBookings($this->pdo))->syncDailyReport($id,(string)$actor['id'],$now);$this->pdo->commit();}catch(Throwable $e){if($this->pdo->inTransaction())$this->pdo->rollBack();throw$e;}
         return$this->detail($id,$actor);
     }
 
@@ -155,11 +159,11 @@ final readonly class DailyReportService
     }
 
     /**
-     * Ordnet einen Bericht ohne Auftrag nachträglich einem Auftrag desselben Kunden zu (Büro).
-     * Organisatorisch: Tätigkeiten, Zeiten und Anhänge bleiben unverändert; die Stunden werden
-     * dadurch NICHT zu Ist-Stunden des Auftrags (siehe countLaborForOrder).
+     * Auftrag eines Berichts setzen, ändern oder entfernen (Büro, orders.write). Nur Aufträge
+     * desselben Kunden und passenden Projekts. Die zugehörigen Zeitbuchungen erhalten denselben
+     * Auftrag (keine neuen Buchungen); Altfälle in Klärung bleiben in Klärung. Protokolliert.
      *
-     * @param array<string,mixed> $input version, orderId
+     * @param array<string,mixed> $input version, orderId ('' = ohne Auftrag)
      * @param array<string,mixed> $actor
      * @return array<string,mixed>
      */
@@ -167,29 +171,23 @@ final readonly class DailyReportService
     {
         if(!$this->can($actor,'orders.write'))throw new AccessDeniedException('orders.write');
         $report=$this->reports->find($id);if($report===null)throw new DailyReportValidationException(['Bautagesbericht wurde nicht gefunden.']);
-        if($report['order_id']!==null)throw new DailyReportValidationException(['Der Bericht ist bereits einem Auftrag zugeordnet.']);
-        $order=$this->orders->find(trim((string)($input['orderId']??'')));if($order===null)throw new DailyReportValidationException(['Auftrag wurde nicht gefunden.']);
-        if((string)$order['customer_id']!==(string)$report['customer_id'])throw new DailyReportValidationException(['Der Auftrag gehört nicht zum Kunden des Berichts.']);
-        if($report['project_id']!==null&&$order['project_id']!==null&&(string)$report['project_id']!==(string)$order['project_id'])throw new DailyReportValidationException(['Der Auftrag gehört zu einem anderen Projekt als der Bericht.']);
-        if(!$this->reports->assignOrder($id,(int)($input['version']??0),(string)$order['id'],$order['project_id']!==null?(string)$order['project_id']:null,(string)$actor['id'],Clock::now()))throw new DailyReportValidationException(['Der Bautagesbericht wurde zwischenzeitlich geändert. Bitte neu laden.']);
-        return$this->detail($id,$actor);
-    }
-
-    /**
-     * Bewusste Entscheidung des Büros: Stunden eines nachträglich zugeordneten Berichts zählen als
-     * Ist-Stunden des Auftrags. Danach gilt die übliche Quellenwahl gegenüber der Zeiterfassung.
-     *
-     * @param array<string,mixed> $input version
-     * @param array<string,mixed> $actor
-     * @return array<string,mixed>
-     */
-    public function countLaborForOrder(string $id,array $input,array $actor):array
-    {
-        if(!$this->can($actor,'timesheet.manage'))throw new AccessDeniedException('timesheet.manage');
-        $report=$this->reports->find($id);if($report===null)throw new DailyReportValidationException(['Bautagesbericht wurde nicht gefunden.']);
-        if($report['order_id']===null)throw new DailyReportValidationException(['Ohne Auftrag können Stunden nicht als Auftragsstunden übernommen werden.']);
-        if((int)$report['labor_counts_for_order']===1)throw new DailyReportValidationException(['Die Stunden zählen bereits als Ist-Stunden des Auftrags.']);
-        if(!$this->reports->countLaborForOrder($id,(int)($input['version']??0),(string)$actor['id'],Clock::now()))throw new DailyReportValidationException(['Der Bautagesbericht wurde zwischenzeitlich geändert. Bitte neu laden.']);
+        $orderId=trim((string)($input['orderId']??''));$order=null;
+        if($orderId!==''){
+            $order=$this->orders->find($orderId);if($order===null)throw new DailyReportValidationException(['Auftrag wurde nicht gefunden.']);
+            if((string)$order['customer_id']!==(string)$report['customer_id'])throw new DailyReportValidationException(['Der Auftrag gehört nicht zum Kunden des Berichts.']);
+            $reportProject=$report['order_id']===null?$report['project_id']:null;
+            if($reportProject!==null&&$order['project_id']!==null&&(string)$reportProject!==(string)$order['project_id'])throw new DailyReportValidationException(['Der Auftrag gehört zu einem anderen Projekt als der Bericht.']);
+        }
+        if(($order['id']??null)===$report['order_id'])throw new DailyReportValidationException(['Der Bericht ist diesem Auftrag bereits zugeordnet.']);
+        // Stunden ohne Mitarbeiterzeiten-Änderung umhängen: Entwurf von Positionen mit Positionsziel (Titel/Position) passt nicht zum neuen Auftrag.
+        if($report['order_id']!==null&&array_filter($this->reports->entries($id),static fn(array $entry):bool=>$entry['target_kind']!=='order')!==[])throw new DailyReportValidationException(['Zeiteinträge sind Positionen des bisherigen Auftrags zugeordnet. Bitte diese Zuordnung zuerst im Bericht auf „Gesamter Auftrag“ ändern.']);
+        $now=Clock::now();
+        $this->pdo->exec('BEGIN IMMEDIATE');
+        try{
+            if(!$this->reports->setOrder($id,(int)($input['version']??0),$report['order_id']!==null?(string)$report['order_id']:null,$order!==null?(string)$order['id']:null,$order!==null&&$order['project_id']!==null?(string)$order['project_id']:null,(string)$actor['id'],$now))throw new DailyReportValidationException(['Der Bautagesbericht wurde zwischenzeitlich geändert. Bitte neu laden.']);
+            (new ReportTimeBookings($this->pdo))->syncDailyReport($id,(string)$actor['id'],$now);
+            $this->pdo->commit();
+        }catch(Throwable $e){if($this->pdo->inTransaction())$this->pdo->rollBack();throw$e;}
         return$this->detail($id,$actor);
     }
 
@@ -198,7 +196,7 @@ final readonly class DailyReportService
     {
         $current=$this->reports->find($id);if($current===null)throw new DailyReportValidationException(['Bautagesbericht wurde nicht gefunden.']);$this->assertReportAccess($current,$actor);if(!$this->canEdit($current,$actor))throw new AccessDeniedException('reports.write.own');
         $version=(int)($input['version']??0);if($version<1)throw new DailyReportValidationException(['Versionsangabe fehlt.']);$values=$this->validateReport($input);$now=Clock::now();$existing=[];foreach($this->reports->entries($id) as $entry)$existing[(string)$entry['id']]=$entry;$entries=$this->validateEntries($input['entries']??[],$id,$current['order_id']!==null?(string)$current['order_id']:null,$values['report_date'],$actor,$now,$existing);
-        $this->pdo->exec('BEGIN IMMEDIATE');try{if(!$this->reports->updateReport(['id'=>$id,'expected_version'=>$version,'report_date'=>$values['report_date'],'title'=>$values['title'],'activities'=>$values['activities'],'notes'=>$values['notes'],'updated_at'=>$now]))throw new DailyReportValidationException(['Der Bautagesbericht wurde zwischenzeitlich geändert. Bitte neu laden.']);$this->reports->replaceEntries($id,$entries);$this->pdo->commit();}catch(Throwable $e){if($this->pdo->inTransaction())$this->pdo->rollBack();throw$e;}
+        $this->pdo->exec('BEGIN IMMEDIATE');try{if(!$this->reports->updateReport(['id'=>$id,'expected_version'=>$version,'report_date'=>$values['report_date'],'title'=>$values['title'],'activities'=>$values['activities'],'notes'=>$values['notes'],'updated_at'=>$now]))throw new DailyReportValidationException(['Der Bautagesbericht wurde zwischenzeitlich geändert. Bitte neu laden.']);$this->reports->replaceEntries($id,$entries);(new ReportTimeBookings($this->pdo))->syncDailyReport($id,(string)$actor['id'],$now);$this->pdo->commit();}catch(Throwable $e){if($this->pdo->inTransaction())$this->pdo->rollBack();throw$e;}
         return$this->detail($id,$actor);
     }
 
@@ -375,8 +373,8 @@ final readonly class DailyReportService
     {
         if(!is_array($raw))throw new DailyReportValidationException(['Zeiteinträge müssen als Liste übergeben werden.']);$targets=[];foreach($this->targets($orderId) as $target)$targets[$target['key']]=$target;$result=[];$usedEntryIds=[];
         foreach(array_values($raw) as $index=>$entry){if(!is_array($entry))throw new DailyReportValidationException(['Zeiteintrag '.($index+1).' ist ungültig.']);$entryId=(string)($entry['id']??'');if($entryId!==''&&isset($usedEntryIds[$entryId]))throw new DailyReportValidationException(['Ein Zeiteintrag wurde mehrfach übermittelt.']);if($entryId!=='')$usedEntryIds[$entryId]=true;$old=$existing[$entryId]??null;$employee=$this->employees->find((string)($entry['employeeId']??''));$sameEmployee=$employee!==null&&$old!==null&&(string)$old['employee_id']===(string)$employee['id'];if($employee===null||((int)$employee['active']!==1&&!$sameEmployee))throw new DailyReportValidationException(['Zeiteintrag '.($index+1).': Mitarbeiter ist nicht aktiv oder unbekannt.']);if(($actor['role']??'')==='technician'&&(string)$employee['user_id']!==(string)$actor['id'])throw new AccessDeniedException('reports.write.own');
-            $date=(string)($entry['workDate']??$defaultDate);if(!preg_match('/^\d{4}-\d{2}-\d{2}$/D',$date)||!checkdate((int)substr($date,5,2),(int)substr($date,8,2),(int)substr($date,0,4)))throw new DailyReportValidationException(['Zeiteintrag '.($index+1).': Arbeitsdatum ist ungültig.']);try{$duration=Decimal::parse((string)($entry['durationHours']??''),Decimal::TIME_SCALE,'Dauer');}catch(\InvalidArgumentException $e){throw new DailyReportValidationException(['Zeiteintrag '.($index+1).': '.$e->getMessage()]);}if($duration->isLessThanOrEqualTo(0))throw new DailyReportValidationException(['Zeiteintrag '.($index+1).': Dauer muss größer als null sein.']);$description=trim((string)($entry['description']??''));if(mb_strlen($description)>1000)throw new DailyReportValidationException(['Zeiteintrag '.($index+1).': Tätigkeit darf höchstens 1.000 Zeichen lang sein.']);$rate=BigDecimal::of((string)($sameEmployee?$old['hourly_cost_rate_snapshot']:$employee['hourly_cost_rate']));$cost=Decimal::money($duration->multipliedBy($rate));$targetKey=(string)($entry['targetKey']??'order');$target=$targets[$targetKey]??null;if($target===null)throw new DailyReportValidationException(['Zeiteintrag '.($index+1).': Zuordnungsziel gehört nicht zur unveränderlichen Auftragsgrundlage.']);
-            $result[]=['id'=>$old!==null?$entryId:Uuid::v4(),'report_id'=>$reportId,'employee_id'=>$employee['id'],'work_date'=>$date,'duration_hours'=>(string)$duration->toScale(Decimal::TIME_SCALE,RoundingMode::HalfUp),'description'=>$description,'target_kind'=>$target['kind'],'target_basis_type'=>$target['basisType'],'target_basis_id'=>$target['basisId'],'target_node_id'=>$target['nodeId'],'hourly_cost_rate_snapshot'=>(string)$rate->toScale(Decimal::COST_SCALE,RoundingMode::HalfUp),'labor_cost'=>$cost,'created_at'=>(string)($old['created_at']??$now),'updated_at'=>$now];
+            $date=(string)($entry['workDate']??$defaultDate);if(!preg_match('/^\d{4}-\d{2}-\d{2}$/D',$date)||!checkdate((int)substr($date,5,2),(int)substr($date,8,2),(int)substr($date,0,4)))throw new DailyReportValidationException(['Zeiteintrag '.($index+1).': Arbeitsdatum ist ungültig.']);try{$duration=Decimal::parse((string)($entry['durationHours']??''),Decimal::TIME_SCALE,'Dauer');}catch(\InvalidArgumentException $e){throw new DailyReportValidationException(['Zeiteintrag '.($index+1).': '.$e->getMessage()]);}if($duration->isLessThanOrEqualTo(0))throw new DailyReportValidationException(['Zeiteintrag '.($index+1).': Dauer muss größer als null sein.']);if(!ReportTimeBookings::wholeMinutes($duration))throw new DailyReportValidationException(['Zeiteintrag '.($index+1).': Die Dauer muss ganzen Minuten entsprechen (z. B. 1,5 oder 0,25 Stunden).']);$description=trim((string)($entry['description']??''));if(mb_strlen($description)>1000)throw new DailyReportValidationException(['Zeiteintrag '.($index+1).': Tätigkeit darf höchstens 1.000 Zeichen lang sein.']);$rate=BigDecimal::of((string)($sameEmployee?$old['hourly_cost_rate_snapshot']:$employee['hourly_cost_rate']));$cost=Decimal::money($duration->multipliedBy($rate));$targetKey=(string)($entry['targetKey']??'order');$target=$targets[$targetKey]??null;if($target===null)throw new DailyReportValidationException(['Zeiteintrag '.($index+1).': Zuordnungsziel gehört nicht zur unveränderlichen Auftragsgrundlage.']);
+            $result[]=['id'=>$old!==null?$entryId:Uuid::v4(),'report_id'=>$reportId,'employee_id'=>$employee['id'],'work_date'=>$date,'duration_hours'=>(string)$duration->toScale(Decimal::TIME_SCALE,RoundingMode::HalfUp),'description'=>$description,'target_kind'=>$target['kind'],'target_basis_type'=>$target['basisType'],'target_basis_id'=>$target['basisId'],'target_node_id'=>$target['nodeId'],'hourly_cost_rate_snapshot'=>(string)$rate->toScale(Decimal::COST_SCALE,RoundingMode::HalfUp),'labor_cost'=>$cost,'created_at'=>(string)($old['created_at']??$now),'updated_at'=>$now,'updated_by_user_id'=>(string)$actor['id']];
         }return$result;
     }
 

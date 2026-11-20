@@ -12,6 +12,7 @@
         <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="settings-document" data-settings-tab="document">Dokumentlayout</button>
         <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="settings-terms" data-settings-tab="terms">Angebotsbedingungen</button>
         <a class="tab-button" href="/settings/employees" role="tab" aria-selected="false">Mitarbeiter</a>
+        <?php if (\App\Http\Session::can('operations.manage')): ?><a class="tab-button" href="/settings/operations" role="tab" aria-selected="false">Betrieb</a><?php endif; ?>
     </nav>
 
     <form id="settings-form" class="settings-form">

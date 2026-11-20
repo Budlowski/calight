@@ -183,7 +183,8 @@
       workLocation: proofForm.elements.workLocation.value.trim(),
       description: proofForm.elements.description.value.trim(),
       notes: proofForm.elements.notes.value.trim(),
-      labor: labor.map((row) => ({ workDate: row.workDate || "", employeeId: row.employeeId || "", workerName: row.employeeId ? "" : (row.workerName || "").trim(), hours: decimal(row.hours), laborItemId: row.laborItemId || "", activity: (row.activity || "").trim() })),
+      // Die ID hält die Position stabil – und damit ihre zentrale Zeitbuchung mit ergänzten Uhrzeiten.
+      labor: labor.map((row) => ({ id: row.id || "", workDate: row.workDate || "", employeeId: row.employeeId || "", workerName: row.employeeId ? "" : (row.workerName || "").trim(), hours: decimal(row.hours), laborItemId: row.laborItemId || "", activity: (row.activity || "").trim() })),
       materials: materials.map((row) => ({ quantity: decimal(row.quantity), unit: (row.unit || "").trim(), description: (row.description || "").trim() })),
     };
   }
@@ -338,6 +339,7 @@
     document.title = `Rapport ${number} · ${report.customerName}`;
     const details = [
       report.correctedNumber ? `Korrektur zu ${esc(report.correctedNumber)}` : "",
+      report.supersededById ? `<strong class="time-conflict-text">ersetzt durch <a href="/work-reports/${encodeURIComponent(report.supersededById)}">${esc(report.supersededByNumber)}</a> – zählt nicht mehr</strong>` : "",
       report.correctionCount ? `${report.correctionCount} Korrektur${report.correctionCount === 1 ? "" : "en"} vorhanden` : "",
       report.submittedAt ? `eingereicht von ${esc(report.submittedByName)} am ${format.dateTime(report.submittedAt)}` : `erstellt von ${esc(report.creatorName)}`,
       report.processedAt ? `bearbeitet von ${esc(report.processedByName)}` : "",
@@ -384,7 +386,7 @@
     }
     root.querySelectorAll("[data-add-labor], [data-add-material]").forEach((button) => { button.hidden = !editableProof(); });
     root.querySelector("[data-proof-hint]").textContent = editableProof()
-      ? "Ausgeführte Arbeiten, Stunden und Material – ohne Preise. Nach dem Einreichen unveränderlich."
+      ? "Ausgeführte Arbeiten, Stunden und Material – ohne Preise. Stunden erscheinen in der Zeiterfassung der Mitarbeiter. Nach dem Einreichen unveränderlich."
       : (report.status === "draft" ? "Entwurf eines anderen Benutzers (nur lesend)." : "Verbindlich eingereichter Leistungsnachweis (unveränderlich).");
     renderLabor();
     renderMaterials();
