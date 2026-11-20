@@ -73,7 +73,39 @@
     return { net, nextDay, valid: net > 0 && (fixed === null || net === fixed) };
   };
 
-  globalThis.CalightTimeTracking = Object.freeze({ addDays, weekStart, monthRange, addMonths, hours, weekday, toMinutes, toTime, isoWeek, monthGrid, travelShort, netFromTimes });
+  /** Kennzeichen „ohne Uhrzeit“: neutral, bei deaktivierter Betriebseinstellung als unvollständig. */
+  const untimedLabel = (missing) => `<span class="time-untimed${missing ? " is-incomplete" : ""}"${missing ? ' title="Uhrzeiten sind laut Betriebseinstellung zu erfassen"' : ""}>Ohne Uhrzeit</span>`;
+
+  /**
+   * Eine Zeile des Stundenzettels: Uhrzeit · Tätigkeit/Beleg · Auftrag/Kunde · Herkunft · Stunden · Aktion.
+   * Reine Darstellung der vom Server gelieferten Felder (auch für Tests exportiert).
+   */
+  const entryRow = (entry) => {
+    const manual = entry.sourceKind === "manual";
+    const context = entry.orderNumber ? `${entry.orderNumber}${entry.orderTitle ? ` · ${entry.orderTitle}` : ""}` : entry.customerName || "";
+    const title = manual
+      ? esc(entry.notes || entry.activityLabel)
+      : `<a href="${esc(entry.reportUrl)}">${esc(entry.reportLabel)}</a>${entry.reportDraft ? ' <span class="time-meta-note">Entwurf</span>' : ""}`;
+    const meta = [
+      `<span class="time-source">${esc(entry.sourceLabel)}</span>`,
+      manual && entry.notes ? esc(entry.activityLabel) : "",
+      !manual && entry.reportActivity ? esc(entry.reportActivity) : "",
+      context ? `<span class="time-context" title="${esc(context)}">${esc(context)}</span>` : manual ? "Ohne Auftrag" : "",
+      entry.assignmentKind ? `<span title="${esc(entry.assignmentLabel)}">${entry.assignmentKind === "external" ? "Auswärts" : "Erste Tätigkeitsstätte"}</span>` : "",
+    ].filter(Boolean).join('<span aria-hidden="true"> · </span>');
+    const editLabel = entry.durationFixed ? (entry.hasTimes ? "Uhrzeiten bearbeiten" : "Uhrzeiten ergänzen") : "Bearbeiten";
+    return `<li class="time-block${entry.hasTimes ? "" : " is-untimed"}">
+      <span class="time-block-range">${entry.hasTimes ? `${esc(entry.start)}–${esc(entry.end)}${entry.endsNextDay ? '<small> +1 Tag</small>' : ""}` : untimedLabel(entry.timesMissing)}</span>
+      <span class="time-block-main"><span class="time-block-title" title="${esc(manual ? entry.notes || entry.activityLabel : entry.reportLabel)}">${title}</span><span class="time-block-meta" title="${esc([entry.sourceLabel, entry.reportActivity, context].filter(Boolean).join(" · "))}">${meta}</span></span>
+      <span class="time-block-net"><strong>${hours(entry.netMinutes)}</strong>${entry.travelMinutes ? `<small>davon ${hours(entry.travelMinutes)} Reise</small>` : ""}${entry.breakMinutes ? `<small>${entry.breakMinutes} min Pause</small>` : ""}</span>
+      <span class="time-block-actions">
+        ${entry.canEditTimes ? `<button class="icon-button" type="button" data-edit-entry="${esc(entry.id)}" data-icon="${entry.durationFixed && !entry.hasTimes ? "clock-3" : "square-pen"}" title="${editLabel}" aria-label="${editLabel}"></button>` : ""}
+        ${entry.canDelete ? `<button class="icon-button icon-button-danger" type="button" data-delete-entry="${esc(entry.id)}" data-icon="trash" title="Löschen" aria-label="Zeitblock löschen"></button>` : ""}
+      </span>
+    </li>`;
+  };
+
+  globalThis.CalightTimeTracking = Object.freeze({ addDays, weekStart, monthRange, addMonths, hours, weekday, toMinutes, toTime, isoWeek, monthGrid, travelShort, netFromTimes, entryRow });
 
   const root = document.querySelector("#time-tracking-app");
   if (!root) return;
@@ -109,7 +141,7 @@
       button.classList.toggle("is-active", active);
       button.setAttribute("aria-selected", String(active));
     });
-    employeeSelect.hidden = !reference.canManage || state.view === "report";
+    employeeSelect.closest("[data-employee-field]").hidden = !reference.canManage || state.view === "report";
     try {
       if (state.view === "day") await renderDay();
       else if (state.view === "report") await renderReport();
@@ -124,30 +156,37 @@
   // Woche und Monat
   // ---------------------------------------------------------------------------
   // Einheitliche Summenbegriffe: Nettozeit gesamt, davon Reisezeit, übrige Arbeitszeit.
-  const summaryTiles = (totals, extra = "") => `<div class="order-value-summary time-summary">
-      <div class="total"><span>Nettozeit gesamt</span><strong>${hours(totals.netMinutes)}</strong></div>
+  /**
+   * Tageszusammenfassung (Stundenzettel): Arbeitszeit, davon Reisezeit, ohne Uhrzeit. Einheitlich
+   * zurückhaltend; „ohne Uhrzeit“ ist Information und nur bei deaktivierter Betriebseinstellung
+   * als unvollständig markiert. Herkunft dezent in einer Zeile darunter.
+   */
+  const summaryTiles = (totals, extra = "") => {
+    const untimed = totals.untimedMinutes || 0;
+    const incomplete = Boolean(totals.incompleteMinutes);
+    return `<div class="time-summary">
+      <div><span>Arbeitszeit</span><strong>${hours(totals.netMinutes)}</strong></div>
       <div><span>Davon Reisezeit</span><strong>${hours(totals.travelMinutes)}</strong></div>
-      <div><span>Übrige Arbeitszeit</span><strong>${hours(totals.workMinutes)}</strong></div>${extra}
+      <div class="${incomplete ? "is-incomplete" : ""}"><span>Ohne Uhrzeit${incomplete ? " · unvollständig" : ""}</span><strong>${hours(untimed)}</strong></div>${extra}
     </div>${sourceLine(totals)}`;
-  /** Herkunft der Summe (Rapport, Bautagesbericht, manuell) und offene Punkte. */
+  };
+  /** Herkunft der Summe (Rapport, Bautagesbericht, manuell) als dezente Zeile. */
   const sourceLine = (totals) => {
     if (!totals.bySource) return "";
     const parts = Object.entries(reference.sourceKinds).map(([kind, label]) => (totals.bySource[kind] ? `${label} ${hours(totals.bySource[kind])}` : "")).filter(Boolean);
-    if (totals.incompleteMinutes) parts.push(`<span class="time-conflict-text">${hours(totals.incompleteMinutes)} ohne Uhrzeiten</span>`);
-    return parts.length ? `<p class="muted time-source-line">${parts.join(" · ")}</p>` : "";
+    return parts.length > 1 ? `<p class="time-source-line">${parts.join(" · ")}</p>` : "";
   };
-  const sourceChip = (entry) => `<span class="time-source time-source-${esc(entry.sourceKind)}">${esc(entry.sourceLabel)}${entry.reportDraft ? " (Entwurf)" : ""}</span>`;
-
   const calendarCell = (day, { outside = false, showWeek = false } = {}) => {
     const today = day.date === localToday();
     const week = showWeek ? `<span class="time-cal-week">KW ${isoWeek(day.date).week}</span>` : "";
-    return `<button type="button" class="time-cal-day${today ? " is-today" : ""}${outside ? " is-outside" : ""}${day.netMinutes ? " has-time" : ""}" data-open-day="${day.date}"
-        aria-label="${weekday(day.date)} ${format.date(day.date)}: ${day.netMinutes ? hours(day.netMinutes) : "keine Einträge"}">
+    const selected = day.date === state.date;
+    const untimed = day.untimedMinutes ? `, davon ${hours(day.untimedMinutes)} ohne Uhrzeit` : "";
+    return `<button type="button" class="time-cal-day${today ? " is-today" : ""}${selected ? " is-selected" : ""}${outside ? " is-outside" : ""}${day.netMinutes ? " has-time" : ""}" data-open-day="${day.date}"
+        ${selected ? 'aria-current="date" ' : ""}aria-label="${weekday(day.date)} ${format.date(day.date)}: ${day.netMinutes ? hours(day.netMinutes) + untimed : "keine Einträge"}">
         <span class="time-cal-head"><span class="time-cal-weekday">${weekday(day.date)}</span><span class="time-cal-date">${Number(day.date.slice(8, 10))}.${showWeek || state.view === "week" ? `${Number(day.date.slice(5, 7))}.` : ""}</span>${week}</span>
         <strong class="time-cal-hours">${day.netMinutes ? hours(day.netMinutes).replace(" h", "") : "–"}</strong>
         <small class="time-cal-travel">${travelShort(day.travelMinutes)}</small>
-        ${day.privateKm || day.expenseTotal ? '<span class="time-cal-flag" title="Kilometer oder Auslagen erfasst" aria-hidden="true">•</span>' : ""}
-        ${day.incompleteMinutes ? '<span class="time-cal-flag time-cal-flag-warning" title="Uhrzeiten fehlen" aria-hidden="true">!</span>' : ""}
+        <span class="time-cal-flags" aria-hidden="true">${day.untimedMinutes ? `<span class="time-cal-flag${day.incompleteMinutes ? " is-incomplete" : ""}" title="${hours(day.untimedMinutes)} ohne Uhrzeit">◷</span>` : ""}${day.privateKm || day.expenseTotal ? '<span class="time-cal-flag" title="Kilometer oder Auslagen erfasst">•</span>' : ""}</span>
       </button>`;
   };
 
@@ -194,30 +233,15 @@
     ].filter(Boolean).map(esc).join(" · ") : "";
     content.innerHTML = `
       ${summaryTiles(day.totals)}
-      ${day.warnings.map((warning) => `<p class="notice notice-warning">${esc(warning)}</p>`).join("")}
+      ${day.warnings.map((warning) => `<p class="time-hint" role="note"><span aria-hidden="true">⚠</span> ${esc(warning)}</p>`).join("")}
       ${!day.employee.active ? '<p class="notice notice-warning">Dieser Mitarbeiter ist archiviert.</p>' : ""}
       <section class="card form-stack">
         <div class="step-section-heading">
-          <div><h2>Arbeitszeiten</h2><small>${reference.canManage && state.employee ? `${esc(day.employee.name)} · ` : ""}Rapporte, Bautagesberichte und eigene Zeitblöcke – jede Stunde genau einmal</small></div>
+          <div><h2>Arbeitszeiten</h2>${reference.canManage && state.employee ? `<small>${esc(day.employee.name)}</small>` : ""}</div>
           <div class="step-section-actions">${editable ? '<button class="button" type="button" data-add-entry data-icon="plus">Zeitblock</button>' : ""}</div>
         </div>
-        ${day.entries.length ? `<ul class="time-blocks">${day.entries.map((entry) => `
-          <li class="time-block${entry.timesMissing ? " is-incomplete" : ""}">
-            <span class="time-block-range">${entry.hasTimes ? `${esc(entry.start)}–${esc(entry.end)}${entry.endsNextDay ? ' <small>(+1 Tag)</small>' : ""}` : `<span class="${entry.timesMissing ? "time-conflict-text" : "muted"}">${entry.timesMissing ? "Uhrzeiten fehlen" : "ohne Uhrzeit"}</span>`}</span>
-            <span class="time-block-main">${sourceChip(entry)}
-              ${entry.sourceKind === "manual" ? `<span class="${activityClass(entry.activity)}">${esc(entry.activityLabel)}</span>` : `<a href="${esc(entry.reportUrl)}">${esc(entry.reportLabel)}</a>`}
-              ${entry.assignmentKind ? `<span class="time-assignment" title="${esc(entry.assignmentLabel)}">${entry.assignmentKind === "external" ? "Auswärts" : "Erste Tätigkeitsstätte"}</span>` : ""}
-              ${entry.orderNumber ? `<span class="time-block-order">${esc(entry.orderNumber)} · ${esc(entry.orderTitle || "")}</span>` : `<span class="muted">ohne Auftrag${entry.customerName ? ` · ${esc(entry.customerName)}` : ""}</span>`}
-              ${entry.reportActivity ? `<small class="muted">${esc(entry.reportActivity)}</small>` : ""}
-              ${entry.notes ? `<small class="muted">${esc(entry.notes)}</small>` : ""}
-              ${entry.changedByOther ? `<small class="muted">geändert von ${esc(entry.updatedByName)} am ${format.dateTime(entry.updatedAt)}</small>` : ""}</span>
-            <span class="time-block-net"><strong>${hours(entry.netMinutes)}</strong>${entry.durationFixed ? '<small class="muted">laut Bericht</small>' : ""}${entry.travelMinutes ? `<small class="time-travel">davon ${hours(entry.travelMinutes)} Reise</small>` : ""}${entry.breakMinutes ? `<small class="muted">${entry.breakMinutes} min Pause</small>` : ""}</span>
-            <span class="time-block-actions">
-              ${entry.canEditTimes ? `<button class="icon-button" type="button" data-edit-entry="${esc(entry.id)}" data-icon="square-pen" title="${entry.durationFixed ? "Uhrzeiten ergänzen" : "Bearbeiten"}" aria-label="${entry.durationFixed ? "Uhrzeiten ergänzen" : "Bearbeiten"}"></button>` : ""}
-              ${entry.canDelete ? `<button class="icon-button icon-button-danger" type="button" data-delete-entry="${esc(entry.id)}" data-icon="trash" title="Löschen" aria-label="Zeitblock löschen"></button>` : ""}
-            </span>
-          </li>`).join("")}</ul>` : '<p class="empty-state">Noch keine Stunden an diesem Tag – weder aus Berichten noch manuell.</p>'}
-        ${day.carriedOver.map((block) => `<p class="muted time-carried">Fortsetzung vom Vortag (${esc(block.sourceLabel)}) ${esc(block.start)}–${esc(block.end)}: anteilig ${hours(block.netMinutes)}${block.travelMinutes ? `, davon ${hours(block.travelMinutes)} Reise` : ""} (in den Summen enthalten)</p>`).join("")}
+        ${day.entries.length ? `<ul class="time-blocks">${day.entries.map(entryRow).join("")}</ul>` : '<p class="empty-state">Für diesen Tag sind noch keine Arbeitszeiten erfasst.</p>'}
+        ${day.carriedOver.map((block) => `<p class="time-carried">Fortsetzung vom Vortag (${esc(block.sourceLabel)}) ${esc(block.start)}–${esc(block.end)}: anteilig ${hours(block.netMinutes)}${block.travelMinutes ? `, davon ${hours(block.travelMinutes)} Reise` : ""} (in den Summen enthalten)</p>`).join("")}
       </section>
       <section class="card form-stack">
         <div class="step-section-heading">
@@ -266,6 +290,7 @@
     form.className = "form-stack";
     form.noValidate = true;
     form.innerHTML = `
+      ${entry?.changedByOther ? `<p class="time-dialog-meta">Zuletzt geändert von ${esc(entry.updatedByName)} am ${format.dateTime(entry.updatedAt)}</p>` : ""}
       ${fixed !== null ? `<p class="notice">${esc(entry.reportLabel)}: <strong>${hours(fixed)}</strong> laut Bericht. Die Dauer wird im Bericht geändert; hier werden nur Uhrzeiten, Pause, Reisezeit und Einsatzart ergänzt. Ende − Beginn − Pause muss genau ${hours(fixed)} ergeben.</p>` : ""}
       <div class="time-entry-grid">
         <label><span class="field-label">Beginn${timesRequired ? ' <span aria-hidden="true">*</span>' : " (optional)"}</span><input name="start" type="time"${timesRequired ? " required" : ""} value="${esc(values.start)}"></label>
@@ -475,7 +500,7 @@
           <td class="cell-status">${orderSourceNote(row)}</td></tr>`).join("") || '<tr><td colspan="5" class="muted">Keine Einträge.</td></tr>'}</tbody></table></div>
       <h3 class="purchase-subheading">Buchungen</h3>
       <div class="overview-table-wrap"><table class="overview-table"><thead><tr><th class="cell-date">Datum</th><th class="cell-text">Mitarbeiter</th><th class="cell-text">Zeit</th><th class="cell-type">Herkunft</th><th class="cell-type">Einsatz</th><th class="cell-number">Auftrag</th><th class="cell-money">Netto</th><th class="cell-money">Reise</th></tr></thead>
-        <tbody>${data.rows.map((row) => `<tr><td class="cell-date">${format.date(row.date)}</td><td class="cell-text">${esc(row.employeeName)}</td><td class="cell-text">${row.hasTimes ? `${esc(row.start)}–${esc(row.end)}${row.endsNextDay ? " (+1)" : ""}` : `<span class="${data.timesOptional ? "muted" : "time-conflict-text"}">ohne Uhrzeit</span>`}</td>
+        <tbody>${data.rows.map((row) => `<tr><td class="cell-date">${format.date(row.date)}</td><td class="cell-text">${esc(row.employeeName)}</td><td class="cell-text">${row.hasTimes ? `${esc(row.start)}–${esc(row.end)}${row.endsNextDay ? " (+1)" : ""}` : untimedLabel(!data.timesOptional)}</td>
           <td class="cell-type">${row.reportUrl ? `<a href="${esc(row.reportUrl)}">${esc(row.reportLabel)}</a>` : `<span class="${activityClass(row.activity)}">${esc(row.activityLabel)}</span>`}</td><td class="cell-type" title="${esc(row.assignmentLabel)}">${row.assignmentKind === "external" ? "Auswärts" : row.assignmentKind === "regular" ? "Erste T." : "–"}</td><td class="cell-number">${esc(row.orderNumber || "–")}</td><td class="cell-money">${periodHours(row.periodNetMinutes, row.netMinutes)}</td><td class="cell-money">${row.travelMinutes ? periodHours(row.periodTravelMinutes, row.travelMinutes) : "–"}</td></tr>`).join("") || '<tr><td colspan="8" class="muted">Keine Einträge.</td></tr>'}</tbody></table></div>`;
     content.querySelector("[data-report-employee]").addEventListener("change", (event) => {
       state.employee = event.target.value;

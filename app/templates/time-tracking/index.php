@@ -3,7 +3,7 @@
     <div class="page-heading">
         <div>
             <h1>Zeiterfassung</h1>
-            <p class="muted">Tatsächliche Arbeits- und Reisezeiten. Rapporte bleiben davon getrennte Leistungsnachweise.</p>
+            <p class="muted">Arbeitszeiten aus Rapporten, Bautagesberichten und eigenen Zeitbuchungen.</p>
         </div>
     </div>
     <div class="notice" data-message role="status" hidden></div>
@@ -16,11 +16,11 @@
         </div>
         <div class="time-period">
             <button class="icon-button" type="button" data-step="-1" title="Zurück" aria-label="Zurück">‹</button>
-            <strong data-period-label></strong>
+            <strong data-period-label aria-live="polite"></strong>
             <button class="icon-button" type="button" data-step="1" title="Weiter" aria-label="Weiter">›</button>
             <button class="button button-light button-small" type="button" data-today>Heute</button>
         </div>
-        <select data-employee aria-label="Mitarbeiter" hidden></select>
+        <label class="time-employee" data-employee-field hidden><span class="visually-hidden">Mitarbeiter</span><select data-employee></select></label>
     </div>
     <div data-content aria-live="polite"><p class="empty-state">Wird geladen …</p></div>
 </div>

@@ -1370,20 +1370,40 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 
 /* Zeiterfassung (Phase 3.4.3): Woche/Tag/Monat, kompakte Zeitblöcke statt breiter Tabelle. */
 .time-tracking { display: grid; gap: var(--space-3); }
+.time-tracking > [data-content] { display: grid; gap: var(--space-2); min-width: 0; }
+.time-tracking > [data-content] > .card { margin: 0; }
 .time-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.time-employee { margin-left: auto; min-width: 220px; }
+.time-employee select { width: 100%; }
 .time-view-switch .button.is-active { border-color: var(--primary); background: #fff; color: var(--primary); box-shadow: 0 1px 3px rgb(15 42 62 / 15%); }
 .time-period { display: flex; align-items: center; gap: var(--space-2); }
-.time-period strong { min-width: 170px; text-align: center; }
-.time-toolbar > select { width: auto; min-width: 200px; margin-left: auto; }
-.time-summary { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.time-period strong { min-width: 190px; text-align: center; font-variant-numeric: tabular-nums; }
+/* Tageszusammenfassung: drei gleichwertige, zurückhaltende Kennzahlen. */
+.time-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: var(--space-2); }
+.time-summary > div { display: grid; gap: 2px; min-width: 0; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; }
+.time-summary span { color: var(--muted); font-size: var(--font-small); }
+.time-summary strong { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.time-summary .is-incomplete { border-color: #e2c27a; background: #fffaf0; }
+.time-summary .is-incomplete span { color: #684b08; }
+.time-source-line { margin: 0; color: var(--muted); font-size: var(--font-small); }
+.time-hint { margin: 0; color: #684b08; font-size: var(--font-small); }
 .time-blocks, .time-expenses { display: grid; margin: 0; padding: 0; list-style: none; }
-.time-block { display: grid; grid-template-columns: 120px minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-2) var(--space-3); padding: 9px 4px; border-bottom: 1px solid var(--border); }
+.time-block { display: grid; grid-template-columns: 112px minmax(0, 1fr) 140px 88px; align-items: center; gap: 2px var(--space-3); min-height: 52px; padding: 8px 4px; border-bottom: 1px solid var(--border); }
 .time-block:last-child { border-bottom: 0; }
 .time-block-range { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.time-block-main { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; }
-.time-block-main small { flex-basis: 100%; }
+.time-block-main { display: grid; gap: 2px; min-width: 0; }
+.time-block-title { overflow: hidden; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.time-block-meta { overflow: hidden; color: var(--muted); font-size: var(--font-small); text-overflow: ellipsis; white-space: nowrap; }
+.time-context { overflow-wrap: anywhere; }
+.time-meta-note { color: var(--muted); font-size: var(--font-small); font-weight: 400; }
+.time-untimed { color: var(--muted); font-weight: 600; }
+.time-untimed.is-incomplete { color: #684b08; }
+.time-dialog-meta { margin: 0; color: var(--muted); font-size: var(--font-small); }
 .time-block-net { display: grid; justify-items: end; font-variant-numeric: tabular-nums; }
-.time-block-actions { display: flex; gap: 2px; }
+.time-block-net strong { font-size: 16px; }
+.time-block-net small { color: var(--muted); font-size: var(--font-small); white-space: nowrap; }
+.time-block-actions { display: flex; justify-content: flex-start; gap: 4px; }
+.time-block-actions .icon-button { width: 40px; height: 40px; }
 /* Tätigkeitsarten gut unterscheidbar (Text plus Farbe). */
 .time-activity { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: var(--font-small); font-weight: 650; background: var(--status-neutral-bg); color: var(--status-neutral-fg); }
 .time-activity-work { background: var(--status-info-bg); color: var(--status-info-fg); }
@@ -1400,12 +1420,18 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 .time-expenses li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px var(--space-2); padding: 6px 0; border-bottom: 1px solid #e5eaed; }
 .time-expense-total { margin: 0; text-align: right; }
 @media (max-width: 700px) {
-    .time-toolbar > select { margin-left: 0; width: 100%; }
+    .time-employee { margin-left: 0; width: 100%; min-width: 0; }
     .time-period strong { min-width: 0; flex: 1; }
-    .time-block { grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px var(--space-2); }
-    .time-block-main { grid-column: 1 / -1; order: 4; }
+    .time-block { grid-template-columns: minmax(0, 1fr) auto; gap: 2px var(--space-2); }
+    .time-block-range { grid-column: 1; grid-row: 1; }
+    .time-block-net { grid-column: 2; grid-row: 1 / span 2; }
+    .time-block-main { grid-column: 1; grid-row: 2; }
+    .time-block-actions { grid-column: 1 / -1; grid-row: 3; }
+    .time-block-actions:empty { display: none; }
+    .time-block-title, .time-block-meta { white-space: normal; }
     .time-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .time-summary strong { font-size: 14px; }
+    .time-summary > div { padding: 6px 8px; }
+    .time-summary strong { font-size: 16px; }
     .time-entry-grid { grid-template-columns: 1fr 1fr; }
 }
 
@@ -1426,10 +1452,13 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 .time-cal-week { margin-left: auto; color: var(--muted); font-size: 10px; }
 .time-cal-hours { margin-top: auto; font-size: 18px; font-variant-numeric: tabular-nums; }
 .time-cal-travel { min-height: 1em; color: #8a5a00; font-size: var(--font-small); font-variant-numeric: tabular-nums; }
-.time-cal-flag { position: absolute; top: 2px; right: 6px; color: var(--primary); }
+.time-cal-flags { position: absolute; top: 3px; right: 6px; display: flex; gap: 3px; }
+.time-cal-flag { color: var(--muted); font-size: 12px; line-height: 1; }
+.time-cal-flag.is-incomplete { color: #8a5a00; font-weight: 700; }
+.time-cal-day.is-selected { border-color: var(--primary); background: #eaf3f9; }
 .time-assignment { padding: 1px 7px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); font-size: var(--font-small); }
 .time-travel { color: #8a5a00; }
-.time-carried { margin: var(--space-1) 0 0; }
+.time-carried { margin: var(--space-1) 0 0; color: var(--muted); font-size: var(--font-small); }
 .time-conflict-text { color: #684b08; font-weight: 650; }
 @media (max-width: 700px) {
     .time-calendar, .time-cal-weekdays, .time-cal-row { gap: 2px; }
@@ -1437,6 +1466,7 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
     .time-calendar.is-week .time-cal-day { min-height: 74px; }
     .time-cal-head { justify-content: center; }
     .time-cal-week { display: none; }
+    .time-cal-flags { position: static; justify-content: center; min-height: 12px; order: 5; }
     .time-cal-hours { font-size: 13px; }
     .time-cal-travel { font-size: 10px; }
     .time-calendar.is-week .time-cal-date { font-size: 12px; }
@@ -1451,12 +1481,7 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 .operations-setting { align-items: flex-start; }
 .operations-setting span { display: grid; gap: 2px; }
 /* Zentrale Stundenbasis: Herkunft je Buchung, fehlende Uhrzeiten */
-.time-source { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: .78rem; font-weight: 650; background: #eef1f4; color: #39424c; }
-.time-source-work_report { background: #e6f0fb; color: #1d4f86; }
-.time-source-daily_report { background: #eaf5ec; color: #23613a; }
-.time-block.is-incomplete .time-block-range { font-weight: 650; }
-.time-source-line { margin: -4px 0 8px; }
-.time-cal-flag-warning { color: #8a5a00; font-weight: 700; }
+.time-source { color: var(--text); font-weight: 600; }
 .report-order-events { font-size: .85rem; margin-bottom: 12px; }
 .report-order-events summary { cursor: pointer; color: var(--muted); }
 .report-order-events ul { margin: 4px 0 0; padding-left: 18px; }

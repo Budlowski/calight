@@ -49,4 +49,20 @@ const night = netFromTimes("22:00", "02:00", 0, null);
 assert(night.nextDay && night.net === 240 && night.valid, "über Mitternacht");
 assert(netFromTimes("", "", 0, 360) === null, "ohne Uhrzeiten keine Berechnung");
 assert(!netFromTimes("08:00", "09:00", 60, null).valid, "Pause so lang wie der Block ist ungültig");
+// Stundenzettel-Zeile: Uhrzeit bzw. „Ohne Uhrzeit“, Beleg als Link, Herkunft, Stunden, passende Aktion.
+const { entryRow } = globalThis.CalightTimeTracking;
+const base = { id: "e1", start: null, end: null, hasTimes: false, timesMissing: false, endsNextDay: false, breakMinutes: 0, netMinutes: 300, travelMinutes: 0,
+  activityLabel: "Arbeit / Montage", notes: "", orderNumber: null, orderTitle: null, customerName: null, assignmentKind: null, canEditTimes: true, canDelete: false,
+  durationFixed: true, sourceKind: "work_report", sourceLabel: "Rapport", reportUrl: "/work-reports/1", reportLabel: "Rapport RP202611001", reportActivity: "Arbeitszeit – Monteur", reportDraft: false };
+const report = entryRow({ ...base, customerName: "Testkunde" });
+assert(report.includes("Ohne Uhrzeit") && !report.includes("is-incomplete"), "ohne Uhrzeit neutral bei erlaubter Erfassung ohne Uhrzeiten");
+assert(report.includes('href="/work-reports/1"') && report.includes("Testkunde") && report.includes("5:00 h"), "Beleglink, Kunde und Stunden");
+assert(report.includes('title="Uhrzeiten ergänzen"') && !report.includes("data-delete-entry"), "Berichtsbuchung: Uhrzeiten ergänzen, kein Löschen");
+assert(entryRow({ ...base, timesMissing: true }).includes("time-untimed is-incomplete"), "unvollständig bei deaktivierter Einstellung");
+const manual = entryRow({ ...base, durationFixed: false, sourceKind: "manual", sourceLabel: "Manuell", reportUrl: null, reportLabel: null, reportActivity: "",
+  hasTimes: true, start: "07:00", end: "12:00", notes: "Büro / Rüstzeit", canDelete: true });
+assert(manual.includes("07:00–12:00") && manual.includes("Büro / Rüstzeit") && manual.includes("Ohne Auftrag") && manual.includes("data-delete-entry") && manual.includes('title="Bearbeiten"'), "manueller Eintrag");
+assert(!manual.includes("geändert von"), "keine Änderungsinformationen in der Liste");
+const withOrder = entryRow({ ...base, orderNumber: "AU1", orderTitle: "Halle <3>", customerName: "Kunde" });
+assert(withOrder.includes("AU1 · Halle &lt;3&gt;") && !withOrder.includes("Kunde<"), "Auftrag statt Kunde, maskiert, nicht doppelt");
 console.log("time-tracking.test.js ok");

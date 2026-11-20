@@ -133,11 +133,11 @@ final readonly class TimeTrackingService
         $details = array_column($this->times->detailsRange((string) $employee['id'], $from, $to), null, 'work_date');
         $expenses = $this->times->expenses((string) $employee['id'], $from, $to);
         $days = [];
-        $totals = ['netMinutes' => 0, 'travelMinutes' => 0, 'workMinutes' => 0, 'incompleteMinutes' => 0,
+        $totals = ['netMinutes' => 0, 'travelMinutes' => 0, 'workMinutes' => 0, 'incompleteMinutes' => 0, 'untimedMinutes' => 0,
             'bySource' => ['work_report' => 0, 'daily_report' => 0, 'manual' => 0]];
         foreach ($shares as $key => $share) {
             $dayExpenses = array_filter($expenses, static fn (array $expense): bool => $expense['work_date'] === $key);
-            foreach (['netMinutes', 'travelMinutes', 'workMinutes', 'incompleteMinutes'] as $field) {
+            foreach (['netMinutes', 'travelMinutes', 'workMinutes', 'incompleteMinutes', 'untimedMinutes'] as $field) {
                 $totals[$field] += $share[$field];
             }
             foreach ($share['bySource'] as $kind => $minutes) {
@@ -179,7 +179,7 @@ final readonly class TimeTrackingService
         $entries = $this->times->report($from, $to, $employeeId ?: null, $orderId ?: null);
         $rows = [];
         $byOrder = [];
-        $empty = ['netMinutes' => 0, 'travelMinutes' => 0, 'workMinutes' => 0, 'incompleteMinutes' => 0,
+        $empty = ['netMinutes' => 0, 'travelMinutes' => 0, 'workMinutes' => 0, 'incompleteMinutes' => 0, 'untimedMinutes' => 0,
             'bySource' => ['work_report' => 0, 'daily_report' => 0, 'manual' => 0]];
         $totals = $empty;
         foreach ($entries as $entry) {
@@ -209,6 +209,8 @@ final readonly class TimeTrackingService
         $sum['netMinutes'] += $net;
         $sum['travelMinutes'] += $travel;
         $sum['workMinutes'] += $net - $travel;
+        // Ohne Uhrzeit: reine Information; „unvollständig“ nur bei deaktivierter Betriebseinstellung.
+        $sum['untimedMinutes'] += $entry['start_time'] === null ? $net : 0;
         $sum['incompleteMinutes'] += !$timesOptional && $entry['start_time'] === null ? $net : 0;
         $sum['bySource'][$entry['source_kind']] += $net;
     }
@@ -382,7 +384,7 @@ final readonly class TimeTrackingService
     {
         $days = [];
         for ($day = new DateTimeImmutable($from); $day->format('Y-m-d') <= $to; $day = $day->modify('+1 day')) {
-            $days[$day->format('Y-m-d')] = ['netMinutes' => 0, 'travelMinutes' => 0, 'workMinutes' => 0, 'incompleteMinutes' => 0,
+            $days[$day->format('Y-m-d')] = ['netMinutes' => 0, 'travelMinutes' => 0, 'workMinutes' => 0, 'incompleteMinutes' => 0, 'untimedMinutes' => 0,
                 'bySource' => ['work_report' => 0, 'daily_report' => 0, 'manual' => 0], 'entryCount' => 0];
         }
         foreach ($entries as $entry) {
@@ -727,7 +729,8 @@ final readonly class TimeTrackingService
         $warnings = [];
         $total = array_sum(array_map('intval', array_column($entries, 'net_minutes')));
         if ($total > self::LONG_DAY_MINUTES) {
-            $warnings[] = 'Mehr als 10 Stunden erfasst (alle Herkünfte zusammen) – bitte prüfen, ob Arbeit doppelt dokumentiert wurde.';
+            // Plausibilitätshinweis (Grenzwert unverändert); verändert keine Buchung.
+            $warnings[] = sprintf('%s erfasst. Bitte prüfen, ob alle Buchungen korrekt sind.', self::hours($total));
         }
         $timed = array_filter($entries, static fn (array $entry): bool => $entry['start_time'] !== null);
         if ($timed !== []) {
