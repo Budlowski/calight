@@ -42,6 +42,18 @@ final readonly class TimeStatementPdf
         $rows = [];
         foreach ($snapshot['days'] as $day) {
             $label = self::weekday($day['date']) . ' ' . self::date($day['date']);
+            // Abwesenheiten getrennt von der Arbeitszeit (nie in Netto/Summen).
+            $absences = $day['absences'] ?? [];
+            foreach ($absences as $index => $absence) {
+                $rows[] = ['cells' => [$index === 0 ? $label : '', $absence['fullDay'] ? 'ganztägig' : self::hours((int) $absence['minutes']), '', '', '',
+                    'Abwesenheit: ' . $absence['label'] . ($absence['notes'] !== '' ? ' · ' . $absence['notes'] : ''), ''], 'muted' => true];
+            }
+            if ($absences !== []) {
+                $label = '';
+            }
+            if ($day['entries'] === [] && $absences !== [] && $day['netMinutes'] === 0) {
+                continue;
+            }
             if ($day['entries'] === []) {
                 $rows[] = ['cells' => [$label, '–', '', $day['netMinutes'] > 0 ? self::hours($day['netMinutes']) : '', '', $day['holiday'] ?? ($day['netMinutes'] > 0 ? 'Fortsetzung vom Vortag' : 'Keine Arbeitszeit'), ''], 'muted' => true];
                 continue;
@@ -83,6 +95,9 @@ final readonly class TimeStatementPdf
             ($totals['mealAllowance'] ?? null) !== null && $totals['mealAllowance'] !== '0.00' ? ['Verpflegung (rechnerisch)', $numbers->money((string) $totals['mealAllowance'])] : null,
             ($totals['privateKm'] ?? '0.0') !== '0.0' ? ['Privat-Pkw', $numbers->quantity((string) $totals['privateKm']) . ' km' . (isset($totals['kmAmount']) ? ' · ' . $numbers->money((string) $totals['kmAmount']) . ' (rechnerisch)' : '')] : null,
             ['Auslagen', $numbers->money((string) $totals['expenseTotal'])],
+            ...array_values(array_map(static fn (array $absence): array => [$absence['label'], trim(($absence['days'] > 0 ? $absence['days'] . ($absence['days'] === 1 ? ' Tag' : ' Tage') : '')
+                . ($absence['days'] > 0 && $absence['minutes'] > 0 ? ', ' : '') . ($absence['minutes'] > 0 ? self::hours((int) $absence['minutes']) : ''))],
+                array_filter($totals['absences'] ?? [], static fn (array $absence): bool => $absence['days'] > 0 || $absence['minutes'] > 0))),
         ])));
 
         $travel = [];

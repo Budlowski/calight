@@ -50,6 +50,8 @@ final readonly class TimeApprovalService
         private OperationalSettingsService $settings,
         private DocumentSettingsRepository $documentSettings,
         private AttachmentStore $store,
+        /** Fester „heute“-Wert nur für Tests; sonst das aktuelle Datum. */
+        private ?string $fixedToday = null,
     ) {
     }
 
@@ -115,6 +117,10 @@ final readonly class TimeApprovalService
             throw new AccessDeniedException('timesheet.own');
         }
         $period = self::periodFor((string) ($input['type'] ?? ''), (string) ($input['date'] ?? ''));
+        // Der Mitarbeiter (bzw. das Büro) bestätigt die Vollständigkeit der Angaben.
+        if (!filter_var($input['confirmComplete'] ?? false, FILTER_VALIDATE_BOOL)) {
+            throw new DocumentValidationException(['Bitte bestätigen, dass die Angaben des Zeitraums vollständig sind.']);
+        }
         $now = Clock::now();
         $this->approvals->begin();
         try {
@@ -394,6 +400,10 @@ final readonly class TimeApprovalService
             $trips[$trip['work_date']][] = $trip;
         }
         $expenses = $this->times->expenses($employeeId, $from, $to);
+        $absences = [];
+        foreach ($this->times->absences($employeeId, $from, $to) as $absence) {
+            $absences[$absence['work_date']][] = TimeTrackingService::mapAbsence($absence);
+        }
         $locks = $this->approvals->locks($employeeId, $from, $to);
         $timesOptional = (bool) $settings['time_tracking.times_optional'];
         $legal = (bool) $settings['time_tracking.warnings_enabled'];
@@ -410,7 +420,8 @@ final readonly class TimeApprovalService
         $days = [];
         foreach (self::dates($from, $to) as $date) {
             $days[$date] = ['date' => $date, 'status' => $locks[$date]['status'] ?? 'open', 'netMinutes' => 0, 'travelMinutes' => 0, 'untimedMinutes' => 0, 'entries' => [],
-                'details' => null, 'expenses' => [], 'expenseTotal' => '0.00', 'holiday' => self::holiday($date)];
+                'details' => null, 'expenses' => [], 'expenseTotal' => '0.00', 'holiday' => self::holiday($date),
+                'absences' => array_map(static fn (array $absence): array => array_diff_key($absence, ['id' => true, 'version' => true, 'employeeName' => true]), $absences[$date] ?? [])];
         }
         foreach ($entries as $entry) {
             [$first, $second] = TimeTrackingService::split($entry);
@@ -506,8 +517,14 @@ final readonly class TimeApprovalService
             if ($legal && $day['netMinutes'] > 0 && ($weekday === 7 || $day['holiday'] !== null)) {
                 $warn($date, 'sunday', $weekday === 7 ? 'Sonntagsarbeit.' : 'Arbeit am Feiertag (' . $day['holiday'] . ').');
             }
-            if ($day['netMinutes'] === 0 && $weekday <= 5 && $day['holiday'] === null && $own === []) {
+            // Fehlende Arbeitszeit nur für vergangene/heutige Werktage ohne dokumentierte Abwesenheit.
+            if ($day['netMinutes'] === 0 && $weekday <= 5 && $day['holiday'] === null && $own === [] && $day['absences'] === [] && $date <= $this->today()) {
                 $warn($date, 'empty_day', 'Keine Arbeitszeit erfasst (Werktag).');
+            }
+            foreach ($day['absences'] as $absence) {
+                if ($absence['fullDay'] && in_array($absence['type'], ['vacation', 'sick'], true) && $day['netMinutes'] > 0) {
+                    $warn($date, 'absence_conflict', sprintf('Ganztägig %s eingetragen, aber %s Arbeitszeit erfasst.', $absence['label'], self::hours($day['netMinutes'])));
+                }
             }
             $untargeted = count(array_filter($own, static fn (array $entry): bool => $entry['order_id'] === null && $entry['cost_center_id'] === null));
             if ($untargeted > 0) {
@@ -575,6 +592,8 @@ final readonly class TimeApprovalService
             $totals['expenseTotal'] = (string) BigDecimal::of($totals['expenseTotal'])->plus($day['expenseTotal'])->toScale(Decimal::MONEY_SCALE);
         }
         $totals['workMinutes'] = $totals['netMinutes'] - $totals['travelMinutes'];
+        // Abwesenheiten getrennt: Tage (ganztägig) bzw. Minuten (stundenweise), nie Arbeitszeit.
+        $totals['absences'] = TimeTrackingService::absenceTotals(array_merge([], ...array_column($days, 'absences')));
         $totals += $this->tracking->travelTotals(array_map(static fn (array $day): ?array => $day['details'], array_values($days)), $settings);
         return ['days' => $days, 'totals' => $totals, 'errors' => $errors, 'warnings' => $warnings];
     }
@@ -586,8 +605,9 @@ final readonly class TimeApprovalService
         if (!in_array($period['type'], self::allowedTypes((string) $settings['time_tracking.submission_rhythm']), true)) {
             $errors[] = ['date' => null, 'code' => 'rhythm', 'message' => 'Laut Betriebseinstellung wird ' . ($period['type'] === 'week' ? 'monatlich' : 'wöchentlich') . ' eingereicht.'];
         }
-        if ($period['to'] >= (new DateTimeImmutable('today'))->format('Y-m-d')) {
-            $errors[] = ['date' => null, 'code' => 'unfinished', 'message' => 'Der Zeitraum ist noch nicht abgeschlossen und kann erst ab dem ' . self::german(self::shift($period['to'], 1)) . ' eingereicht werden.'];
+        // Einreichen ab dem letzten Kalendertag des Zeitraums.
+        if ($period['to'] > $this->today()) {
+            $errors[] = ['date' => null, 'code' => 'unfinished', 'message' => 'Der Zeitraum ist noch nicht abgeschlossen und kann ab dem ' . self::german($period['to']) . ' eingereicht werden.'];
         }
         if ($openDays === []) {
             $errors[] = ['date' => null, 'code' => 'nothing_open', 'message' => 'Alle Tage des Zeitraums sind bereits eingereicht oder festgeschrieben.'];
@@ -794,6 +814,11 @@ final readonly class TimeApprovalService
             $dates[] = $day->format('Y-m-d');
         }
         return $dates;
+    }
+
+    private function today(): string
+    {
+        return $this->fixedToday ?? (new DateTimeImmutable('today'))->format('Y-m-d');
     }
 
     private static function shift(string $date, int $days): string

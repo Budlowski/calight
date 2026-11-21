@@ -115,6 +115,51 @@ final readonly class TimeTrackingRepository
         return $statement->fetchAll();
     }
 
+    /** Abwesenheiten (getrennt von Arbeitszeiten). Ohne Mitarbeiter: alle (Auswertung). @return list<array<string,mixed>> */
+    public function absences(?string $employeeId, string $from, string $to): array
+    {
+        $sql = 'SELECT a.*, e.display_name AS employee_name FROM time_absences a JOIN employees e ON e.id = a.employee_id WHERE a.work_date BETWEEN :from AND :to';
+        $parameters = ['from' => $from, 'to' => $to];
+        if ($employeeId !== null) {
+            $sql .= ' AND a.employee_id = :employee';
+            $parameters['employee'] = $employeeId;
+        }
+        $statement = $this->pdo->prepare($sql . ' ORDER BY a.work_date, a.full_day DESC, a.created_at, a.rowid');
+        $statement->execute($parameters);
+        return $statement->fetchAll();
+    }
+
+    /** @return array<string,mixed>|null */
+    public function absence(string $id): ?array
+    {
+        $statement = $this->pdo->prepare('SELECT * FROM time_absences WHERE id = :id');
+        $statement->execute(['id' => $id]);
+        return $statement->fetch() ?: null;
+    }
+
+    /** @param array<string,mixed> $data */
+    public function insertAbsence(array $data): void
+    {
+        $columns = array_keys($data);
+        $this->pdo->prepare('INSERT INTO time_absences (' . implode(', ', $columns) . ') VALUES (:' . implode(', :', $columns) . ')')->execute($data);
+    }
+
+    /** @param array<string,mixed> $fields */
+    public function updateAbsence(string $id, int $version, array $fields): bool
+    {
+        $assignments = implode(', ', array_map(static fn (string $column): string => $column . ' = :' . $column, array_keys($fields)));
+        $statement = $this->pdo->prepare('UPDATE time_absences SET ' . $assignments . ', version = version + 1 WHERE id = :id AND version = :version');
+        $statement->execute([...$fields, 'id' => $id, 'version' => $version]);
+        return $statement->rowCount() === 1;
+    }
+
+    public function deleteAbsence(string $id, int $version): bool
+    {
+        $statement = $this->pdo->prepare('DELETE FROM time_absences WHERE id = :id AND version = :version');
+        $statement->execute(['id' => $id, 'version' => $version]);
+        return $statement->rowCount() === 1;
+    }
+
     /** Dienstliche Privat-Pkw-Fahrten. @return list<array<string,mixed>> */
     public function trips(string $employeeId, string $from, string $to): array
     {

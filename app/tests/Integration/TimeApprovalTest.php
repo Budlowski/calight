@@ -57,9 +57,9 @@ final class TimeApprovalTest extends TestCase
             $this->assertSame(['empty_day', 'empty_day', 'empty_day'], array_column($period['warnings'], 'code'), 'Leere Werktage Mi–Fr als Warnung.');
 
             // Einreichen sperrt alle Tage der Woche, auch arbeitsfreie; wiederholte Anfrage wird abgelehnt.
-            $submitted = $approvals->submit(['type' => 'week', 'date' => '2026-10-05'], $tech);
+            $submitted = $approvals->submit(['confirmComplete' => true, 'type' => 'week', 'date' => '2026-10-05'], $tech);
             $this->assertSame(['submitted', ['submitted' => 7]], [$submitted['status'], $submitted['statusCounts']]);
-            $this->assertThrows(DocumentValidationException::class, fn () => $approvals->submit(['type' => 'week', 'date' => '2026-10-05'], $tech), 'Keine doppelte Einreichung.');
+            $this->assertThrows(DocumentValidationException::class, fn () => $approvals->submit(['confirmComplete' => true, 'type' => 'week', 'date' => '2026-10-05'], $tech), 'Keine doppelte Einreichung.');
             $this->assertSame(1, (int) $pdo->query('SELECT COUNT(*) FROM time_submissions')->fetchColumn());
 
             // Gesperrt für alle – auch Büro und Administrator, auch direkt in der Datenbank.
@@ -108,7 +108,7 @@ final class TimeApprovalTest extends TestCase
             $service->updateEntry($fix['id'], ['version' => $fix['version'], 'date' => '2026-10-06', 'start' => '07:00', 'end' => '16:00', 'breakMinutes' => '60', 'activity' => 'work', 'orderId' => $order], $tech);
 
             // Erneut einreichen (nur der geöffnete Tag) und festschreiben: neue Revision, alte Datei unverändert.
-            $again = $approvals->submit(['type' => 'week', 'date' => '2026-10-05'], $tech);
+            $again = $approvals->submit(['confirmComplete' => true, 'type' => 'week', 'date' => '2026-10-05'], $tech);
             $this->assertSame(['approved' => 6, 'submitted' => 1], $again['statusCounts']);
             $pending = $approvals->pending($office)['items'];
             $approvals->approve($pending[0]['id'], ['version' => $pending[0]['version'], 'acknowledgeWarnings' => true], $office);
@@ -135,37 +135,37 @@ final class TimeApprovalTest extends TestCase
                 }
             };
             foreach (['2026-10-01', '2026-10-05', '2026-10-12', '2026-10-19'] as $date) {
-                $approvals->submit(['type' => 'week', 'date' => $date], $tech);
+                $approvals->submit(['confirmComplete' => true, 'type' => 'week', 'date' => $date], $tech);
             }
             $approveAll();
             $this->assertSame([], array_column(array_filter($approvals->period(null, 'month', '2026-10-01', $tech)['statements'], static fn (array $item): bool => $item['type'] === 'month'), 'id'), 'Monat noch nicht vollständig.');
             // Gemischter Monat: festgeschrieben, offen.
             $month = $approvals->period(null, 'month', '2026-10-01', $tech);
             $this->assertSame(['mixed', 25, 6], [$month['status'], $month['statusCounts']['approved'], $month['statusCounts']['open']]);
-            $approvals->submit(['type' => 'week', 'date' => '2026-10-26'], $tech);
+            $approvals->submit(['confirmComplete' => true, 'type' => 'week', 'date' => '2026-10-26'], $tech);
             $approveAll();
             // Vollständig über Wochen festgeschrieben: Monatsnachweis ohne erneute Freigabe.
             $month = $approvals->period(null, 'month', '2026-10-15', $tech);
             $monthly = array_values(array_filter($month['statements'], static fn (array $item): bool => $item['type'] === 'month'));
             $this->assertSame(['approved', 1, 1, true], [$month['status'], count($monthly), $monthly[0]['revision'], $monthly[0]['current']]);
             $this->assertSame([], array_filter($approvals->period(null, 'month', '2026-09-15', $tech)['statements'], static fn (array $item): bool => $item['type'] === 'month'), 'September unvollständig: kein Monatsnachweis.');
-            $this->assertThrows(DocumentValidationException::class, fn () => $approvals->submit(['type' => 'month', 'date' => '2026-10-01'], $tech), 'Nichts mehr offen.');
+            $this->assertThrows(DocumentValidationException::class, fn () => $approvals->submit(['confirmComplete' => true, 'type' => 'month', 'date' => '2026-10-01'], $tech), 'Nichts mehr offen.');
             $this->assertSame(240, json_decode((string) $pdo->query("SELECT snapshot_json FROM time_statements WHERE period_type = 'month'")->fetchColumn(), true)['totals']['netMinutes'], 'Keine doppelte Zählung.');
 
             // Wiederöffnen eines Tages ersetzt Wochen- und Monatsnachweis.
             $approvals->reopen(['employeeId' => $employee, 'from' => '2026-10-01', 'to' => '2026-10-01', 'reason' => 'Auftrag falsch'], $office);
             $this->assertSame(2, (int) $pdo->query("SELECT COUNT(*) FROM time_statements WHERE status = 'superseded'")->fetchColumn());
             // Monatseinreichung des geöffneten Tages: neue Revision für Monat und Woche.
-            $approvals->submit(['type' => 'month', 'date' => '2026-10-01'], $tech);
+            $approvals->submit(['confirmComplete' => true, 'type' => 'month', 'date' => '2026-10-01'], $tech);
             $approveAll();
             $this->assertSame([['month', 2], ['week', 2]], $pdo->query("SELECT period_type, revision FROM time_statements WHERE status = 'current' AND (period_key = '2026-10' OR period_key = '2026-W40') ORDER BY period_type")->fetchAll(PDO::FETCH_NUM));
 
             // Rhythmus und nicht abgeschlossene Zeiträume.
             $settings->save(['time_tracking.submission_rhythm' => 'week'], $admin);
             $this->assertSame(['rhythm'], array_column(array_filter($approvals->period(null, 'month', '2026-09-01', $tech)['errors'], static fn (array $error): bool => $error['code'] === 'rhythm'), 'code'));
-            $this->assertThrows(DocumentValidationException::class, fn () => $approvals->submit(['type' => 'month', 'date' => '2026-09-01'], $tech));
+            $this->assertThrows(DocumentValidationException::class, fn () => $approvals->submit(['confirmComplete' => true, 'type' => 'month', 'date' => '2026-09-01'], $tech));
             $this->assertTrue(in_array('unfinished', array_column($approvals->period(null, 'week', '2099-01-05', $tech)['errors'], 'code'), true));
-            $this->assertThrows(DocumentValidationException::class, fn () => $approvals->submit(['type' => 'week', 'date' => '2099-01-05'], $tech));
+            $this->assertThrows(DocumentValidationException::class, fn () => $approvals->submit(['confirmComplete' => true, 'type' => 'week', 'date' => '2099-01-05'], $tech));
             $this->assertThrows(DocumentValidationException::class, fn () => $settings->save(['time_tracking.submission_rhythm' => 'daily'], $admin));
         });
     }
@@ -189,14 +189,14 @@ final class TimeApprovalTest extends TestCase
             $draft = $workReports->create(['customerId' => $customer, 'orderId' => $order, 'workDate' => '2026-10-21'], $office);
             $draft = $workReports->update($draft['id'], ['version' => $draft['version'], 'description' => 'Regie', 'labor' => [['workDate' => '2026-10-21', 'employeeId' => $employee, 'hours' => '1']], 'materials' => []], $office);
             $this->assertSame(['draft_report'], array_column($approvals->period(null, 'week', '2026-10-21', $tech)['errors'], 'code'));
-            $this->assertThrows(DocumentValidationException::class, fn () => $approvals->submit(['type' => 'week', 'date' => '2026-10-21'], $tech));
+            $this->assertThrows(DocumentValidationException::class, fn () => $approvals->submit(['confirmComplete' => true, 'type' => 'week', 'date' => '2026-10-21'], $tech));
             $workReports->delete($draft['id'], $workReports->detail($draft['id'], $office)['version'], $office);
             $correction = $workReports->create(['correctionOf' => $work['id']], $office);
             $this->assertTrue(in_array('correction_draft', array_column($approvals->period(null, 'week', '2026-10-21', $tech)['warnings'], 'code'), true), 'Offener Korrekturentwurf als Hinweis.');
             $this->assertSame(120, $approvals->period(null, 'week', '2026-10-21', $tech)['totals']['netMinutes'], 'Korrekturentwurf zählt nicht zusätzlich.');
 
             foreach (['2026-10-13', '2026-10-20'] as $date) {
-                $approvals->submit(['type' => 'week', 'date' => $date], $tech);
+                $approvals->submit(['confirmComplete' => true, 'type' => 'week', 'date' => $date], $tech);
             }
             $approveAll();
 
@@ -223,7 +223,7 @@ final class TimeApprovalTest extends TestCase
             // Über Mitternacht: Buchung des offenen Vortags reicht in einen gesperrten Tag.
             $evaUser = $otherTech;
             $service->createEntry(['date' => '2026-10-04', 'start' => '22:00', 'end' => '02:00', 'activity' => 'work', 'orderId' => $order], $evaUser);
-            $approvals->submit(['type' => 'week', 'date' => '2026-10-05', 'employeeId' => $eva], $office);
+            $approvals->submit(['confirmComplete' => true, 'type' => 'week', 'date' => '2026-10-05', 'employeeId' => $eva], $office);
             $night = $service->day($eva, '2026-10-04', $office)['entries'][0];
             $this->assertThrows(DocumentValidationException::class, fn () => $service->updateEntry($night['id'], ['version' => $night['version'], 'date' => '2026-10-04', 'start' => '22:00', 'end' => '01:00', 'activity' => 'work'], $evaUser), 'Folgetag gesperrt.');
             $this->assertThrows(DocumentValidationException::class, fn () => $service->createEntry(['date' => '2026-10-04', 'start' => '23:30', 'end' => '00:30', 'activity' => 'work'], $evaUser));
@@ -315,7 +315,7 @@ final class TimeApprovalTest extends TestCase
             $this->assertSame(['57.0', '17.10', '47.60'], [$week['privateKm'], $week['kmAmount'], $week['mealAllowance']]);
 
             // Einstellungen sind global; festgeschriebene Nachweise behalten ihre Werte.
-            $approvals->submit(['type' => 'week', 'date' => '2026-10-12'], $tech);
+            $approvals->submit(['confirmComplete' => true, 'type' => 'week', 'date' => '2026-10-12'], $tech);
             $this->assertThrows(DocumentValidationException::class, fn () => $service->saveTrip(['date' => '2026-10-13', 'kilometers' => '5', 'purpose' => 'X'], $tech), 'Fahrten gesperrt.');
             $this->assertThrows(DocumentValidationException::class, fn () => $service->deleteTrip($trip['id'], ['version' => $trip['version'] + 1], $office));
             $this->assertThrows(PDOException::class, fn () => $pdo->exec("UPDATE time_private_trips SET kilometers = '1'"), 'Trigger für Fahrten.');
@@ -334,6 +334,100 @@ final class TimeApprovalTest extends TestCase
             $service->saveDetails(['date' => '2026-11-03', 'travelCategory' => 'full', 'location' => 'Hamburg', 'overnight' => true], $tech);
             $open = $service->range(null, '2026-11-02', '2026-11-08', $tech)['totals'];
             $this->assertSame(['5.00', '30.00'], [$open['kmAmount'], $open['mealAllowance']], 'Neue Werte gelten für offene Zeiträume.');
+        });
+    }
+
+    public function testSubmissionOnLastDayConfirmationAndDailyIssues(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['service' => $service, 'tech' => $tech, 'order' => $order, 'pdo' => $pdo, 'settings' => $settings, 'files' => $files] = $env;
+            $at = fn (string $today): TimeApprovalService => new TimeApprovalService(new TimeApprovalRepository($pdo), new TimeTrackingRepository($pdo), $service, $settings,
+                new DocumentSettingsRepository($pdo), new AttachmentStore($files), $today);
+            $service->createEntry(['date' => '2026-10-05', 'start' => '08:00', 'end' => '12:00', 'orderId' => $order], $tech);
+
+            // Mittwoch: Fehlzeit-Hinweise nur bis heute, nicht für zukünftige Tage; Einreichen noch nicht möglich.
+            $wednesday = $at('2026-10-07')->period(null, 'week', '2026-10-05', $tech);
+            $this->assertSame(['2026-10-06', '2026-10-07'], array_column(array_filter($wednesday['warnings'], static fn (array $item): bool => $item['code'] === 'empty_day'), 'date'));
+            $this->assertSame(['unfinished'], array_column($wednesday['errors'], 'code'));
+            // Am letzten Kalendertag (Sonntag bzw. Monatsletzter) ist die Einreichung möglich – mit Bestätigung.
+            $sunday = $at('2026-10-11');
+            $this->assertSame([], $sunday->period(null, 'week', '2026-10-05', $tech)['errors']);
+            $this->assertThrows(DocumentValidationException::class, fn () => $sunday->submit(['type' => 'week', 'date' => '2026-10-05'], $tech), 'Vollständigkeit bestätigen.');
+            $this->assertSame('submitted', $sunday->submit(['confirmComplete' => true, 'type' => 'week', 'date' => '2026-10-05'], $tech)['status']);
+            $this->assertTrue(in_array('unfinished', array_column($at('2026-10-30')->period(null, 'month', '2026-10-01', $tech)['errors'], 'code'), true));
+            $this->assertTrue(!in_array('unfinished', array_column($at('2026-10-31')->period(null, 'month', '2026-10-01', $tech)['errors'], 'code'), true), 'Monat am Monatsletzten.');
+
+            // Tagesbezogene Hinweise: jeder Fehler und jede Warnung trägt das Datum des Tages.
+            $pdo->prepare("INSERT INTO time_entries (id, employee_id, work_date, source_kind, start_time, end_time, net_minutes, activity, created_by_user_id, created_at, updated_by_user_id, updated_at)
+                VALUES ('o1', :employee, '2026-10-13', 'manual', '08:00', '10:00', 120, 'work', :user, 't', :user, 't'), ('o2', :employee, '2026-10-13', 'manual', '09:00', '11:00', 120, 'work', :user, 't', :user, 't')")
+                ->execute(['employee' => $env['employee'], 'user' => $tech['id']]);
+            $week = $at('2026-10-18')->period(null, 'week', '2026-10-12', $tech);
+            $this->assertSame(['2026-10-13'], array_column($week['errors'], 'date'));
+            $this->assertTrue(array_filter($week['warnings'], static fn (array $item): bool => $item['date'] === null) === [], 'Alle Tageshinweise mit Datum.');
+        });
+    }
+
+    public function testAbsencesAreSeparateFromWorkingTime(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['service' => $service, 'approvals' => $approvals, 'tech' => $tech, 'otherTech' => $otherTech, 'office' => $office, 'employee' => $employee, 'order' => $order,
+                'pdo' => $pdo] = $env;
+            $this->assertSame(['vacation', 'holiday', 'sick', 'compensatory', 'day_off', 'other'], array_keys($service->referenceData($tech)['absenceTypes']));
+            $this->assertTrue(!array_key_exists('activities', $service->referenceData($tech)), 'Keine Tätigkeitsarten mehr.');
+            $service->createEntry(['date' => '2026-10-12', 'start' => '08:00', 'end' => '12:00', 'orderId' => $order], $tech);
+            // Ganztägig und stundenweise; stundenweise neben Arbeitszeit.
+            $day = $service->saveAbsence(['date' => '2026-10-12', 'absenceType' => 'compensatory', 'hours' => '4'], $tech);
+            $this->assertSame([240, 1, false, 240], [$day['totals']['netMinutes'], count($day['absences']), $day['absences'][0]['fullDay'], $day['absences'][0]['minutes']], 'Keine Addition zur Arbeitszeit.');
+            $service->saveAbsence(['date' => '2026-10-13', 'absenceType' => 'vacation', 'fullDay' => true], $tech);
+            $service->saveAbsence(['date' => '2026-10-14', 'absenceType' => 'sick', 'fullDay' => true, 'notes' => 'AU liegt vor'], $tech);
+            $service->saveAbsence(['date' => '2026-10-15', 'absenceType' => 'holiday', 'fullDay' => true], $tech);
+            $service->createEntry(['date' => '2026-10-15', 'start' => '08:00', 'end' => '10:00', 'orderId' => $order], $tech);
+            $service->saveAbsence(['date' => '2026-10-16', 'absenceType' => 'vacation', 'fullDay' => true], $tech);
+            $service->createEntry(['date' => '2026-10-16', 'start' => '08:00', 'end' => '09:00', 'orderId' => $order], $tech);
+            $this->assertSame(null, $pdo->query('SELECT minutes FROM time_absences WHERE absence_type = \'vacation\' LIMIT 1')->fetchColumn(), 'Ganztägig ohne angenommene Sollzeit.');
+            $this->assertThrows(DocumentValidationException::class, fn () => $service->saveAbsence(['date' => '2026-10-12', 'absenceType' => 'urlaub', 'fullDay' => true], $tech));
+            $this->assertThrows(DocumentValidationException::class, fn () => $service->saveAbsence(['date' => '2026-10-12', 'absenceType' => 'other'], $tech), 'Stunden oder ganztägig.');
+            $this->assertThrows(DocumentValidationException::class, fn () => $service->saveAbsence(['date' => '2026-10-12', 'absenceType' => 'other', 'hours' => '25'], $tech));
+            $this->assertThrows(AccessDeniedException::class, fn () => $service->saveAbsence(['employeeId' => $employee, 'date' => '2026-10-12', 'absenceType' => 'other', 'fullDay' => true], $otherTech));
+            $this->assertThrows(PDOException::class, fn () => $pdo->exec("INSERT INTO time_absences (id, employee_id, work_date, absence_type, full_day, minutes, created_by_user_id, created_at, updated_by_user_id, updated_at)
+                VALUES ('x', " . $pdo->quote($employee) . ", '2026-10-12', 'vacation', 1, 480, " . $pdo->quote($tech['id']) . ", 't', " . $pdo->quote($tech['id']) . ", 't')"), 'Ganztägig nie mit Stunden.');
+
+            // Getrennte Auswertung; Ist-Stunden und Auftragsstunden unverändert.
+            $range = $service->range(null, '2026-10-12', '2026-10-18', $tech)['totals'];
+            $this->assertSame([420, 1, 1, 1, 240], [$range['netMinutes'], $range['absences']['vacation']['days'] - 1, $range['absences']['sick']['days'], $range['absences']['holiday']['days'], $range['absences']['compensatory']['minutes']]);
+            $this->assertSame(420, $service->actualHoursForOrder($order, $office)['totals']['netMinutes'], 'Auftragsstunden ohne Abwesenheiten.');
+            $report = $service->report('2026-10-01', '2026-10-31', $employee, null, $office);
+            $this->assertSame([420, 2, 0], [$report['totals']['netMinutes'], $report['absences']['vacation']['days'], $report['absences']['vacation']['minutes']]);
+            $this->assertSame([], $service->report('2026-10-01', '2026-10-31', null, $order, $office)['absenceRows'], 'Nie je Auftrag.');
+
+            // Prüfung: Abwesenheit ersetzt den Fehlzeit-Hinweis; ganztägig Urlaub/Krank + Arbeit = Hinweis; Feiertag + Arbeit zulässig.
+            $week = $approvals->period(null, 'week', '2026-10-12', $tech);
+            $codes = static fn (string $date): array => array_values(array_column(array_filter($week['warnings'], static fn (array $item): bool => $item['date'] === $date), 'code'));
+            $this->assertSame([[], [], [], ['absence_conflict']], [$codes('2026-10-13'), $codes('2026-10-14'), $codes('2026-10-15'), $codes('2026-10-16')]);
+            $this->assertSame([], $week['errors']);
+
+            // Sperren, Wiederöffnung und neue Revision mit Abwesenheiten.
+            $approvals->submit(['confirmComplete' => true, 'type' => 'week', 'date' => '2026-10-12'], $tech);
+            $absence = $service->day($employee, '2026-10-13', $tech)['absences'][0];
+            $this->assertSame(false, $absence['canEdit']);
+            $this->assertThrows(DocumentValidationException::class, fn () => $service->deleteAbsence($absence['id'], ['version' => $absence['version']], $office));
+            $this->assertThrows(DocumentValidationException::class, fn () => $service->saveAbsence(['date' => '2026-10-17', 'absenceType' => 'day_off', 'fullDay' => true], $tech));
+            $this->assertThrows(PDOException::class, fn () => $pdo->exec('DELETE FROM time_absences'), 'Trigger für Abwesenheiten.');
+            $item = $approvals->pending($office)['items'][0];
+            $approvals->approve($item['id'], ['version' => $item['version'], 'acknowledgeWarnings' => true], $office);
+            $first = json_decode((string) $pdo->query("SELECT snapshot_json FROM time_statements WHERE revision = 1")->fetchColumn(), true);
+            $this->assertSame([2, 'Urlaub'], [$first['totals']['absences']['vacation']['days'], $first['days'][1]['absences'][0]['label']]);
+            $approvals->reopen(['employeeId' => $employee, 'from' => '2026-10-16', 'to' => '2026-10-16', 'reason' => 'Urlaub falsch'], $office);
+            $service->deleteAbsence($service->day($employee, '2026-10-16', $tech)['absences'][0]['id'], ['version' => 1], $tech);
+            $approvals->submit(['confirmComplete' => true, 'type' => 'week', 'date' => '2026-10-12'], $tech);
+            $item = $approvals->pending($office)['items'][0];
+            $approvals->approve($item['id'], ['version' => $item['version'], 'acknowledgeWarnings' => true], $office);
+            $second = json_decode((string) $pdo->query("SELECT snapshot_json FROM time_statements WHERE revision = 2")->fetchColumn(), true);
+            $this->assertSame([1, 2, 'superseded'], [$second['totals']['absences']['vacation']['days'], (int) $pdo->query("SELECT COUNT(*) FROM time_statements")->fetchColumn(),
+                (string) $pdo->query("SELECT status FROM time_statements WHERE revision = 1")->fetchColumn()]);
+            $pdf = $approvals->statementPdf((string) $pdo->query("SELECT id FROM time_statements WHERE revision = 2")->fetchColumn(), $tech)['pdf'];
+            $this->assertTrue(str_contains($pdf, '(Abwesenheit: Urlaub) Tj') || str_contains($pdf, 'Abwesenheit: Urlaub'), 'Abwesenheiten im Nachweis.');
+            $this->assertSame([], $pdo->query('PRAGMA foreign_key_check')->fetchAll());
         });
     }
 
@@ -361,7 +455,7 @@ final class TimeApprovalTest extends TestCase
                 $pdo->query('SELECT work_date, travel_category, absence_minutes, overnight, location FROM time_day_details ORDER BY work_date')->fetchAll(PDO::FETCH_NUM));
             $this->assertSame([['2026-10-05', '182.5', 'Leipzig', 'Anreise']], $pdo->query('SELECT work_date, kilometers, route, purpose FROM time_private_trips')->fetchAll(PDO::FETCH_NUM));
             $this->assertSame([], array_intersect(['private_km', 'absence_start', 'travel_day', 'assignment_kind'], array_column($pdo->query('PRAGMA table_info(time_day_details)')->fetchAll(), 'name')));
-            $this->assertSame(12, (int) $pdo->query("SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE '%lock%'")->fetchColumn(), 'Sperre auch für Fahrten.');
+            $this->assertSame(15, (int) $pdo->query("SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE '%lock%'")->fetchColumn(), 'Sperre auch für Fahrten und Abwesenheiten.');
             $this->assertSame([], $pdo->query('PRAGMA foreign_key_check')->fetchAll());
         } finally {
             $this->remove($tmp);
@@ -375,7 +469,7 @@ final class TimeApprovalTest extends TestCase
             $tables = $pdo->query("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('time_submissions', 'time_day_locks', 'time_lock_events', 'time_statements') ORDER BY name")->fetchAll(PDO::FETCH_COLUMN);
             $this->assertSame(['time_day_locks', 'time_lock_events', 'time_statements', 'time_submissions'], $tables);
             $triggers = $pdo->query("SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE '%lock%'")->fetchColumn();
-            $this->assertSame(12, (int) $triggers, 'Sperr-Trigger für Buchungen, Tagesangaben, Fahrten und Auslagen.');
+            $this->assertSame(15, (int) $triggers, 'Sperr-Trigger für Buchungen, Tagesangaben, Fahrten, Auslagen und Abwesenheiten.');
             $this->assertThrows(PDOException::class, fn () => $pdo->exec("INSERT INTO time_day_locks (employee_id, work_date, status, updated_by_user_id, updated_at) VALUES ('x', '2026-01-01', 'approved', 'y', 't')"), 'Festgeschrieben nur mit Einreichung.');
             $this->assertSame([], $pdo->query('PRAGMA foreign_key_check')->fetchAll());
         });

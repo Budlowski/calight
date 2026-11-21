@@ -87,4 +87,17 @@ assert(travelSummary({ ...travel, category: "none", notes: "Nur Fahrten" }, cate
 assert(travelSummary({ ...travel, abroad: true, absenceMinutes: null, meals: { breakfast: false, lunch: false, dinner: false } }, categories).includes("Ausland · Leipzig · Übernachtung"), "Ausland");
 assert(tripLabel({ route: "Werkstatt – Leipzig", purpose: "Anreise", orderNumber: "AU1", costCenterNumber: null }) === "Werkstatt – Leipzig · Anreise · AU1", "Fahrt mit Auftrag");
 assert(tripLabel({ route: "", purpose: "Material", orderNumber: null, costCenterNumber: "K120" }) === "Material · K120", "Fahrt mit Kostenstelle");
+// Prüfhinweise je Kalendertag und Abwesenheiten.
+const { issuesByDate, issueFlag, absenceDuration, absenceShort, absenceSummary } = globalThis.CalightTimeTracking;
+const byDate = issuesByDate({ errors: [{ date: "2026-10-13", message: "x" }, { date: null, message: "Zeitraum" }], warnings: [{ date: "2026-10-13", message: "w" }, { date: "2026-10-14", message: "w2" }] });
+assert(byDate["2026-10-13"].errors.length === 1 && byDate["2026-10-13"].warnings.length === 1 && !byDate.null, "nach Datum, ohne Datum ausgelassen");
+assert(issueFlag(byDate["2026-10-13"]).includes("is-error") && issueFlag(byDate["2026-10-13"]).includes("✕") && !issueFlag(byDate["2026-10-13"]).includes("⚠"), "Sperrfehler haben Vorrang");
+assert(issueFlag(byDate["2026-10-14"]).includes("is-warning") && issueFlag(byDate["2026-10-14"]).includes("⚠") && issueFlag(undefined) === "", "Warnung bzw. neutral");
+assert(issuesByDate(null) && Object.keys(issuesByDate(null)).length === 0, "ohne Daten leer");
+assert(absenceDuration({ fullDay: true }) === "ganztägig" && absenceDuration({ fullDay: false, minutes: 270 }) === "4:30 h", "Dauer");
+assert(absenceShort([{ type: "vacation", label: "Urlaub", fullDay: true }, { type: "sick", label: "Krankheit <x>", fullDay: false, minutes: 120 }]).includes("Krankheit &lt;x&gt; 2:00") && absenceShort() === "", "Kalenderkurzform");
+const absenceTotals = { vacation: { label: "Urlaub", days: 2, minutes: 0 }, sick: { label: "Krankheit", days: 0, minutes: 0 }, compensatory: { label: "Zeitausgleich", days: 1, minutes: 240 } };
+assert(absenceSummary(absenceTotals) === "Urlaub 2 Tage · Zeitausgleich 1 Tag, 4:00 h" && absenceSummary({}) === "", absenceSummary(absenceTotals));
+const collapsed = issueList([{ message: "a" }], [{ message: "b" }], true);
+assert(collapsed.startsWith("<details") && !collapsed.startsWith("<details open") && collapsed.includes("1 Sperrfehler") && collapsed.includes("1 Hinweis") && issueList([], [], true) === "", "Gesamtliste eingeklappt");
 console.log("time-tracking.test.js ok");

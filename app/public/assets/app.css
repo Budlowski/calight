@@ -1474,6 +1474,21 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 .time-statements li.is-superseded a { color: var(--muted); text-decoration: line-through; }
 .time-approval-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .time-approval-item h2 { overflow-wrap: anywhere; }
+/* Prüfhinweise je Tag und Abwesenheiten */
+.time-issue-flag { font-weight: 700; }
+.time-issue-flag.is-error, .time-issue-count.is-error, .time-hint.is-error { color: var(--danger); }
+.time-issue-flag.is-warning, .time-issue-count.is-warning { color: #8a5a00; }
+.time-cal-day.has-error { box-shadow: inset 3px 0 0 var(--danger); }
+.time-cal-day.has-warning { box-shadow: inset 3px 0 0 #d39a1c; }
+.time-hint.is-error { font-weight: 600; }
+.time-cal-absence { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: #3d5a73; }
+.time-cal-absence.is-sick { color: #7a3d6b; }
+.time-cal-absence.is-holiday, .time-cal-absence.is-day_off { color: #4f5b66; }
+.time-cal-day.has-absence { background: #f3f7fa; }
+.time-block.is-absence { background: #f3f7fa; }
+.time-block.is-absence .time-block-title { color: #3d5a73; }
+.time-block.is-absence.is-sick .time-block-title { color: #7a3d6b; }
+.time-kind-switch { display: flex; gap: var(--space-4); padding: 0; }
 /* Reisekosten und Auslagen */
 .time-travel-section { display: grid; gap: var(--space-2); min-width: 0; }
 .time-travel-section > h3 { margin: 0; }

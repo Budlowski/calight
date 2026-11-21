@@ -73,8 +73,6 @@ final class TimeTrackingTest extends TestCase
             $this->assertThrows(DocumentValidationException::class, fn () => $add(['start' => '18:00', 'end' => '18:00', 'activity' => 'work']));
             $this->assertThrows(DocumentValidationException::class, fn () => $add(['start' => '18:00', 'end' => '19:00', 'breakMinutes' => '60', 'activity' => 'work']), 'Pause kürzer als Block.');
             $this->assertThrows(DocumentValidationException::class, fn () => $add(['start' => '18:00', 'end' => '19:00', 'breakMinutes' => '-5', 'activity' => 'work']));
-            $this->assertThrows(DocumentValidationException::class, fn () => $add(['start' => '18:00', 'end' => '19:00', 'activity' => 'lunch']));
-            $this->assertThrows(DocumentValidationException::class, fn () => $add(['start' => '18:00', 'end' => '19:00', 'activity' => 'travel']), 'Separate Reisetätigkeit wird für neue Blöcke nicht mehr angeboten.');
             $this->assertThrows(DocumentValidationException::class, fn () => $add(['start' => '18:00', 'end' => '19:00', 'activity' => 'work', 'travelMinutes' => '61']), 'Reisezeit höchstens Nettozeit.');
             $this->assertThrows(DocumentValidationException::class, fn () => $add(['start' => '18:00', 'end' => '19:00', 'activity' => 'work', 'travelMinutes' => '-1']));
             // Überschneidung.

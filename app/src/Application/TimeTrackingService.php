@@ -37,8 +37,14 @@ use Throwable;
 final readonly class TimeTrackingService
 {
     /** Tätigkeiten; „travel“ nur noch für Bestandsblöcke (bis 0033), Reisezeit ist ein Feld je Block. */
-    public const ACTIVITIES = ['work' => 'Arbeit / Montage', 'preparation' => 'Vorbereitung / Werkstatt', 'internal' => 'Interne Tätigkeit', 'other' => 'Sonstiges', 'travel' => 'Fahrt (bisherige Erfassung)'];
-    public const SELECTABLE_ACTIVITIES = ['work', 'preparation', 'internal', 'other'];
+    /**
+     * Tätigkeitsarten gibt es nicht mehr (Unterscheidung über Auftrag/Kostenstelle und Bemerkung);
+     * neue Blöcke sind „Arbeitszeit“. Die Spalte bleibt aus Schemagründen, Bestandswerte werden
+     * einheitlich als Arbeitszeit angezeigt („travel“ nur für Bestandsblöcke bis 0033).
+     */
+    public const ACTIVITIES = ['work' => 'Arbeitszeit', 'preparation' => 'Arbeitszeit', 'internal' => 'Arbeitszeit', 'other' => 'Arbeitszeit', 'travel' => 'Fahrt (bisherige Erfassung)'];
+    /** Abwesenheiten: getrennt von Ist-Arbeitsstunden, ohne Kostenziel, ohne Sollzeitannahme. */
+    public const ABSENCE_TYPES = ['vacation' => 'Urlaub', 'holiday' => 'Feiertag', 'sick' => 'Krankheit', 'compensatory' => 'Zeitausgleich', 'day_off' => 'Arbeitsfrei', 'other' => 'Sonstige Abwesenheit'];
     public const ASSIGNMENTS = ['regular' => 'Erste Tätigkeitsstätte', 'external' => 'Auswärtstätigkeit / wechselnder Einsatzort'];
     public const SOURCE_KINDS = ['work_report' => 'Rapport', 'daily_report' => 'Tagesbericht', 'manual' => 'Manuell'];
     public const RECEIPT_TYPES = DocumentService::ALLOWED_TYPES;
@@ -61,8 +67,7 @@ final readonly class TimeTrackingService
         $manage = $this->can($actor, 'timesheet.manage');
         $own = $this->times->employeeForUser((string) $actor['id']);
         return [
-            'activities' => array_intersect_key(self::ACTIVITIES, array_flip(self::SELECTABLE_ACTIVITIES)),
-            'activityLabels' => self::ACTIVITIES,
+            'absenceTypes' => self::ABSENCE_TYPES,
             'assignments' => self::ASSIGNMENTS,
             // Reisekosten: Kategorien und rechnerische Werte aus den Betriebseinstellungen.
             'travelCategories' => TravelAllowance::labels($settings = $this->settings()),
@@ -104,6 +109,7 @@ final readonly class TimeTrackingService
         }
         $details = $this->times->details((string) $employee['id'], $date);
         $trips = $this->times->trips((string) $employee['id'], $date, $date);
+        $absences = $this->times->absences((string) $employee['id'], $date, $date);
         $expenses = $this->times->expenses((string) $employee['id'], $date, $date);
         // Eingereichte und festgeschriebene Tage sind für alle gesperrt (auch Büro/Admin).
         $lockStatus = $this->times->dayLocks((string) $employee['id'], $date, $date)[$date] ?? 'open';
@@ -118,6 +124,7 @@ final readonly class TimeTrackingService
             'totals' => $this->dayShares($withPrevious, $date, $date, $timesOptional)[$date],
             'details' => $details !== null ? $this->mapDetails($details) : null,
             'trips' => array_map($this->mapTrip(...), $trips),
+            'absences' => array_map(fn (array $absence): array => self::mapAbsence($absence) + ['canEdit' => $canEdit], $absences),
             // Rechnerische Referenzwerte (Verpflegung, Kilometer) und Hinweise des Tages.
             'travel' => $travel = $this->travelDay($details, $trips, $this->settings()),
             'travelWarnings' => $this->travelWarnings($travel, $this->settings()),
@@ -150,6 +157,10 @@ final readonly class TimeTrackingService
             $trips[$trip['work_date']][] = $trip;
         }
         $settings = $this->settings();
+        $absences = [];
+        foreach ($this->times->absences((string) $employee['id'], $from, $to) as $absence) {
+            $absences[$absence['work_date']][] = self::mapAbsence($absence);
+        }
         $expenses = $this->times->expenses((string) $employee['id'], $from, $to);
         $locks = $this->times->dayLocks((string) $employee['id'], $from, $to);
         $days = [];
@@ -172,6 +183,7 @@ final readonly class TimeTrackingService
                 'expenseTotal' => $dayExpenses === [] ? null : $this->sum(array_column($dayExpenses, 'amount')),
                 'hasDetails' => isset($details[$key]),
                 'lockStatus' => $locks[$key] ?? 'open',
+                'absences' => $absences[$key] ?? [],
             ];
         }
         return [
@@ -182,6 +194,7 @@ final readonly class TimeTrackingService
             'days' => $days,
             'totals' => $totals + [
                 'expenseTotal' => $this->sum(array_column($expenses, 'amount')),
+                'absences' => self::absenceTotals(array_merge([], ...array_values($absences))),
             ] + $this->travelTotals($travelDays, $settings),
         ];
     }
@@ -225,7 +238,10 @@ final readonly class TimeTrackingService
                 'orderNumber' => $entry['order_number'], 'costCenterNumber' => $entry['cost_center_number'], 'notes' => $entry['notes'], 'hasTimes' => $entry['start_time'] !== null,
             ] + self::source($entry);
         }
-        return ['from' => $from, 'to' => $to, 'timesOptional' => $timesOptional, 'rows' => $rows, 'byOrder' => array_values($byOrder), 'totals' => $totals];
+        // Abwesenheiten getrennt von der Ist-Arbeitszeit (nur Mitarbeiterfilter; nie je Auftrag).
+        $absences = $orderId ? [] : array_map(self::mapAbsence(...), $this->times->absences($employeeId ?: null, $from, $to));
+        return ['from' => $from, 'to' => $to, 'timesOptional' => $timesOptional, 'rows' => $rows, 'byOrder' => array_values($byOrder), 'totals' => $totals,
+            'absences' => self::absenceTotals($absences), 'absenceRows' => $absences];
     }
 
     /** @param array<string,mixed> $sum @param array<string,mixed> $entry */
@@ -570,6 +586,91 @@ final readonly class TimeTrackingService
     }
 
     /**
+     * Abwesenheit anlegen (ohne id) oder bearbeiten: Art, ganztägig oder konkrete Dauer,
+     * Bemerkung. Kein Auftrag, keine Kostenstelle, keine Diagnose; Feiertage trägt der
+     * Mitarbeiter selbst ein (keine automatische Feiertagsverwaltung).
+     *
+     * @param array<string,mixed> $input
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
+    public function saveAbsence(array $input, array $actor): array
+    {
+        $existing = isset($input['id']) && $input['id'] !== '' ? ($this->times->absence((string) $input['id']) ?? throw new DocumentValidationException(['Die Abwesenheit wurde nicht gefunden.'])) : null;
+        $employee = $this->employee($existing !== null ? (string) $existing['employee_id'] : (isset($input['employeeId']) ? (string) $input['employeeId'] : null), $actor);
+        $this->assertEditable($employee, $actor);
+        $date = $this->date((string) ($input['date'] ?? $existing['work_date'] ?? ''));
+        $this->assertDaysOpen((string) $employee['id'], array_values(array_unique(array_filter([$date, $existing['work_date'] ?? null]))));
+        $type = (string) ($input['absenceType'] ?? '');
+        if (!isset(self::ABSENCE_TYPES[$type])) {
+            throw new DocumentValidationException(['Bitte die Art der Abwesenheit wählen.']);
+        }
+        $fullDay = filter_var($input['fullDay'] ?? false, FILTER_VALIDATE_BOOL);
+        $minutes = null;
+        if (!$fullDay) {
+            $minutes = $this->absence($input['hours'] ?? '');
+            if ($minutes === null || $minutes < 1) {
+                throw new DocumentValidationException(['Bitte „ganztägig“ wählen oder die Dauer der Abwesenheit angeben (z. B. 4 oder 4:30 Stunden).']);
+            }
+        }
+        $values = ['work_date' => $date, 'absence_type' => $type, 'full_day' => $fullDay ? 1 : 0, 'minutes' => $minutes,
+            'notes' => $this->text($input['notes'] ?? '', 500, 'Bemerkung'), 'updated_by_user_id' => (string) $actor['id'], 'updated_at' => Clock::now()];
+        if ($existing === null) {
+            $this->times->insertAbsence($values + ['id' => Uuid::v4(), 'employee_id' => $employee['id'], 'created_by_user_id' => (string) $actor['id'], 'created_at' => $values['updated_at']]);
+        } elseif (!$this->times->updateAbsence((string) $existing['id'], $this->version($input), $values)) {
+            throw new DocumentValidationException(['Die Abwesenheit wurde zwischenzeitlich geändert. Bitte neu laden.']);
+        }
+        return $this->day((string) $employee['id'], $date, $actor);
+    }
+
+    /** @param array<string,mixed> $input @param array<string,mixed> $actor @return array<string,mixed> */
+    public function deleteAbsence(string $id, array $input, array $actor): array
+    {
+        $absence = $this->times->absence($id) ?? throw new DocumentValidationException(['Die Abwesenheit wurde nicht gefunden.']);
+        $employee = $this->employee((string) $absence['employee_id'], $actor);
+        $this->assertEditable($employee, $actor);
+        $this->assertDaysOpen((string) $employee['id'], [(string) $absence['work_date']]);
+        if (!$this->times->deleteAbsence($id, $this->version($input))) {
+            throw new DocumentValidationException(['Die Abwesenheit wurde zwischenzeitlich geändert. Bitte neu laden.']);
+        }
+        return $this->day((string) $employee['id'], (string) $absence['work_date'], $actor);
+    }
+
+    /** @param array<string,mixed> $absence @return array<string,mixed> */
+    public static function mapAbsence(array $absence): array
+    {
+        return [
+            'id' => $absence['id'], 'version' => (int) $absence['version'], 'date' => $absence['work_date'], 'type' => $absence['absence_type'],
+            'label' => self::ABSENCE_TYPES[$absence['absence_type']] ?? (string) $absence['absence_type'], 'fullDay' => (bool) $absence['full_day'],
+            'minutes' => $absence['minutes'] !== null ? (int) $absence['minutes'] : null, 'notes' => (string) $absence['notes'],
+            'employeeName' => $absence['employee_name'] ?? null,
+        ];
+    }
+
+    /**
+     * Summen je Abwesenheitsart: ganztägige als Tage, stundenweise als Minuten (nie zur
+     * Arbeitszeit addiert).
+     *
+     * @param list<array<string,mixed>> $absences Ergebnisse von mapAbsence()
+     * @return array<string,array{label:string,days:int,minutes:int}>
+     */
+    public static function absenceTotals(array $absences): array
+    {
+        $totals = [];
+        foreach (self::ABSENCE_TYPES as $type => $label) {
+            $totals[$type] = ['label' => $label, 'days' => 0, 'minutes' => 0];
+        }
+        foreach ($absences as $absence) {
+            if ($absence['fullDay']) {
+                $totals[$absence['type']]['days']++;
+            } else {
+                $totals[$absence['type']]['minutes'] += (int) $absence['minutes'];
+            }
+        }
+        return $totals;
+    }
+
+    /**
      * Auslage mit optionalem Beleg (PDF/Bild, Typ am Inhalt geprüft, höchstens 15 MB).
      *
      * @param array<string,mixed> $input
@@ -671,11 +772,8 @@ final readonly class TimeTrackingService
     {
         $date = $this->date((string) ($input['date'] ?? $existing['work_date'] ?? ''));
         $timing = $this->timing($input, $employeeId, $date, $existing['id'] ?? null, null);
-        $activity = (string) ($input['activity'] ?? '');
-        // „travel“ nur für unveränderte Bestandsblöcke; neu ist Reisezeit ein Feld.
-        if (!in_array($activity, self::SELECTABLE_ACTIVITIES, true) && !($activity === 'travel' && ($existing['activity'] ?? null) === 'travel')) {
-            throw new DocumentValidationException(['Bitte die Art der Tätigkeit wählen.']);
-        }
+        // Keine Tätigkeitsart mehr: neu immer Arbeitszeit, Bestandsblöcke behalten ihren Wert.
+        $activity = (string) ($existing['activity'] ?? 'work');
         $order = $this->optionalOrder($input['orderId'] ?? '', $actor, $existing['order_id'] ?? null);
         return $timing + [
             'work_date' => $date, 'activity' => $activity,

@@ -89,7 +89,6 @@
       : `<a href="${esc(entry.reportUrl)}">${esc(entry.reportLabel)}</a>${entry.reportDraft ? ' <span class="time-meta-note">Entwurf</span>' : ""}`;
     const meta = [
       `<span class="time-source">${esc(entry.sourceLabel)}</span>`,
-      manual && entry.notes ? esc(entry.activityLabel) : "",
       !manual && entry.reportActivity ? esc(entry.reportActivity) : "",
       context ? `<span class="time-context" title="${esc(context)}">${esc(context)}</span>` : manual ? "Ohne Zuordnung" : "",
       entry.assignmentKind ? `<span title="${esc(entry.assignmentLabel)}">${entry.assignmentKind === "external" ? "Auswärts" : "Erste Tätigkeitsstätte"}</span>` : "",
@@ -116,12 +115,43 @@
   /** Statuskennzeichen als Text (Tag, Woche, Monat). */
   const lockBadge = (status) => `<span class="time-lock-badge is-${esc(status)}">${esc(LOCK_LABELS[status] || status)}</span>`;
   /** Sperrfehler und Warnungen als kompakte Listen. */
-  const issueList = (errors, warnings) => `${errors.length ? `<ul class="time-issues is-error">${errors.map((item) => `<li>${esc(item.message)}</li>`).join("")}</ul>` : ""}
+  const issueList = (errors, warnings, collapsed = false) => collapsed
+    ? (errors.length || warnings.length ? `<details class="time-issues-details"><summary>${[errors.length ? `<span class="time-issue-count is-error">✕ ${errors.length} Sperrfehler</span>` : "", warnings.length ? `<span class="time-issue-count is-warning">⚠ ${warnings.length} ${warnings.length === 1 ? "Hinweis" : "Hinweise"}</span>` : ""].filter(Boolean).join(" · ")}</summary>${issueList(errors, warnings)}</details>` : "")
+    : `${errors.length ? `<ul class="time-issues is-error">${errors.map((item) => `<li>${esc(item.message)}</li>`).join("")}</ul>` : ""}
     ${warnings.length ? `<details class="time-issues-details"${errors.length ? "" : " open"}><summary>${warnings.length} ${warnings.length === 1 ? "Hinweis" : "Hinweise"}</summary><ul class="time-issues is-warning">${warnings.map((item) => `<li>${esc(item.message)}</li>`).join("")}</ul></details>` : ""}`;
   /** Nachweise eines Zeitraums mit Revision; ersetzte gekennzeichnet. */
   const statementList = (statements) => (statements.length
     ? `<ul class="time-statements">${statements.map((item) => `<li${item.current ? "" : ' class="is-superseded"'}><a href="${esc(item.url)}" target="_blank" rel="noopener" data-icon="file-down">${esc(item.type === "week" ? "Woche" : "Monat")} ${esc(item.label)} · Revision ${item.revision}</a> <small class="muted">${item.current ? "aktuell" : "ersetzt – nicht mehr aktuell"}</small></li>`).join("")}</ul>`
     : "");
+
+  // ---------------------------------------------------------------------------
+  // Prüfhinweise je Tag und Abwesenheiten (reine Darstellung, auch für Tests)
+  // ---------------------------------------------------------------------------
+  /** Sperrfehler und Warnungen des Servers nach Datum gruppiert. */
+  const issuesByDate = (period) => {
+    const map = {};
+    for (const [kind, items] of [["errors", period?.errors || []], ["warnings", period?.warnings || []]]) {
+      for (const item of items) {
+        if (!item.date) continue;
+        map[item.date] ??= { errors: [], warnings: [] };
+        map[item.date][kind].push(item);
+      }
+    }
+    return map;
+  };
+  /** Kennzeichen am Kalendertag: Sperrfehler (rot, ✕) vor Warnungen (orange, ⚠), sonst nichts. */
+  const issueFlag = (issues) => {
+    if (issues?.errors.length) return `<span class="time-cal-flag time-issue-flag is-error" title="${issues.errors.length} Sperrfehler">✕</span>`;
+    if (issues?.warnings.length) return `<span class="time-cal-flag time-issue-flag is-warning" title="${issues.warnings.length} ${issues.warnings.length === 1 ? "Hinweis" : "Hinweise"}">⚠</span>`;
+    return "";
+  };
+  /** Dauer einer Abwesenheit: „ganztägig“ oder Stunden. */
+  const absenceDuration = (absence) => (absence.fullDay ? "ganztägig" : hours(absence.minutes));
+  /** Abwesenheiten kurz für Kalenderzellen. */
+  const absenceShort = (absences = []) => absences.map((absence) => `<small class="time-cal-absence is-${esc(absence.type)}">${esc(absence.label)}${absence.fullDay ? "" : ` ${hours(absence.minutes).replace(" h", "")}`}</small>`).join("");
+  /** Summen je Abwesenheitsart (Tage bzw. Stunden), nur vorhandene. */
+  const absenceSummary = (totals = {}) => Object.values(totals).filter((item) => item.days || item.minutes)
+    .map((item) => `${item.label} ${[item.days ? `${item.days} ${item.days === 1 ? "Tag" : "Tage"}` : "", item.minutes ? hours(item.minutes) : ""].filter(Boolean).join(", ")}`).join(" · ");
 
   /** Kurzbeschreibung der Reiseangaben eines Tages (Kategorie, Ort, Dauer, Übernachtung, Mahlzeiten). */
   const travelSummary = (travel, categories) => {
@@ -133,7 +163,7 @@
   /** Fahrt als Zeile: Strecke · Zweck · Auftrag/Kostenstelle. */
   const tripLabel = (trip) => [trip.route, trip.purpose, trip.orderNumber || trip.costCenterNumber].filter(Boolean).join(" · ");
 
-  globalThis.CalightTimeTracking = Object.freeze({ travelSummary, tripLabel, addDays, weekStart, monthRange, addMonths, hours, weekday, toMinutes, toTime, isoWeek, monthGrid, travelShort, netFromTimes, entryRow, lockFlag, lockBadge, issueList, statementList });
+  globalThis.CalightTimeTracking = Object.freeze({ issuesByDate, issueFlag, absenceDuration, absenceShort, absenceSummary, travelSummary, tripLabel, addDays, weekStart, monthRange, addMonths, hours, weekday, toMinutes, toTime, isoWeek, monthGrid, travelShort, netFromTimes, entryRow, lockFlag, lockBadge, issueList, statementList });
 
   const root = document.querySelector("#time-tracking-app");
   if (!root) return;
@@ -152,7 +182,6 @@
   let currentPeriod = null;
   const money = (value) => format.money(value);
   const km = (value) => (value === null || value === undefined || value === "" ? "–" : `${format.number(value, 1)} km`);
-  const activityClass = (activity) => `time-activity time-activity-${esc(activity)}`;
   const employeeQuery = () => (state.employee ? `&employee=${encodeURIComponent(state.employee)}` : "");
 
   function writeUrl() {
@@ -207,17 +236,17 @@
     const parts = Object.entries(reference.sourceKinds).map(([kind, label]) => (totals.bySource[kind] ? `${label} ${hours(totals.bySource[kind])}` : "")).filter(Boolean);
     return parts.length > 1 ? `<p class="time-source-line">${parts.join(" · ")}</p>` : "";
   };
-  const calendarCell = (day, { outside = false, showWeek = false } = {}) => {
+  const calendarCell = (day, { outside = false, showWeek = false, issues = null } = {}) => {
     const today = day.date === localToday();
     const week = showWeek ? `<span class="time-cal-week">KW ${isoWeek(day.date).week}</span>` : "";
     const selected = day.date === state.date;
     const untimed = day.untimedMinutes ? `, davon ${hours(day.untimedMinutes)} ohne Uhrzeit` : "";
-    return `<button type="button" class="time-cal-day${today ? " is-today" : ""}${selected ? " is-selected" : ""}${outside ? " is-outside" : ""}${day.netMinutes ? " has-time" : ""}" data-open-day="${day.date}"
-        ${selected ? 'aria-current="date" ' : ""}aria-label="${weekday(day.date)} ${format.date(day.date)}: ${day.netMinutes ? hours(day.netMinutes) + untimed : "keine Einträge"}${day.lockStatus && day.lockStatus !== "open" ? `, ${LOCK_LABELS[day.lockStatus]}` : ""}">
+    return `<button type="button" class="time-cal-day${issues?.errors.length ? " has-error" : issues?.warnings.length ? " has-warning" : ""}${day.absences?.length ? " has-absence" : ""}${today ? " is-today" : ""}${selected ? " is-selected" : ""}${outside ? " is-outside" : ""}${day.netMinutes ? " has-time" : ""}" data-open-day="${day.date}"
+        ${selected ? 'aria-current="date" ' : ""}aria-label="${weekday(day.date)} ${format.date(day.date)}: ${day.netMinutes ? hours(day.netMinutes) + untimed : "keine Einträge"}${day.lockStatus && day.lockStatus !== "open" ? `, ${LOCK_LABELS[day.lockStatus]}` : ""}${(day.absences || []).map((absence) => `, ${absence.label}`).join("")}${issues?.errors.length ? ", Sperrfehler" : issues?.warnings.length ? ", Hinweise" : ""}">
         <span class="time-cal-head"><span class="time-cal-weekday">${weekday(day.date)}</span><span class="time-cal-date">${Number(day.date.slice(8, 10))}.${showWeek || state.view === "week" ? `${Number(day.date.slice(5, 7))}.` : ""}</span>${week}</span>
         <strong class="time-cal-hours">${day.netMinutes ? hours(day.netMinutes).replace(" h", "") : "–"}</strong>
-        <small class="time-cal-travel">${travelShort(day.travelMinutes)}</small>
-        <span class="time-cal-flags" aria-hidden="true">${lockFlag(day.lockStatus)}${day.untimedMinutes ? `<span class="time-cal-flag${day.incompleteMinutes ? " is-incomplete" : ""}" title="${hours(day.untimedMinutes)} ohne Uhrzeit">◷</span>` : ""}${day.privateKm || day.expenseTotal || (day.mealAllowance && Number(day.mealAllowance) > 0) ? '<span class="time-cal-flag" title="Reisekosten oder Auslagen erfasst">•</span>' : ""}</span>
+        <small class="time-cal-travel">${travelShort(day.travelMinutes)}</small>${absenceShort(day.absences)}
+        <span class="time-cal-flags" aria-hidden="true">${issueFlag(issues)}${lockFlag(day.lockStatus)}${day.untimedMinutes ? `<span class="time-cal-flag${day.incompleteMinutes ? " is-incomplete" : ""}" title="${hours(day.untimedMinutes)} ohne Uhrzeit">◷</span>` : ""}${day.privateKm || day.expenseTotal || (day.mealAllowance && Number(day.mealAllowance) > 0) ? '<span class="time-cal-flag" title="Reisekosten oder Auslagen erfasst">•</span>' : ""}</span>
       </button>`;
   };
 
@@ -237,14 +266,16 @@
       api(`/api/time-tracking/period?type=${week ? "week" : "month"}&date=${week ? from : monthFrom}${employeeQuery()}`),
     ]);
     currentPeriod = period;
+    const issues = issuesByDate(period);
     const byDate = Object.fromEntries(data.days.map((day) => [day.date, day]));
     const inMonth = (date) => date >= monthFrom && date <= monthTo;
     const totals = week ? data.totals : monthData.totals;
     const head = '<div class="time-cal-weekdays" aria-hidden="true">' + ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((name) => `<span>${name}</span>`).join("") + "</div>";
     const body = week
-      ? `<div class="time-cal-row">${data.days.map((day) => calendarCell(day)).join("")}</div>`
-      : grid.map((days) => `<div class="time-cal-row">${days.map((date, index) => calendarCell(byDate[date] || { date, netMinutes: 0, travelMinutes: 0 }, { outside: !inMonth(date), showWeek: index === 0 })).join("")}</div>`).join("");
+      ? `<div class="time-cal-row">${data.days.map((day) => calendarCell(day, { issues: issues[day.date] })).join("")}</div>`
+      : grid.map((days) => `<div class="time-cal-row">${days.map((date, index) => calendarCell(byDate[date] || { date, netMinutes: 0, travelMinutes: 0 }, { outside: !inMonth(date), showWeek: index === 0, issues: issues[date] })).join("")}</div>`).join("");
     content.innerHTML = `${summaryTiles(totals, week ? "" : `<div><span>Privat-Pkw</span><strong>${km(totals.privateKm)}</strong></div>${totals.mealAllowance !== null && totals.mealAllowance !== undefined ? `<div><span>Verpflegung</span><strong>${money(totals.mealAllowance)}</strong></div>` : ""}<div><span>Auslagen</span><strong>${money(totals.expenseTotal)}</strong></div>`)}
+      ${absenceSummary(totals.absences) ? `<p class="time-source-line">Abwesenheiten: ${esc(absenceSummary(totals.absences))}</p>` : ""}
       <div class="time-calendar ${week ? "is-week" : "is-month"}" role="group" aria-label="${week ? "Wochenkalender" : "Monatskalender"}">${head}${body}</div>
       ${periodPanel(period)}`;
   }
@@ -267,7 +298,7 @@
         <div><h2>Freigabe ${esc(period.period.label)}</h2><small>${lockBadge(period.status)}${period.status === "mixed" ? ` <span class="muted">${Object.entries(period.statusCounts).map(([key, count]) => `${count} ${LOCK_LABELS[key]}`).join(" · ")}</span>` : ""}</small></div>
         <div class="step-section-actions">${actions}</div>
       </div>
-      ${openDays ? issueList(period.errors, period.warnings) : ""}
+      ${openDays ? issueList(period.errors, period.warnings, true) : ""}
       ${!allowed && openDays ? `<p class="muted">Eingereicht wird laut Betriebseinstellung ${period.rhythm === "week" ? "wöchentlich" : "monatlich"}.</p>` : ""}
       ${statementList(period.statements)}
       ${period.events.length ? `<details class="time-issues-details"><summary>Protokoll</summary><ul class="time-events">${period.events.map((event) => `<li>${format.dateTime(event.at)} · ${esc(events[event.action] || event.action)} (${format.date(event.from)}–${format.date(event.to)}) von ${esc(event.userName)}${event.reason ? ` – ${esc(event.reason)}` : ""}</li>`).join("")}</ul></details>` : ""}
@@ -281,14 +312,15 @@
     form.className = "form-stack";
     form.innerHTML = `<div class="time-summary"><div><span>Arbeitszeit</span><strong>${hours(period.totals.netMinutes)}</strong></div><div><span>Davon Reisezeit</span><strong>${hours(period.totals.travelMinutes)}</strong></div><div><span>Auslagen</span><strong>${money(period.totals.expenseTotal)}</strong></div></div>
       ${issueList(period.errors, period.warnings)}
-      <p class="muted">Nach dem Einreichen sind die Zeiten, Reiseangaben und Auslagen dieser Tage gesperrt; das Büro prüft und schreibt sie fest. Auch arbeitsfreie Tage werden gesperrt.</p>
+      <p class="muted">Nach dem Einreichen sind Arbeitszeiten, Abwesenheiten, Reiseangaben und Auslagen dieser Tage gesperrt; das Büro prüft und schreibt sie fest. Auch arbeitsfreie Tage werden gesperrt.</p>
+      <label class="check-inline"><input type="checkbox" name="confirmComplete" required> Ich bestätige, dass die Angaben für diesen Zeitraum vollständig sind.</label>
       <p class="field-error" data-dialog-error hidden></p>`;
     Calight.createDialog({
       title: `${period.period.type === "week" ? "Woche" : "Monat"} ${period.period.label} einreichen`,
       form,
       submitLabel: "Einreichen",
       submit: async () => {
-        await api("/api/time-tracking/submissions", { method: "POST", body: { type: period.period.type, date: period.period.from, employeeId: state.employee } });
+        await api("/api/time-tracking/submissions", { method: "POST", body: { type: period.period.type, date: period.period.from, employeeId: state.employee, confirmComplete: form.elements.confirmComplete.checked } });
         notify(message, "Zeiten eingereicht.", "success");
         await renderRange();
       },
@@ -375,22 +407,35 @@
   // ---------------------------------------------------------------------------
   async function renderDay() {
     root.querySelector("[data-period-label]").textContent = `${weekday(state.date)}, ${format.date(state.date)}`;
-    current = await api(`/api/time-tracking/day?date=${state.date}${employeeQuery()}`);
+    const [dayData, dayPeriod] = await Promise.all([
+      api(`/api/time-tracking/day?date=${state.date}${employeeQuery()}`),
+      api(`/api/time-tracking/period?type=week&date=${state.date}${employeeQuery()}`).catch(() => null),
+    ]);
+    current = dayData;
     const day = current;
+    // Prüfhinweise genau dieses Tages (serverseitige Prüfung des Zeitraums).
+    const dayIssues = issuesByDate(dayPeriod)[state.date] || { errors: [], warnings: [] };
     const editable = day.canEdit;
     const travel = day.travel;
     const travelText = travel ? travelSummary(travel, reference.travelCategories) : "";
     content.innerHTML = `
       ${day.lockStatus && day.lockStatus !== "open" ? `<p class="time-lock-note">${lockBadge(day.lockStatus)} ${day.lockStatus === "reopened" ? "Nach der Korrektur bitte erneut einreichen." : "Bearbeitung gesperrt."}</p>` : ""}
       ${summaryTiles(day.totals)}
-      ${day.warnings.map((warning) => `<p class="time-hint" role="note"><span aria-hidden="true">⚠</span> ${esc(warning)}</p>`).join("")}
+      ${dayIssues.errors.map((item) => `<p class="time-hint is-error" role="note"><span aria-hidden="true">✕</span> ${esc(item.message.replace(/^\d{2}\.\d{2}\.\d{4}: /, ""))}</p>`).join("")}
+      ${dayIssues.warnings.map((item) => item.message.replace(/^\d{2}\.\d{2}\.\d{4}: /, "")).map((warning) => `<p class="time-hint" role="note"><span aria-hidden="true">⚠</span> ${esc(warning)}</p>`).join("")}
       ${!day.employee.active ? '<p class="notice notice-warning">Dieser Mitarbeiter ist archiviert.</p>' : ""}
       <section class="card form-stack">
         <div class="step-section-heading">
           <div><h2>Arbeitszeiten</h2>${reference.canManage && state.employee ? `<small>${esc(day.employee.name)}</small>` : ""}</div>
-          <div class="step-section-actions">${editable ? '<button class="button" type="button" data-add-entry data-icon="plus">Zeitblock</button>' : ""}</div>
+          <div class="step-section-actions">${editable ? '<button class="button" type="button" data-add-entry data-icon="plus">Erfassen</button>' : ""}</div>
         </div>
-        ${day.entries.length ? `<ul class="time-blocks">${day.entries.map(entryRow).join("")}</ul>` : '<p class="empty-state">Für diesen Tag sind noch keine Arbeitszeiten erfasst.</p>'}
+        ${day.absences.length ? `<ul class="time-blocks">${day.absences.map((absence) => `<li class="time-block is-absence is-${esc(absence.type)}">
+            <span class="time-block-range">${esc(absenceDuration(absence))}</span>
+            <span class="time-block-main"><span class="time-block-title">${esc(absence.label)}</span><span class="time-block-meta">Abwesenheit${absence.notes ? ` · ${esc(absence.notes)}` : ""}</span></span>
+            <span class="time-block-net"><small>keine Arbeitszeit</small></span>
+            <span class="time-block-actions">${absence.canEdit ? `<button class="icon-button" type="button" data-edit-absence="${esc(absence.id)}" data-icon="square-pen" title="Abwesenheit bearbeiten" aria-label="Abwesenheit bearbeiten"></button><button class="icon-button icon-button-danger" type="button" data-delete-absence="${esc(absence.id)}" data-icon="trash" title="Abwesenheit entfernen" aria-label="Abwesenheit entfernen"></button>` : ""}</span>
+          </li>`).join("")}</ul>` : ""}
+        ${day.entries.length ? `<ul class="time-blocks">${day.entries.map(entryRow).join("")}</ul>` : day.absences.length ? "" : '<p class="empty-state">Für diesen Tag sind noch keine Arbeitszeiten oder Abwesenheiten erfasst.</p>'}
         ${day.carriedOver.map((block) => `<p class="time-carried">Fortsetzung vom Vortag (${esc(block.sourceLabel)}) ${esc(block.start)}–${esc(block.end)}: anteilig ${hours(block.netMinutes)}${block.travelMinutes ? `, davon ${hours(block.travelMinutes)} Reise` : ""} (in den Summen enthalten)</p>`).join("")}
       </section>
       <section class="card form-stack">
@@ -420,7 +465,12 @@
    * ergänzen (Dauer laut Bericht, unveränderlich). Uhrzeiten sind optional, wenn die
    * Betriebseinstellung es erlaubt.
    */
-  function entryDialog(entry = null, preset = {}) {
+  /**
+   * Erfassungsdialog mit zwei Arten: „Arbeitszeit“ (Uhrzeiten/Dauer, Pause, Reisezeit, Einsatzart,
+   * Auftrag/Kostenstelle, Bemerkung) und „Abwesenheit“ (Art, ganztägig oder Stunden, Bemerkung).
+   * Es werden nur die Felder der gewählten Art angezeigt. Berichtsbuchungen: nur Uhrzeiten ergänzen.
+   */
+  function entryDialog(entry = null, preset = {}, absence = null) {
     const fixed = entry?.durationFixed ? entry.netMinutes : null;
     const timed = current.entries.filter((item) => item.hasTimes);
     const lastEnd = timed.length ? timed[timed.length - 1].end : "07:00";
@@ -428,17 +478,21 @@
     const lastAssignment = current.entries.length ? current.entries[current.entries.length - 1].assignmentKind || "" : "";
     const values = {
       start: entry ? entry.start || "" : preset.start ?? (fixed === null ? lastEnd : ""), end: entry?.end ?? "", breakMinutes: entry?.breakMinutes ?? 0, travelMinutes: entry?.travelMinutes ?? 0,
-      activity: entry?.activity ?? preset.activity ?? "work", assignmentKind: entry ? entry.assignmentKind || "" : preset.assignmentKind ?? lastAssignment,
+      assignmentKind: entry ? entry.assignmentKind || "" : preset.assignmentKind ?? lastAssignment,
       orderId: entry?.orderId ?? preset.orderId ?? "", costCenterId: entry?.costCenterId ?? preset.costCenterId ?? "", notes: entry?.notes ?? "",
       duration: entry && !entry.hasTimes && fixed === null ? hours(entry.netMinutes).replace(" h", "") : "",
     };
+    const chooseKind = !entry && !absence;
+    let kind = absence ? "absence" : preset.kind || "work";
     const timesRequired = !current.timesOptional && fixed === null;
-    // Bestandsblöcke „Fahrt“ behalten ihre Tätigkeit; neu wird sie nicht angeboten.
-    const activities = values.activity === "travel" ? { ...reference.activities, travel: reference.activityLabels.travel } : reference.activities;
     const form = document.createElement("form");
     form.className = "form-stack";
     form.noValidate = true;
     form.innerHTML = `
+      ${chooseKind ? `<div class="view-switch time-kind-switch" role="radiogroup" aria-label="Art">
+        <label class="check-inline"><input type="radio" name="kind" value="work"${kind === "work" ? " checked" : ""}> Arbeitszeit</label>
+        <label class="check-inline"><input type="radio" name="kind" value="absence"${kind === "absence" ? " checked" : ""}> Abwesenheit</label></div>` : ""}
+      <div class="form-stack" data-kind="work">
       ${entry?.changedByOther ? `<p class="time-dialog-meta">Zuletzt geändert von ${esc(entry.updatedByName)} am ${format.dateTime(entry.updatedAt)}</p>` : ""}
       ${fixed !== null ? `<p class="notice">${esc(entry.reportLabel)}: <strong>${hours(fixed)}</strong> laut Bericht. Die Dauer wird im Bericht geändert; hier werden nur Uhrzeiten, Pause, Reisezeit und Einsatzart ergänzt. Ende − Beginn − Pause muss genau ${hours(fixed)} ergeben.</p>` : ""}
       <div class="time-entry-grid">
@@ -449,14 +503,41 @@
         ${fixed === null && !timesRequired ? `<label data-duration-field><span class="field-label">Dauer ohne Uhrzeiten</span><input name="duration" inputmode="decimal" placeholder="z. B. 1:30 oder 1,5" value="${esc(values.duration)}"></label>` : ""}
       </div>
       <p class="muted" data-net></p>
-      ${fixed === null ? `<fieldset class="time-activity-choice"><legend class="field-label">Tätigkeit <span aria-hidden="true">*</span></legend>
-        ${Object.entries(activities).map(([key, label]) => `<label class="${activityClass(key)}"><input type="radio" name="activity" value="${key}"${key === values.activity ? " checked" : ""}> ${esc(label)}</label>`).join("")}
-      </fieldset>` : ""}
       <label><span class="field-label">Einsatzart (optional)</span><select name="assignmentKind"><option value="">Keine Angabe</option>${Object.entries(reference.assignments).map(([key, label]) => `<option value="${key}"${key === values.assignmentKind ? " selected" : ""}>${esc(label)}</option>`).join("")}</select></label>
       ${fixed === null ? `<label><span class="field-label">Auftrag / Kostenstelle (optional)</span><select name="costTarget"></select></label>` : ""}
-      <label><span class="field-label">Bemerkung (optional)</span><input name="notes" maxlength="500" value="${esc(values.notes)}" placeholder="${fixed === null ? "z. B. Angebotsbearbeitung" : "Ergänzung zur Zeiterfassung"}"></label>
+      <label><span class="field-label">Bemerkung (optional)</span><input name="notes" maxlength="500" value="${esc(values.notes)}" placeholder="${fixed === null ? "z. B. Angebotsbearbeitung, Werkstatt" : "Ergänzung zur Zeiterfassung"}"></label>
+      </div>
+      ${entry ? "" : `<div class="form-stack" data-kind="absence">
+        <label><span class="field-label">Abwesenheitsart <span aria-hidden="true">*</span></span><select name="absenceType" required>${Object.entries(reference.absenceTypes).map(([key, label]) => `<option value="${key}"${key === (absence?.type ?? "vacation") ? " selected" : ""}>${esc(label)}</option>`).join("")}</select></label>
+        <div class="time-travel-checks">
+          <label class="check-inline"><input type="radio" name="absenceScope" value="full"${absence && !absence.fullDay ? "" : " checked"}> Ganztägig</label>
+          <label class="check-inline"><input type="radio" name="absenceScope" value="hours"${absence && !absence.fullDay ? " checked" : ""}> Stunden</label>
+        </div>
+        <label data-absence-hours><span class="field-label">Dauer (Stunden) <span aria-hidden="true">*</span></span><input name="absenceHours" inputmode="decimal" placeholder="z. B. 4 oder 4:30" value="${esc(absence?.minutes ? hours(absence.minutes).replace(" h", "") : "")}"></label>
+        <label><span class="field-label">Bemerkung (optional, keine medizinischen Angaben)</span><input name="absenceNotes" maxlength="500" value="${esc(absence?.notes ?? "")}"></label>
+        <p class="muted time-travel-note">Abwesenheiten zählen nicht als Arbeitszeit und haben keinen Auftrag. Ganztägig ohne Stundenzahl – es wird keine Sollarbeitszeit angenommen.</p>
+      </div>`}
       <p class="field-error" data-dialog-error hidden></p>`;
+    const showKind = () => {
+      form.querySelectorAll("[data-kind]").forEach((section) => {
+        const active = section.dataset.kind === kind;
+        section.hidden = !active;
+        section.querySelectorAll("input, select").forEach((input) => (input.disabled = !active));
+      });
+      const hoursField = form.querySelector("[data-absence-hours]");
+      if (hoursField) {
+        const byHours = form.querySelector('[name="absenceScope"]:checked')?.value === "hours";
+        hoursField.hidden = !byHours;
+        form.elements.absenceHours.disabled = !byHours || kind !== "absence";
+        form.elements.absenceHours.required = byHours;
+      }
+    };
+    form.addEventListener("change", (event) => {
+      if (event.target.name === "kind") kind = event.target.value;
+      if (["kind", "absenceScope"].includes(event.target.name)) showKind();
+    });
     const net = () => {
+      if (kind !== "work") return;
       const result = netFromTimes(form.elements.start.value, form.elements.end.value, form.elements.breakMinutes.value, fixed);
       const travel = Number(form.elements.travelMinutes.value || 0);
       const durationField = form.querySelector("[data-duration-field]");
@@ -472,33 +553,47 @@
     net();
     // Ein gemeinsames Suchfeld für Kundenaufträge und allgemeine Kostenstellen.
     if (form.elements.costTarget) Calight.costTargetSelect(form.elements.costTarget, reference.costTargets, { orderId: values.orderId, costCenterId: values.costCenterId });
+    showKind();
     const body = () => {
       const timesGiven = Boolean(form.elements.start.value || form.elements.end.value);
       const duration = form.elements.duration && !timesGiven ? parseDuration(form.elements.duration.value) : NaN;
       return {
         date: state.date, employeeId: state.employee, start: form.elements.start.value, end: form.elements.end.value,
         breakMinutes: timesGiven ? form.elements.breakMinutes.value : 0, travelMinutes: form.elements.travelMinutes.value, assignmentKind: form.elements.assignmentKind.value,
-        activity: form.elements.activity?.value ?? entry?.activity, ...Calight.parseCostTarget(form.elements.costTarget?.value ?? ""), notes: form.elements.notes.value.trim(),
+        ...Calight.parseCostTarget(form.elements.costTarget?.value ?? ""), notes: form.elements.notes.value.trim(),
         ...(Number.isNaN(duration) ? {} : { durationMinutes: duration }),
         ...(entry ? { version: entry.version } : {}),
       };
     };
+    const absenceBody = () => ({
+      date: state.date, employeeId: state.employee, absenceType: form.elements.absenceType.value,
+      fullDay: form.querySelector('[name="absenceScope"]:checked').value === "full", hours: form.elements.absenceHours.value.trim().replace(",", "."),
+      notes: form.elements.absenceNotes.value.trim(), ...(absence ? { version: absence.version } : {}),
+    });
     const save = async () => {
+      if (kind === "absence") {
+        current = absence
+          ? await api(`/api/time-tracking/absences/${encodeURIComponent(absence.id)}`, { method: "PUT", body: absenceBody() })
+          : await api("/api/time-tracking/absences", { method: "POST", body: absenceBody() });
+        return;
+      }
       current = entry
         ? await api(`/api/time-tracking/entries/${encodeURIComponent(entry.id)}`, { method: "PUT", body: body() })
         : await api("/api/time-tracking/entries", { method: "POST", body: body() });
     };
     Calight.createDialog({
-      title: fixed !== null ? "Uhrzeiten ergänzen" : entry ? "Zeitblock bearbeiten" : "Zeitblock erfassen",
+      title: absence ? "Abwesenheit bearbeiten" : fixed !== null ? "Uhrzeiten ergänzen" : entry ? "Zeitblock bearbeiten" : "Erfassen",
       form,
       submitLabel: "Speichern",
       discardMessage: "Eingaben verwerfen?",
-      initialFocus: '[name="start"]',
+      initialFocus: absence ? '[name="absenceType"]' : '[name="start"]',
       // Schnelle wiederholte Erfassung: nächster Block beginnt mit dem Ende des vorigen.
-      extraActions: entry ? [] : [{
+      extraActions: entry || absence ? [] : [{
         label: "Speichern und weiter",
         onClick: async (run) => {
-          const next = { start: form.elements.end.value, activity: form.elements.activity.value, ...Calight.parseCostTarget(form.elements.costTarget.value), assignmentKind: form.elements.assignmentKind.value };
+          const next = kind === "work"
+            ? { start: form.elements.end.value, ...Calight.parseCostTarget(form.elements.costTarget.value), assignmentKind: form.elements.assignmentKind.value }
+            : { kind: "absence" };
           if (!form.reportValidity()) return false;
           if (await run(save)) {
             await renderDay();
@@ -726,6 +821,9 @@
         <select data-report-order aria-label="Auftrag"><option value="">Alle Aufträge</option>${reference.orders.map((item) => `<option value="${esc(item.id)}"${item.id === order ? " selected" : ""}>${esc(item.orderNumber)} · ${esc(item.title)}</option>`).join("")}</select>
       </div>
       ${summaryTiles(data.totals)}
+      <h3 class="purchase-subheading">Abwesenheiten <small class="muted">(getrennt von der Arbeitszeit)</small></h3>
+      <div class="overview-table-wrap"><table class="overview-table"><thead><tr><th class="cell-title">Art</th><th class="cell-money">Ganztägig</th><th class="cell-money">Stundenweise</th></tr></thead>
+        <tbody>${Object.values(data.absences || {}).map((item) => `<tr><td class="cell-title">${esc(item.label)}</td><td class="cell-money">${item.days ? `${item.days} ${item.days === 1 ? "Tag" : "Tage"}` : "–"}</td><td class="cell-money">${item.minutes ? hours(item.minutes) : "–"}</td></tr>`).join("")}</tbody></table></div>
       <h3 class="purchase-subheading">Nach Auftrag / Kostenstelle</h3>
       <div class="overview-table-wrap"><table class="overview-table"><thead><tr><th class="cell-title">Auftrag / Kostenstelle</th><th class="cell-money">Nettozeit</th><th class="cell-money">Davon Reise</th><th class="cell-money">Übrige Arbeit</th><th class="cell-status">Herkunft</th></tr></thead>
         <tbody>${data.byOrder.map((row) => `<tr><td class="cell-title">${row.orderId ? `${esc(row.orderNumber)} · ${esc(row.orderTitle)}` : row.costCenterId ? `${esc(row.costCenterNumber)} · ${esc(row.costCenterName)} <small class="muted">Kostenstelle</small>` : '<span class="muted">Ohne Zuordnung</span>'}</td><td class="cell-money">${hours(row.netMinutes)}</td><td class="cell-money">${hours(row.travelMinutes)}</td><td class="cell-money">${hours(row.workMinutes)}</td>
@@ -733,7 +831,7 @@
       <h3 class="purchase-subheading">Buchungen</h3>
       <div class="overview-table-wrap"><table class="overview-table"><thead><tr><th class="cell-date">Datum</th><th class="cell-text">Mitarbeiter</th><th class="cell-text">Zeit</th><th class="cell-type">Herkunft</th><th class="cell-type">Einsatz</th><th class="cell-number">Auftrag</th><th class="cell-money">Netto</th><th class="cell-money">Reise</th></tr></thead>
         <tbody>${data.rows.map((row) => `<tr><td class="cell-date">${format.date(row.date)}</td><td class="cell-text">${esc(row.employeeName)}</td><td class="cell-text">${row.hasTimes ? `${esc(row.start)}–${esc(row.end)}${row.endsNextDay ? " (+1)" : ""}` : untimedLabel(!data.timesOptional)}</td>
-          <td class="cell-type">${row.reportUrl ? `<a href="${esc(row.reportUrl)}">${esc(row.reportLabel)}</a>` : `<span class="${activityClass(row.activity)}">${esc(row.activityLabel)}</span>`}</td><td class="cell-type" title="${esc(row.assignmentLabel)}">${row.assignmentKind === "external" ? "Auswärts" : row.assignmentKind === "regular" ? "Erste T." : "–"}</td><td class="cell-number">${esc(row.orderNumber || row.costCenterNumber || "–")}</td><td class="cell-money">${periodHours(row.periodNetMinutes, row.netMinutes)}</td><td class="cell-money">${row.travelMinutes ? periodHours(row.periodTravelMinutes, row.travelMinutes) : "–"}</td></tr>`).join("") || '<tr><td colspan="8" class="muted">Keine Einträge.</td></tr>'}</tbody></table></div>`;
+          <td class="cell-type">${row.reportUrl ? `<a href="${esc(row.reportUrl)}">${esc(row.reportLabel)}</a>` : `<span class="time-activity">${esc(row.activityLabel)}</span>`}</td><td class="cell-type" title="${esc(row.assignmentLabel)}">${row.assignmentKind === "external" ? "Auswärts" : row.assignmentKind === "regular" ? "Erste T." : "–"}</td><td class="cell-number">${esc(row.orderNumber || row.costCenterNumber || "–")}</td><td class="cell-money">${periodHours(row.periodNetMinutes, row.netMinutes)}</td><td class="cell-money">${row.travelMinutes ? periodHours(row.periodTravelMinutes, row.travelMinutes) : "–"}</td></tr>`).join("") || '<tr><td colspan="8" class="muted">Keine Einträge.</td></tr>'}</tbody></table></div>`;
     content.querySelector("[data-report-employee]").addEventListener("change", (event) => {
       state.employee = event.target.value;
       render();
@@ -787,6 +885,20 @@
       return render();
     }
     if (event.target.closest("[data-add-entry]")) return entryDialog();
+    const editAbsence = event.target.closest("[data-edit-absence]");
+    if (editAbsence) return entryDialog(null, {}, current.absences.find((item) => item.id === editAbsence.dataset.editAbsence));
+    const removeAbsence = event.target.closest("[data-delete-absence]");
+    if (removeAbsence) {
+      const absence = current.absences.find((item) => item.id === removeAbsence.dataset.deleteAbsence);
+      if (!(await CalightModal.confirm({ title: "Abwesenheit entfernen", content: `${absence.label} (${absenceDuration(absence)}) wird entfernt.`, confirmLabel: "Entfernen", danger: true }))) return;
+      try {
+        current = await api(`/api/time-tracking/absences/${encodeURIComponent(absence.id)}`, { method: "DELETE", body: { version: absence.version } });
+        await renderDay();
+      } catch (exception) {
+        notify(message, exception.message);
+      }
+      return;
+    }
     if (event.target.closest("[data-details]")) return detailsDialog();
     const edit = event.target.closest("[data-edit-entry]");
     if (edit) return entryDialog(current.entries.find((entry) => entry.id === edit.dataset.editEntry));
