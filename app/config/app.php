@@ -12,4 +12,5 @@ return new Config(
     sessionName: getenv('APP_SESSION_NAME') ?: 'kalkulation_session',
     secureCookies: filter_var(getenv('APP_SECURE_COOKIES') ?: '0', FILTER_VALIDATE_BOOL),
     timezone: getenv('APP_TIMEZONE') ?: 'Europe/Berlin',
+    mobileHost: strtolower(trim((string) (getenv('APP_MOBILE_HOST') ?: ''))),
 );

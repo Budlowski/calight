@@ -28,7 +28,7 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 | 3.4.1.1 | Bestellverwaltung als Vorgang: AB, Lieferungen, Belege, Zahlungen, Lieferantenanschrift | Implementiert (`0030`); Phase 3.4.1 damit abgeschlossen |
 | 3.4.2 | Zentrale Dokumentenübersicht und geschäftsbezogene Anhänge | Implementiert (`0031`) |
 | 3.4.3 | Zeiterfassung: Arbeits- und Reisezeiten, Einsatz, Kilometer und Auslagen | Abgeschlossen (`0032`, Korrekturen `0033`, `0034`); zentrale Stundenbasis `0037`, Bereinigung `0038` |
-| 3.4.4 | Monteurs-Interface (mobile Oberfläche für Zeiterfassung, Berichte, Rapporte) | Geplant – nächster Schritt (zentrale Stundenbasis `0037` als Grundlage) |
+| 3.4.4 | Monteurs-Interface (mobile Oberfläche für Zeiterfassung, Berichte, Rapporte) | Phase 1 implementiert (`0046`): eigenständiges mobiles Frontend unter `/mobile/` mit Startseite, Auftragsliste und -detail, Tageszeiten, PWA-Grundlagen; mobile Erfassungsformulare folgen |
 | 3.5 | Nachkalkulation und Soll-Ist-Vergleich | Geplant |
 | 3.6 | Abrechnungstracking, ohne Rechnungsstellung | Geplant |
 | 3.7 | Lieferscheine mit PDF-Ausgabe (Liefernachweise) | Geplant |
@@ -459,9 +459,20 @@ Neben Kundenaufträgen gibt es frei verwaltbare interne Kostenstellen (Stammdate
 - **Übersicht je Kostenstelle und Kalenderjahr:** Arbeitszeit (zentrale Zeitbuchungen nach Buchungstag); mit `costs.read` Bestellkosten (Bestelldatum, nur bekannte Ist-Kosten, bei Verteilung nur der zugeordnete Betrag) und Auslagen. Keine Umlagen, Zuschläge, Hierarchien oder Verteilungsschlüssel.
 - **Vorlage:** Zehn typische Kostenstellen (K100–K190) optional übernehmbar, idempotent.
 
-## Phase 3.4.4 – Monteurs-Interface (geplant)
+## Phase 3.4.4 – Monteurs-Interface
 
 Mobile, auf das Wesentliche reduzierte Oberfläche für Monteure: Zeiterfassung als Einstieg, dazu Tagesberichte, Rapporte, Aufmaße und Materialanforderungen der freigegebenen Aufträge. Nutzt die vorhandenen Fachmodule und Rechte; keine eigene Datenhaltung.
+
+### Phase 1 – mobile Grundarchitektur (implementiert, Migration `0046`)
+
+- **Eigenständiges Frontend** unter `/mobile/` in derselben Anwendung: eigenes Layout (`templates/layout/mobile.php`, `assets/mobile.css`, `assets/mobile.js`), kompakter Kopf mit Benutzermenü, feste Navigation unten (Start · Aufträge · Zeiten · Mehr), Karten und Listen statt Tabellen. Dieselbe Session, API, Fachlogik, Datenbank, Benutzerverwaltung und Modulkonfiguration; keine zweite Instanz.
+- **Routen:** `/mobile/` (Startseite), `/mobile/orders` (Suche, Filter Aktiv/Abgeschlossen/Abgerechnet/Alle, serverseitige Seiten), `/mobile/orders/{id}` (Auftragsdetail), `/mobile/times` (Tageszeiten, nur lesend), `/mobile/more`, `/mobile/manifest.webmanifest`, `/mobile/sw.js`, `POST /interface` (Oberflächenwechsel).
+- **Einstieg:** Monteure landen nach der Anmeldung mobil, Büro und Administratoren in der Büroansicht. Büro/Administratoren wechseln über das Benutzermenü (Recht `interface.switch`); die Auswahl wird als `users.preferred_interface` gespeichert. Keine Weiterleitung nach Bildschirmgröße. Optional `APP_MOBILE_HOST`: Auf diesem Hostnamen führt der Einstieg immer zum mobilen Frontend (gleiche Routen, keine Cross-Origin-Aufrufe).
+- **Rechte:** Die mobile Oberfläche ist keine Sicherheitsgrenze. `AuthorizationPolicy` ordnet die Routen den bestehenden Rechten zu (`dashboard.read`, `orders.read`, `timesheet.own`); Datensatzrechte (z. B. Monteure nur freigegebene Aufträge) prüfen die Fachdienste. Projektionen aus `MobileWorkspace` enthalten keine Preise, Summen, Kostensätze oder Kalkulationsdaten – für alle Rollen.
+- **Startseite:** Arbeitszeit des Tages, Prüfhinweise der Woche aus `TimeApprovalService::check`, offene eigene Vorgänge (Tagesberichte, Rapport- und Aufmaßentwürfe, Materialbedarf), Schnellzugriffe und aktuelle Aufträge – nur tatsächliche Daten, nur aktive Module und Schreibrechte.
+- **Auftragsdetail:** Kopf, Kunde/Projekt, Einsatzort (Baustellenadresse des Projekts, Kartenlink), Ansprechpartner mit `tel:`/`mailto:`-Links, beauftragte Leistungen (Nummer, Kurztext, Menge, Einheit; aus `OrderBasisPositions` ohne Preise), Unterlagen (`documents.read`), Tagesberichte, Rapporte, Materialbedarf und Aufmaße. Erfassungseinstiege übernehmen den Auftrag über die vorhandenen Einstiege (`create_for` bzw. Auftragsreiter).
+- **PWA-Grundlagen:** Manifest (Name, Icons, `standalone`, Start und Scope `/mobile/`), Service Worker nur als Hinweisseite bei fehlender Verbindung; er speichert keine Seiten, API-Antworten, Dokumente oder Zugangsdaten. Mobile Seiten werden mit `Cache-Control: no-store` ausgeliefert. Service Worker benötigt HTTPS (oder localhost).
+- **Bewusst noch nicht:** mobile Formulare für Zeiten, Tagesberichte, Rapporte mit Unterschrift, Material, Aufmaß und Reisekosten (vorübergehend öffnen diese Einstiege die bestehenden responsiven Seiten), Offline-Erfassung/IndexedDB/Synchronisation, Push, native Apps, Mitarbeiterzuordnung zu Aufträgen und Einsatzplanung.
 
 ## Phase 3.5 – Nachkalkulation
 

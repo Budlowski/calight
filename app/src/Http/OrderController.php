@@ -32,9 +32,8 @@ final readonly class OrderController
   */
  private function show(string $id):Response
  {
-  $order=$this->service->detail($id);
-  if($this->technician()&&$order['status']==='open')throw new AccessDeniedException('orders.released.read');
   $actor=Session::user()??[];
+  $order=$this->service->readableDetail($id,$actor);
   $workTracking=$this->modules===null||$this->modules->isEnabled('work_tracking');
   $procurement=$this->modules===null||$this->modules->isEnabled('procurement');
   $reportPage=$this->dailyReports!==null&&Session::can('reports.read')?$this->dailyReports->page(['order'=>$id,'per_page'=>'10'],$actor):['items'=>[],'total'=>0];

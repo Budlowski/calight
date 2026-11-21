@@ -13,6 +13,7 @@ services:
       APP_SESSION_NAME: calight_session
       APP_SECURE_COOKIES: "${APP_SECURE_COOKIES:-0}"
       APP_TIMEZONE: "${APP_TIMEZONE:-Europe/Berlin}"
+      APP_MOBILE_HOST: "${APP_MOBILE_HOST:-}"
     volumes:
       # Alle Anwendungsdaten (Datenbank, Angebote, Dokumente, Vorlagen) liegen unter /var/www/data.
       # Standard ist ein benanntes Volume. Alternativ ein Host-Verzeichnis AUSSERHALB des

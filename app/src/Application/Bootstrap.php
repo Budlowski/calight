@@ -21,6 +21,7 @@ use App\Http\PurchaseOrderController;
 use App\Http\DocumentController;
 use App\Http\TimeTrackingController;
 use App\Http\CostCenterController;
+use App\Http\MobileController;
 use App\Infrastructure\Persistence\CostCenterRepository;
 use App\Infrastructure\Persistence\TimeApprovalRepository;
 use App\Infrastructure\Persistence\TimeTrackingRepository;
@@ -104,6 +105,11 @@ final readonly class Bootstrap
         $workReportService=new WorkReportService($this->pdo,new WorkReportRepository($this->pdo),new OrderRepository($this->pdo),$numberRanges,$priceCalculator,$documentStore,$orderService);
         $purchaseOrderService=new PurchaseOrderService($this->pdo,new PurchaseOrderRepository($this->pdo),$numberRanges,$documentStore,new PurchaseOrderPdfService($documentSettingsRepository));
         $materialRequestService=new MaterialRequestService(new MaterialRequestRepository($this->pdo),new OrderRepository($this->pdo),$dailyReportRepository,$modules);
+        $documentService=new DocumentService($this->pdo,new AttachmentRepository($this->pdo),new DocumentRepository($this->pdo),$documentStore);
+        $timeTracking=new TimeTrackingService(new TimeTrackingRepository($this->pdo),$documentStore,new CostTargets($this->pdo));
+        $timeApprovals=new TimeApprovalService(new TimeApprovalRepository($this->pdo),new TimeTrackingRepository($this->pdo),$timeTracking,new OperationalSettingsService($this->pdo),new DocumentSettingsRepository($this->pdo),$documentStore,null,$dailyReportService);
+        // Mobiles Frontend: dieselben Dienste, nur lesende Projektionen ohne kaufmännische Werte.
+        $mobileWorkspace=new MobileWorkspace($modules,$orderService,$measurementService,$dailyReportService,$workReportService,$materialRequestService,$documentService,$timeTracking,$timeApprovals);
 
         return new Application(
             new Router(),
@@ -128,11 +134,12 @@ final readonly class Bootstrap
             new MeasurementController($view,$measurementService,new MeasurementPdfService($measurementService,$measurementRepository,$documentSettingsRepository,$documentArchive)),
             new WorkReportController($view,$workReportService,new WorkReportPdfService($workReportService,$documentSettingsRepository,$documentArchive),$documentSettingsRepository),
             new PurchaseOrderController($view,$purchaseOrderService,$masterDataService),
-            new DocumentController($view,new DocumentService($this->pdo,new AttachmentRepository($this->pdo),new DocumentRepository($this->pdo),$documentStore)),
-            new TimeTrackingController($view,$timeTracking=new TimeTrackingService(new TimeTrackingRepository($this->pdo),$documentStore,new CostTargets($this->pdo)),
-                new TimeApprovalService(new TimeApprovalRepository($this->pdo),new TimeTrackingRepository($this->pdo),$timeTracking,new OperationalSettingsService($this->pdo),new DocumentSettingsRepository($this->pdo),$documentStore,null,$dailyReportService)),
+            new DocumentController($view,$documentService),
+            new TimeTrackingController($view,$timeTracking,$timeApprovals),
             new CostCenterController($view,new CostCenterService($this->pdo,new CostCenterRepository($this->pdo),dirname(__DIR__,2).'/config/cost-center-template.json')),
             $modules,
+            new MobileController($view,$mobileWorkspace,$userRepository,$root.'/public'),
+            new UserInterface($this->config->mobileHost),
         );
     }
 }

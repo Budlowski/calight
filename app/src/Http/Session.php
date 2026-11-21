@@ -49,6 +49,7 @@ final class Session
             'username' => $user['username'],
             'displayName' => $user['display_name'],
             'role' => $user['role'],
+            'preferredInterface' => $user['preferred_interface'] ?? null,
         ];
         unset($_SESSION['csrf_token']);
     }
@@ -57,7 +58,7 @@ final class Session
     public static function refreshUser(array $user):void
     {
         if(!isset($_SESSION['user']))return;
-        $_SESSION['user']=['id'=>$user['id'],'username'=>$user['username'],'displayName'=>$user['display_name'],'role'=>$user['role']];
+        $_SESSION['user']=['id'=>$user['id'],'username'=>$user['username'],'displayName'=>$user['display_name'],'role'=>$user['role'],'preferredInterface'=>$user['preferred_interface']??null];
     }
 
     public static function logout(): void

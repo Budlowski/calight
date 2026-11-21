@@ -1116,6 +1116,7 @@ final readonly class WorkReportService
             'supersededAt' => $row['superseded_at'] ?? null,
             'valid' => $row['status'] !== 'draft' && ($row['superseded_by_id'] ?? null) === null,
             'creatorName' => $row['creator_name'],
+            'createdByUserId' => $row['created_by_user_id'],
             'createdAt' => $row['created_at'],
             'submittedAt' => $row['submitted_at'],
             'processedAt' => $row['processed_at'],

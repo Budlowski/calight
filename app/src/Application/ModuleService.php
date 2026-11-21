@@ -71,7 +71,7 @@ final class ModuleService
      * @var array<string,list<string>>
      */
     public const ROUTES = [
-        'work_tracking' => ['/time-tracking', '/api/time-tracking', '/daily-reports', '/api/daily-reports', '/work-reports', '/api/work-reports'],
+        'work_tracking' => ['/time-tracking', '/api/time-tracking', '/daily-reports', '/api/daily-reports', '/work-reports', '/api/work-reports', '/mobile/times'],
         'procurement' => ['/purchase-orders', '/api/purchase-orders', '/material-requests', '/api/material-requests'],
     ];
 

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 namespace App\Application;
 use App\Domain\Order\OrderValidationException;
+use App\Http\AccessDeniedException;
 use App\Infrastructure\Persistence\NumberRangeRepository;
 use App\Infrastructure\Persistence\OfferRepository;
 use App\Infrastructure\Persistence\OrderRepository;
@@ -19,6 +20,21 @@ final readonly class OrderService
  public function __construct(private PDO $pdo,private OrderRepository $orders,private OfferRepository $offers,private OfferService $offerService,private NumberRangeRepository $numbers){}
  /** @return list<array<string,mixed>> */ public function overview(bool $releasedOnly=false):array{$items=array_map($this->map(...),$this->orders->all());return$releasedOnly?array_values(array_filter($items,static fn(array $order):bool=>$order['status']!=='open')):$items;}
  /** @return array<string,list<array<string,mixed>>> */ public function referenceData():array{return['customers'=>$this->pdo->query("SELECT id,customer_number,CASE WHEN customer_type='company' THEN company_name ELSE trim(first_name||' '||last_name) END name FROM customers WHERE active=1 ORDER BY name")->fetchAll(),'projects'=>$this->pdo->query('SELECT id,project_number,name,customer_id FROM projects WHERE status<>\'archived\' ORDER BY name')->fetchAll()];}
+ /**
+  * Auftragsdetail mit der bestehenden Freigaberegel: Techniker sehen nur freigegebene Aufträge
+  * (nicht „Offen“). Gemeinsam von Büro- und mobiler Oberfläche genutzt.
+  *
+  * @param array<string,mixed> $actor
+  * @return array<string,mixed>
+  */
+ public function readableDetail(string $id,array $actor):array
+ {
+  $order=$this->detail($id);
+  if(($actor['role']??'')==='technician'&&$order['status']==='open')throw new AccessDeniedException('orders.released.read');
+  return$order;
+ }
+ /** Einsatzort und Ansprechpartner eines Auftrags (ohne kaufmännische Werte). @return array<string,mixed> */
+ public function executionContext(string $id):array{return$this->orders->executionContext($id);}
  /** @return array<string,mixed> */ public function detail(string $id):array{$r=$this->orders->find($id);if(!$r)throw new OrderValidationException(['Auftrag wurde nicht gefunden.']);$result=$this->map($r);$result['history']=$this->orders->history($id);$result['basis']=$r['basis_json']!==null?json_decode((string)$r['basis_json'],true):null;$result['changeOrders']=$this->changeOrders($id);$accepted=$this->orders->acceptedAddenda($id);$addendaTotal=BigDecimal::zero();foreach($accepted as $item)$addendaTotal=$addendaTotal->plus((string)$item['net_total']);$result['originalNetTotal']=$result['basis']['calculation']['netTotal']??null;$result['acceptedAddendaNetTotal']=(string)$addendaTotal->toScale(2);$result['currentContractNetTotal']=$result['originalNetTotal']!==null?(string)BigDecimal::of((string)$result['originalNetTotal'])->plus($addendaTotal)->toScale(2):($accepted!==[]?(string)$addendaTotal->toScale(2):null);return$result;}
  /** @param array<string,mixed> $input */ public function createRegie(array $input):array{return$this->create('regie',$input,null,null);}
  /** @param array<string,mixed> $input @return array<string,mixed> */ public function updateDetails(string $id,array $input):array
@@ -53,6 +69,10 @@ final readonly class OrderService
   $page['items'] = array_map(function (array $row): array {
    $item = $this->map($row);
    $item['contractNetTotal'] = $this->contractNetTotal($row['original_net_total'], (string) ($row['addenda_net_totals'] ?? ''));
+   // Einsatzort aus der Baustellenadresse des Projekts (ohne Projekt: keiner).
+   $item['siteCity'] = trim(trim((string) ($row['site_postal_code'] ?? '')) . ' ' . trim((string) ($row['site_city'] ?? '')));
+   $item['siteStreet'] = trim(trim((string) ($row['site_street'] ?? '')) . ' ' . trim((string) ($row['site_house_number'] ?? '')));
+   $item['siteText'] = trim((string) ($row['site_address'] ?? ''));
    return $item;
   }, $page['items']);
   return $page;

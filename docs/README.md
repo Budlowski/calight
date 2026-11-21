@@ -172,6 +172,8 @@ Die Anwendung ist anschließend standardmäßig unter `http://localhost:8085` er
 
 Für den Betrieb hinter HTTPS muss `APP_SECURE_COOKIES=1` in der lokalen, von Git ignorierten `.env` gesetzt werden. Dort kann bei Bedarf auch der Host-Port über `CALIGHT_PORT` geändert werden. Zugangsdaten gehören nicht in Compose-Dateien oder das Git-Repository.
 
+Das mobile Monteurs-Frontend ist unter `/mobile/` erreichbar und lässt sich als App installieren (PWA; der Service Worker setzt HTTPS voraus). Optional kann es über einen eigenen Hostnamen angeboten werden: `APP_MOBILE_HOST=m.calight.example.de` in der `.env` setzen und den Hostnamen im Reverse Proxy auf dieselbe Calight-Instanz leiten. Auf diesem Host führt der Einstieg nach der Anmeldung immer zur mobilen Oberfläche; Rechte und Daten bleiben identisch. Die Sitzung gilt je Hostname, eine erneute Anmeldung ist dort also nötig.
+
 ### Installation ohne Docker
 
 Der Document-Root des Webservers muss auf `app/public` zeigen. Anschließend:

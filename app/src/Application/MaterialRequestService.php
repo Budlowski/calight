@@ -294,6 +294,7 @@ final readonly class MaterialRequestService
             'neededBy' => $row['needed_by'],
             'status' => $row['status'],
             'creatorName' => $row['creator_name'],
+            'createdByUserId' => $row['created_by_user_id'],
             'completedByName' => $row['completed_by_name'],
             'completedAt' => $row['completed_at'],
             'createdAt' => $row['created_at'],

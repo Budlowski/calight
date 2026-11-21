@@ -28,6 +28,13 @@ if ($showShell): ?>
         </div>
         <div class="user-area">
             <span class="user-name"><?= $escape($currentUser['displayName']) ?></span>
+            <?php if (\App\Application\UserInterface::canSwitch($currentUser)): ?>
+            <form action="/interface" method="post">
+                <input type="hidden" name="_csrf" value="<?= $escape($csrfToken) ?>">
+                <input type="hidden" name="interface" value="mobile">
+                <button class="button button-secondary" type="submit" title="Zur mobilen Oberfläche wechseln (wird als bevorzugte Oberfläche gespeichert)">Mobile Ansicht</button>
+            </form>
+            <?php endif; ?>
             <form action="/logout" method="post">
                 <input type="hidden" name="_csrf" value="<?= $escape($csrfToken) ?>">
                 <button class="button button-secondary" type="submit">Abmelden</button>

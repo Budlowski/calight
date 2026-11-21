@@ -121,6 +121,20 @@ Die Sidebar ist nach Arbeitsbereichen gegliedert: **Allgemein** (Übersicht, Kun
   - lassen sich mit Pfeiltasten und Escape bedienen;
   - melden `aria-expanded`.
 
+## Mobiles Frontend (`/mobile/`)
+
+Eigenständige Oberfläche für Monteure (`templates/layout/mobile.php`, `templates/mobile/*`, `assets/mobile.css`, `assets/mobile.js`). Sie baut auf `app.css` auf (Variablen, Buttons, Statusbadges, Kontextmenü, Hinweise) und führt keine zweite Komponentensammlung ein.
+
+- **Aufbau:** kompakter Kopf (Calight, Benutzermenü als `details.context-menu`), Inhalt mit normalem Dokument-Scrolling, feste Navigation unten mit höchstens vier Einträgen (Start · Aufträge · Zeiten · Mehr). Keine Seitenleiste. Einträge nur für aktive Module und vorhandene Rechte.
+- **Darstellung:** Karten (`.mobile-card`) und kompakte Listen (`.mobile-list`, ganze Zeile als Link, Status rechts). Keine Tabellen, keine horizontale Überbreite. Lange Texte brechen um (`overflow-wrap: anywhere`).
+- **Bedienung:** Touch-Ziele mindestens 44 px (`--mobile-touch`), Eingabefelder mit 16 px Schrift (kein Zoom unter iOS), Suche als normales GET-Formular. Telefonnummern als `tel:`, E-Mail als `mailto:`, Adressen mit ausdrücklichem Link „In Karte öffnen“ (öffnet einen externen Kartendienst nur auf Antippen).
+- **Ränder:** `viewport-fit=cover` und `env(safe-area-inset-*)` für Kopf, Inhalt und Navigation; bei geöffneter Bildschirmtastatur wird die untere Navigation ausgeblendet (`mobile-keyboard-open`).
+- **Breiten:** Inhalt maximal 760 px, Tablet/Desktop mit dreispaltigen Schnellzugriffen; dieselbe Struktur auf allen Geräten.
+- **Kaufmännische Werte:** Mobile Seiten zeigen keine Preise, Summen, Kosten oder Kalkulationsdaten – auch nicht für Büro und Administratoren.
+- **Keine Attrappen:** Noch nicht umgesetzte mobile Funktionen erscheinen nicht als Schaltflächen. Vorübergehend führen Einstiege zu den vorhandenen responsiven Seiten (z. B. `/daily-reports?create_for=<auftrag>`); „Mehr“ weist darauf hin.
+- **Verbindung:** Ohne Verbindung erscheint oben ein Warnhinweis; Seitenaufrufe ohne Verbindung beantwortet der Service Worker mit einer Hinweisseite. Es wird nichts zwischengespeichert.
+- **Oberflächenwechsel:** Büro/Administratoren über „Mobile Ansicht“ in der Kopfleiste der Büroansicht bzw. „Zur Büroansicht“ im mobilen Benutzermenü; die Auswahl wird gespeichert.
+
 ## Bekannte offene Punkte
 
 - **Projektauswahl** (Angebot, Regieauftrag) bleibt ein `<select>`, weil ihre Optionen je nach Kunde dynamisch ein- und ausgeblendet werden. Das Zusammenspiel mit `searchableSelect` müsste dafür erweitert werden.
@@ -128,4 +142,5 @@ Die Sidebar ist nach Arbeitsbereichen gegliedert: **Allgemein** (Übersicht, Kun
 - **Artikelauswahl** im Angebotseditor und in den Stammdaten-Bausteinen nutzt `<datalist>` mit clientseitig geladenen Stammdaten. Eine Umstellung auf `Calight.suggest` braucht eigene Suchendpunkte und war nicht Teil des UI-Durchgangs.
 - **Übersicht (Dashboard):** Sie zeigt noch den Platzhaltertext aus Phase 0. Ein fachlicher Inhalt (z. B. offene Rapporte und Materialanforderungen) ist eine eigene Aufgabe.
 - **Angebotseditor:** Er ist ein bewusstes Speziallayout. Die dichte Positionstabelle konnte ohne PHP-Laufzeit nicht mit echten Daten geprüft werden.
+- **Mobiles Frontend:** Die Sichtprüfung von Startseite und Auftragsdetail lief nur über statische Nachbauten bei 390 und 1000 px; Verhalten auf echten Geräten (Safe Areas, Tastatur, Installation als App) ist noch manuell zu prüfen.
 - **Sichtprüfung:** Ohne PHP lief sie nur über statische Nachbauten der Vorlagen mit Testdaten. Serverseitig gerenderte Inhalte (Auftragsdetail, Dashboard, Angebotskopf) zeigen dabei alle Zweige zugleich bzw. keine echten Werte.

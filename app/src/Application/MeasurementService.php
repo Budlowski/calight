@@ -96,6 +96,19 @@ final readonly class MeasurementService
         ];
     }
 
+    /**
+     * Verbindliche Leistungsstruktur eines Auftrags (Auftragsgrundlage und angenommene Nachträge)
+     * mit denselben Freigaberegeln wie die Aufmaße. Enthält verkaufsseitige Einzelpreise; Aufrufer
+     * ohne kaufmännische Sicht (mobile Auftragsansicht) entfernen diese selbst.
+     *
+     * @param array<string,mixed> $actor
+     * @return list<array<string,mixed>>
+     */
+    public function basisPositions(string $orderId, array $actor): array
+    {
+        return $this->sources($this->accessibleOrder($orderId, $actor));
+    }
+
     /** @param array<string,mixed> $input @param array<string,mixed> $actor @return array<string,mixed> */
     public function create(array $input, array $actor): array
     {
@@ -680,6 +693,7 @@ final readonly class MeasurementService
             'correctionOfId' => $row['correction_of_id'],
             'correctedNumber' => $row['corrected_number'],
             'creatorName' => $row['creator_name'],
+            'createdByUserId' => $row['created_by_user_id'],
             'completedByName' => $row['completed_by_name'],
             'completedAt' => $row['completed_at'],
             'createdAt' => $row['created_at'],

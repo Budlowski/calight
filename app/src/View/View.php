@@ -35,8 +35,10 @@ final readonly class View
         require $templateFile;
         $content = (string) ob_get_clean();
 
+        // Layout: Büro (Standard) oder mobiles Frontend (`layout/mobile`); nur feste Werte zulässig.
+        $layoutTemplate = ($data['layout'] ?? null) === 'layout/mobile' ? 'layout/mobile' : 'layout/app';
         ob_start();
-        require $this->templateDirectory . '/layout/app.php';
+        require $this->templateDirectory . '/' . $layoutTemplate . '.php';
         return new Response((string) ob_get_clean(), $status, ['Content-Type' => 'text/html; charset=utf-8']);
     }
 }

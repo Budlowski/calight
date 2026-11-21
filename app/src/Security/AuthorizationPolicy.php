@@ -16,6 +16,14 @@ final class AuthorizationPolicy
         $write = !in_array($request->method, ['GET', 'HEAD'], true);
         if ($path === '/' || $path === '/login' || $path === '/logout') return [];
         if ($path === '/dashboard') return ['dashboard.read'];
+        // Mobiles Frontend: Manifest und Service Worker enthalten keine Daten und werden vom Browser
+        // ohne Anmeldedaten geladen. Alle übrigen mobilen Seiten verlangen dieselben Rechte wie die
+        // Büroansicht; die Datensatzrechte prüfen die Fachdienste.
+        if ($path === '/mobile/manifest.webmanifest' || $path === '/mobile/sw.js') return [];
+        if ($path === '/interface') return ['interface.switch'];
+        if ($path === '/mobile/orders' || str_starts_with($path, '/mobile/orders/')) return ['orders.read'];
+        if ($path === '/mobile/times') return ['timesheet.own'];
+        if ($path === '/mobile' || str_starts_with($path, '/mobile/')) return ['dashboard.read'];
         if (str_starts_with($path, '/api/users')) return ['users.manage'];
         if ($path === '/settings/employees' || str_starts_with($path, '/api/employees')) return ['employees.manage', 'costs.read'];
         // Betriebseinstellungen (Einstellungen → Betrieb): nur Administratoren.

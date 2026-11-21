@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Calight-App-Icon: Markenfarbe der Kopfleiste, stilisiertes „C“ mit Lichtakzent. -->
+  <rect width="512" height="512" rx="96" fill="#17324a"/>
+  <path d="M352 170a128 128 0 1 0 0 172" fill="none" stroke="#ffffff" stroke-width="56" stroke-linecap="round"/>
+  <circle cx="366" cy="256" r="30" fill="#8cc3ea"/>
+</svg>

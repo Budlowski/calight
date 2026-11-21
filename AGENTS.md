@@ -315,6 +315,15 @@ Keine zweite Nummernlogik in einem Controller oder Frontend anlegen.
 - Dynamische Oberflächen: Das Layout setzt auf Seiten deaktivierter Module `data-module-readonly`; Skripte blenden Aktionen über `Calight.moduleReadOnly` bzw. `Calight.readOnly(daten)` (alle `can*`-Kennzeichen false) aus. Einstellungen deaktivierter Module (`OperationalSettingsService::GROUP_MODULES`) werden ausgeblendet, nicht gelöscht.
 - Kostenstellen: sichtbar und pflegbar, solange Arbeitserfassung oder Beschaffung aktiv ist. Lieferanten und Mitarbeiter sind gemeinsame Stammdaten.
 
+### 4.19 Mobiles Monteurs-Frontend (Phase 3.4.4, Migration `0046`)
+
+- Eigenständiges Frontend unter `/mobile/` in derselben Anwendung (Routen in `Http\MobileController`, Layout `templates/layout/mobile.php`, Seiten `templates/mobile/`, Assets `mobile.css`/`mobile.js`/`mobile-sw.js`). Keine zweite Fachlogik, Datenhaltung, Authentifizierung oder Instanz; Bürooberfläche bleibt unverändert nutzbar.
+- Lesende Projektionen ausschließlich über `Application\MobileWorkspace`, das die bestehenden Dienste aufruft und nur ausführungsrelevante Felder weitergibt. **Keine Preise, Summen, Kostensätze oder Kalkulationsdaten** in mobilen Seiten – unabhängig von der Rolle. Neue mobile Ansichten müssen diese Projektion erweitern, nicht Rohdaten der Dienste ausgeben.
+- Die Oberfläche ist keine Sicherheitsgrenze: neue mobile Routen in `AuthorizationPolicy` mit den bestehenden Rechten einordnen; Datensatz- und Modulregeln bleiben in den Fachdiensten bzw. `ModuleService` (z. B. `/mobile/times` gehört zu `work_tracking`). Auftragsfreigabe für Techniker zentral über `OrderService::readableDetail`.
+- Einstieg: `Application\UserInterface` (Monteure immer mobil; Büro/Administratoren nach `users.preferred_interface`, Standard Büro; Wechsel nur mit `interface.switch`; optional `APP_MOBILE_HOST`). Keine Weiterleitung nach Bildschirmgröße.
+- PWA: Manifest und Service Worker unter `/mobile/` (öffentlich, ohne Daten). Der Service Worker speichert nichts; mobile Seiten senden `Cache-Control: no-store`. Spätere Offline-Entwürfe (IndexedDB) erfordern eine eigene Entscheidung zu Benutzerwechsel, Abmeldung und Löschung; nie Zugangsdaten oder dauerhafte Tokens lokal ablegen.
+- Mobile Erfassungsformulare existieren in Phase 1 noch nicht; Einstiege verweisen auf die vorhandenen responsiven Seiten (`create_for`, Auftragsreiter).
+
 ### 4.18 Fachliche Abgrenzung späterer Module
 
 Folgende Punkte sind Zielbild, soweit nicht durch aktuelle Migrationen/Code implementiert:
@@ -325,7 +334,7 @@ Folgende Punkte sind Zielbild, soweit nicht durch aktuelle Migrationen/Code impl
 - **Rapport:** seit Phase 3.4 implementiert (siehe 4.13); Nachweis abrechenbarer Regieleistungen, nicht identisch mit internen Zeiten. PDF, Unterschrift und Übermittlung folgen in Phase 3.2.3.
 - **Nachkalkulation:** späterer Soll-Ist-Vergleich aus unveränderlichen Grundlagen, Ist-Kosten und separat erfasster Erlösseite.
 - **Abrechnungstracking:** später nur Referenzen auf extern erstellte Rechnungen und Status. Keine Faktura oder Zahlungsbuchhaltung.
-- Artikelgenauer Materialverbrauch, Lager und Wareneingang, CardDAV und eine eigene mobile Monteuransicht sind noch keine implementierten Prozesse, solange Code und Migrationen nichts anderes zeigen. Materialanforderungen und Berichtsanhänge sind seit Phase 3.2.2 implementiert.
+- Artikelgenauer Materialverbrauch, Lager und Wareneingang sowie CardDAV sind noch keine implementierten Prozesse, solange Code und Migrationen nichts anderes zeigen. Die mobile Monteursoberfläche besteht seit Phase 3.4.4/1 als Grundarchitektur (siehe 4.19); mobile Erfassungsformulare sind noch nicht umgesetzt. Materialanforderungen und Berichtsanhänge sind seit Phase 3.2.2 implementiert.
 
 **Ein Tagesbericht ist kein Rapport. Ein Aufmaß ist keine Rechnung. Calight ersetzt keine Rechnungsstellung.** Künftige Module dürfen diese Datenarten nicht aus Bequemlichkeit vermischen.
 
@@ -402,6 +411,7 @@ Vor jeder Migration sind Upgrade-Pfad, Datenübernahme, Downtime/Locking, eindeu
 - `app/public/assets/modal.js`: globales natives `<dialog>` mit Fokusmanagement, Tastaturbedienung, Validierung und Dirty-Guard.
 - `app/public/assets/list-view.js`: persistenter Karten-/Tabellenumschalter und zugängliche Zeilen-/Kartennavigation.
 - `app/public/assets/ui.js`: Lucide-Icon-Dekoration, Aktionsmenüs, globale Löschbestätigung und `Strg/Cmd+S`.
+- `app/templates/layout/mobile.php`, `app/public/assets/mobile.css`, `app/public/assets/mobile.js`: Layout und Hilfen des mobilen Frontends (siehe 4.19); nutzen `app.css` und die globalen Helfer weiter.
 - Lokale Lucide-SVGs liegen in `app/public/assets/icons/lucide`; keine CDN-Icons.
 
 Vor einer neuen UI-Komponente vorhandene Helfer und CSS-Klassen durchsuchen und wiederverwenden.

@@ -25,6 +25,8 @@ final class RolePermissions
             'documents.read',
             // Zeiterfassung (Phase 3.4.3): eigene Zeiten sowie Auswertung/Korrektur aller Mitarbeiter.
             'timesheet.own', 'timesheet.manage',
+            // Wechsel zwischen Büro- und mobiler Oberfläche (Benutzermenü); ändert keine weiteren Rechte.
+            'interface.switch',
         ],
         'technician' => ['dashboard.read', 'orders.read', 'reports.read', 'reports.write', 'measurements.read', 'measurements.write', 'workreports.read', 'workreports.write', 'timesheet.own'],
     ];

@@ -45,6 +45,14 @@ final readonly class UserRepository
         $statement->execute(['role'=>$role,'active'=>$active?1:0,'updated_at'=>$now,'id'=>$id]);return $statement->rowCount()===1;
     }
 
+    /** Bevorzugte Oberfläche ('office', 'mobile' oder null für den Standard der Rolle). */
+    public function updatePreferredInterface(string $id, ?string $interface, string $now): bool
+    {
+        $statement = $this->pdo->prepare('UPDATE users SET preferred_interface = :interface, updated_at = :updated_at WHERE id = :id AND active = 1');
+        $statement->execute(['interface' => $interface, 'updated_at' => $now, 'id' => $id]);
+        return $statement->rowCount() === 1;
+    }
+
     public function create(string $id, string $username, string $passwordHash, string $displayName, string $now,string $role='admin'): void
     {
         $statement = $this->pdo->prepare(

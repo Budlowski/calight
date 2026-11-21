@@ -29,6 +29,7 @@ use App\Http\DocumentController;
 use App\Http\TimeTrackingController;
 use App\Http\CostCenterController;
 use App\Http\WorkReportController;
+use App\Http\MobileController;
 use App\Domain\Order\OrderValidationException;
 use App\Domain\Document\DocumentValidationException;
 use App\Domain\DocumentLockException;
@@ -75,6 +76,8 @@ final readonly class Application
         private TimeTrackingController $timeTrackingController,
         private CostCenterController $costCenterController,
         private ?ModuleService $modules = null,
+        private ?MobileController $mobileController = null,
+        private UserInterface $interfaces = new UserInterface(),
     ) {
         $this->registerRoutes();
     }
@@ -152,14 +155,17 @@ final readonly class Application
         $this->documentController->register($this->router);
         $this->timeTrackingController->register($this->router);
         $this->costCenterController->register($this->router);
+        $this->mobileController?->register($this->router);
 
-        $this->router->add('GET', '/', fn (): Response => Session::user() === null
+        // Einstieg je Konto: Monteure mobil, Büro/Administratoren nach gespeicherter Auswahl
+        // (Standard Büro); auf dem optionalen mobilen Hostnamen immer mobil. Keine Geräteerkennung.
+        $this->router->add('GET', '/', fn (Request $request): Response => Session::user() === null
             ? Response::redirect('/login')
-            : Response::redirect('/dashboard'));
+            : Response::redirect($this->landingPath($request)));
 
-        $this->router->add('GET', '/login', function (): Response {
+        $this->router->add('GET', '/login', function (Request $request): Response {
             if (Session::user() !== null) {
-                return Response::redirect('/dashboard');
+                return Response::redirect($this->landingPath($request));
             }
             return $this->view->render('auth/login', ['hasUsers' => $this->users->count() > 0]);
         });
@@ -174,7 +180,7 @@ final readonly class Application
                 return $this->view->render('auth/login', ['hasUsers' => true, 'error' => 'Benutzername oder Passwort ist falsch.'], 401);
             }
             Session::login($user);
-            return Response::redirect('/dashboard');
+            return Response::redirect($this->landingPath($request));
         });
 
         $this->router->add('POST', '/logout', function (Request $request): Response {
@@ -295,6 +301,11 @@ final readonly class Application
     }
 
     /** @return array<string,mixed> */ private function jsonBody(Request $request):array{if(strlen($request->body)>5_000_000)throw new OfferValidationException(['JSON-Dateien dürfen höchstens 5 MB groß sein.']);try{$data=json_decode($request->body,true,flags:JSON_THROW_ON_ERROR);}catch(JsonException){throw new OfferValidationException(['Die Datei enthält kein gültiges JSON.']);}if(!is_array($data))throw new OfferValidationException(['Das JSON-Wurzelelement muss ein Objekt sein.']);return $data;}
+
+    private function landingPath(Request $request): string
+    {
+        return $this->interfaces->landingPath(Session::user() ?? [], (string) ($request->headers['host'] ?? ''));
+    }
 
     private function protected(callable $handler): Response
     {
