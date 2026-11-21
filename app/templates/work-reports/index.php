@@ -5,7 +5,7 @@
             <h1>Rapporte</h1>
             <p class="muted"><?= $canProcess ? 'Leistungsnachweise für Regiearbeiten prüfen und kaufmännisch bearbeiten.' : 'Ausgeführte Regiearbeiten mit Stunden und Material erfassen.' ?></p>
         </div>
-        <?php if ($canWrite): ?><button class="button" type="button" data-new data-icon="plus">Rapport anlegen</button><?php endif; ?>
+        <?php if ($canWrite && $moduleEnabled('work_tracking')): ?><button class="button" type="button" data-new data-icon="plus">Rapport anlegen</button><?php endif; ?>
     </div>
     <div class="notice" data-message role="status" hidden></div>
     <div class="overview-toolbar">

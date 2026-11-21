@@ -29,7 +29,8 @@
   const unitPrice = (value) => (value === null || value === undefined || value === "" ? "–" : unitPriceFormat.format(Number(value)));
   const decimal = (value) => String(value ?? "").trim().replace(",", ".");
   const inputValue = (value) => (value === null || value === undefined ? "" : String(value).replace(".", ","));
-  const can = (name) => Boolean(order?.permissions?.[name]);
+  // Deaktivierte Beschaffung: keine Aktionen (Server sperrt zusätzlich).
+  const can = (name) => !Calight.moduleReadOnly && Boolean(order?.permissions?.[name]);
   const costs = () => Boolean(reference?.canCosts);
   const muted = (text) => `<span class="muted">${esc(text)}</span>`;
   const documentLink = (document) => (document

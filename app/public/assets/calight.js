@@ -384,6 +384,16 @@
     return { value: () => parseCostTarget(select.value) };
   }
 
-  globalThis.Calight = Object.freeze({ esc, api, format, exact, collator, normalize, matches, notify, bindProjectToCustomer, createDialog, suggest, searchableSelect, suggestPlacement,
+  // Seite eines deaktivierten Moduls (Layout setzt data-module-readonly): nur lesen.
+  // readOnly(obj, keep) setzt alle Aktionskennzeichen can* auf false (außer keep) – der Server sperrt ohnehin.
+  const moduleReadOnly = typeof document !== "undefined" && document.body?.dataset.moduleReadonly === "1";
+  function readOnly(value, keep = []) {
+    if (!moduleReadOnly || !value || typeof value !== "object") return value;
+    const copy = { ...value };
+    Object.keys(copy).forEach((key) => { if (/^can[A-Z]/.test(key) && !keep.includes(key) && typeof copy[key] === "boolean") copy[key] = false; });
+    return copy;
+  }
+
+  globalThis.Calight = Object.freeze({ moduleReadOnly, readOnly, esc, api, format, exact, collator, normalize, matches, notify, bindProjectToCustomer, createDialog, suggest, searchableSelect, suggestPlacement,
     costTargetOptions, costTargetSelect, parseCostTarget });
 })();

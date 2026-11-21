@@ -38,7 +38,7 @@
   let busy = false;
 
   const editableProof = () => report?.status === "draft" && report.canEdit;
-  const editableBilling = () => report?.canProcess && report.status === "submitted";
+  const editableBilling = () => !Calight.moduleReadOnly && report?.canProcess && report.status === "submitted";
   const decimal = (value) => String(value ?? "").trim().replace(",", ".");
   const display = (value, digits) => format.number(Number(value || 0), digits);
   const lineTotal = (item) => (exact.DECIMAL_PATTERN.test(decimal(item.quantity)) && exact.DECIMAL_PATTERN.test(decimal(item.unitPrice))
@@ -374,7 +374,7 @@
       billingActions.push('<button class="button button-light" type="button" data-action="save-billing" data-shortcut-save data-icon="save" title="Positionen speichern (Strg+S)">Positionen speichern</button>');
       billingActions.push('<button class="button" type="button" data-action="process" data-icon="clipboard-check">Bearbeitung abschließen …</button>');
     }
-    if (report.canProcess && report.status === "processed") billingActions.push('<button class="button button-light" type="button" data-action="reopen" data-icon="square-pen">Bearbeiten</button>');
+    if (!Calight.moduleReadOnly && report.canProcess && report.status === "processed") billingActions.push('<button class="button button-light" type="button" data-action="reopen" data-icon="square-pen">Bearbeiten</button>');
     root.querySelector("[data-billing-actions]").innerHTML = billingActions.join("");
   }
 
@@ -394,7 +394,7 @@
   }
 
   function adopt(current) {
-    report = current;
+    report = Calight.readOnly(current, ["canProcess"]);
     labor = current.labor.map((row) => ({ ...row, custom: !row.employeeId }));
     materials = current.materials.map((row) => ({ ...row }));
     billing = (current.billing || []).map((item) => ({ ...item }));

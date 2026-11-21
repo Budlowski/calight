@@ -9,7 +9,12 @@
     <script src="/assets/modal.js?v=<?= $escape((string) filemtime(dirname(__DIR__, 2) . '/public/assets/modal.js')) ?>" defer></script>
     <script src="/assets/list-view.js?v=<?= $escape((string) filemtime(dirname(__DIR__, 2) . '/public/assets/list-view.js')) ?>" defer></script>
 </head>
-<body<?= $currentUser !== null ? ' data-user-id="'.$escape((string)$currentUser['id']).'"' : '' ?>>
+<?php
+// Seite eines deaktivierten Moduls: dynamische Oberflächen blenden Bearbeitungsaktionen aus (Calight.moduleReadOnly).
+$pageModule = \App\Application\ModuleService::moduleForPath((string) (parse_url((string) ($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH) ?: '/'));
+$pageReadOnly = $pageModule !== null && !$moduleEnabled($pageModule);
+?>
+<body<?= $currentUser !== null ? ' data-user-id="'.$escape((string)$currentUser['id']).'"' : '' ?><?= $pageReadOnly ? ' data-module-readonly="1"' : '' ?>>
 <?php
 // Kundenansichten (z. B. Unterschrift) zeigen bewusst keine Calight-Navigation.
 $showShell = $currentUser !== null && !($bareLayout ?? false);
@@ -91,8 +96,7 @@ if ($showShell): ?>
 <?php endif; ?>
             <?php
             // Seiten eines deaktivierten Moduls bleiben für historische Daten lesbar (Direktlinks).
-            $pageModule = isset($currentPath) ? \App\Application\ModuleService::moduleForPath($currentPath) : null;
-            if ($pageModule !== null && !$moduleEnabled($pageModule)): ?>
+            if ($pageReadOnly): ?>
                 <div class="notice notice-warning module-notice" role="status"><?= $escape(\App\Application\ModuleService::disabledMessage($pageModule)) ?></div>
             <?php endif; ?>
             <?php foreach ($flashMessages as $flash): ?>

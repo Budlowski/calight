@@ -53,7 +53,7 @@ $purchaseItems=$purchaseOrders['items']??[];
 $purchaseTotal=(int)($purchaseOrders['total']??0);
 $showExecution=($workTracking&&(\App\Http\Session::can('reports.read')||\App\Http\Session::can('workreports.read')))||$hasExecutionData;
 $showMaterial=($procurement&&(\App\Http\Session::can('reports.read')||$purchaseOrders!==null))||($materialRequests??[])!==[]||$purchaseTotal>0;
-$hours=static fn(string $value):string=>rtrim(rtrim(number_format((float)$value,2,',','.'),'0'),',').' h';
+$hours=static fn(string $value):string=>rtrim(rtrim(number_format((float)$value,2,',','.'),'0'),',').' h'; // Anzeige ohne nachgestellte Nullen
 $tabs=array_filter([
     'overview'=>'Übersicht',
     'services'=>'Leistungen',
@@ -78,7 +78,7 @@ $openMaterial=count($materialRequests??[]);
         <div class="section-heading"><div><h2>Kennzahlen</h2><span class="muted">Aus vorhandenen Daten; nicht ermittelbare Werte werden nicht angezeigt.</span></div></div>
         <dl class="order-kpi-grid">
             <?php if($showExecution): ?>
-            <div><dt>Erfasste Arbeitsstunden</dt><dd><?= $escape($hours($orderHours['hours'])) ?></dd><small>davon festgeschrieben <?= $escape($hours($orderHours['approvedHours'])) ?><?= $orderHours['hours']!==$orderHours['approvedHours']?' · übrige vorläufig':'' ?></small></div>
+            <div><dt>Erfasste Arbeitsstunden</dt><dd><?= $escape($hours($orderHours['hours'])) ?></dd><small><?= $escape($hours($orderHours['approvedHours'])) ?> festgeschrieben · <?= $escape($hours($orderHours['provisionalHours'])) ?> vorläufig</small></div>
             <div><dt>Tagesberichte</dt><dd><button class="link-button" type="button" data-order-tab-link="execution"><?= $escape((string)($dailyReportTotal??0)) ?></button></dd></div>
             <?php if(($workReports??null)!==null): ?><div><dt>Rapporte</dt><dd><button class="link-button" type="button" data-order-tab-link="execution"><?= $escape((string)count($workReports)) ?></button></dd></div><?php endif; ?>
             <?php endif; ?>
@@ -110,8 +110,18 @@ $openMaterial=count($materialRequests??[]);
     </div>
 <?php if($showExecution): ?>
     <div class="tab-panel order-panel" id="order-panel-execution" role="tabpanel" data-order-panel="execution" hidden>
+    <section class="card order-hours">
+        <div class="section-heading"><div><h2>Arbeitsstunden</h2><span class="muted">Zentrale Stundenbasis: jede Buchung genau einmal. Vorläufig = noch nicht festgeschrieben (einschließlich Entwürfen).</span></div></div>
+        <dl class="order-kpi-grid">
+            <div><dt>Gesamt</dt><dd><?= $escape($hours($orderHours['hours'])) ?></dd><small><?= $escape($hours($orderHours['approvedHours'])) ?> festgeschrieben · <?= $escape($hours($orderHours['provisionalHours'])) ?> vorläufig</small></div>
+            <div><dt>davon aus Rapporten</dt><dd><?= $escape($hours($orderHours['bySource']['work_report']??'0')) ?></dd></div>
+            <div><dt>davon aus Tagesberichten</dt><dd><?= $escape($hours($orderHours['bySource']['daily_report']??'0')) ?></dd></div>
+            <div><dt>davon manuell erfasst</dt><dd><?= $escape($hours($orderHours['bySource']['manual']??'0')) ?></dd></div>
+            <?php if(isset($orderHours['costs'])): ?><div><dt>Ist-Lohnkosten</dt><dd><?= $escape($money($orderHours['costs'])) ?></dd><?php if(!$orderHours['costsComplete']): ?><small>Buchungen ohne Kostensatz nicht enthalten</small><?php endif; ?></div><?php endif; ?>
+        </dl>
+    </section>
     <section class="card order-daily-reports">
-        <div class="section-heading"><div><h2>Tagesberichte</h2><span class="muted"><?= $escape((string)($dailyReportTotal??count($dailyReports??[]))) ?> Berichte · <?= $escape(number_format((float)($actualLabor['hours']??0),3,',','.')) ?> Stunden aus Tagesberichten<?php if(isset($actualLabor['costs'])): ?> · <?= $escape($money($actualLabor['costs'])) ?> Ist-Lohnkosten<?php endif; ?></span></div><?php if($workTracking&&$canWriteReports): ?><a class="button" data-icon="plus" href="/daily-reports?create_for=<?= $escape(rawurlencode((string)$order['id'])) ?>">Bericht anlegen</a><?php endif; ?></div>
+        <div class="section-heading"><div><h2>Tagesberichte</h2><span class="muted"><?= $escape((string)($dailyReportTotal??count($dailyReports??[]))) ?> Berichte · <?= $escape($hours($orderHours['bySource']['daily_report']??'0')) ?> Tagesberichtstunden</span></div><?php if($workTracking&&$canWriteReports): ?><a class="button" data-icon="plus" href="/daily-reports?create_for=<?= $escape(rawurlencode((string)$order['id'])) ?>">Bericht anlegen</a><?php endif; ?></div>
         <?php if(($dailyReports??[])===[]): ?><p class="empty-state">Noch keine Tagesberichte vorhanden.</p><?php else: ?><div class="offer-detail-list"><?php foreach($dailyReports as $report): ?><div class="offer-detail-row order-report-row"><a class="offer-detail-main" href="/daily-reports/<?= $escape(rawurlencode((string)$report['id'])) ?>"><strong><?= $escape($report['title']?:'Tagesbericht vom '.(new DateTimeImmutable($report['report_date']))->format('d.m.Y')) ?></strong><small><?= $escape($report['employee_names']?:'Keine Arbeitszeiten') ?></small></a><span><?= $escape(number_format((float)$report['total_hours'],3,',','.')) ?> h</span><time datetime="<?= $escape($report['report_date']) ?>"><?= $escape((new DateTimeImmutable($report['report_date']))->format('d.m.Y')) ?></time><a class="table-action" data-icon="eye" href="/daily-reports/<?= $escape(rawurlencode((string)$report['id'])) ?>">Ansehen</a></div><?php endforeach; ?></div><?php if(($dailyReportTotal??0)>count($dailyReports)): ?><p class="order-report-more"><a href="/daily-reports?order=<?= $escape(rawurlencode((string)$order['id'])) ?>">Alle <?= $escape((string)$dailyReportTotal) ?> Tagesberichte anzeigen</a></p><?php endif; ?><?php endif; ?>
     </section>
 

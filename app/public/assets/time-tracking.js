@@ -99,8 +99,8 @@
       <span class="time-block-main"><span class="time-block-title" title="${esc(manual ? entry.notes || entry.activityLabel : entry.reportLabel)}">${title}</span><span class="time-block-meta" title="${esc([entry.sourceLabel, entry.reportActivity, context].filter(Boolean).join(" · "))}">${meta}</span></span>
       <span class="time-block-net"><strong>${hours(entry.netMinutes)}</strong>${entry.travelMinutes ? `<small>davon ${hours(entry.travelMinutes)} Reise</small>` : ""}${entry.breakMinutes ? `<small>${entry.breakMinutes} min Pause</small>` : ""}</span>
       <span class="time-block-actions">
-        ${entry.canEditTimes ? `<button class="icon-button" type="button" data-edit-entry="${esc(entry.id)}" data-icon="${entry.durationFixed && !entry.hasTimes ? "clock-3" : "square-pen"}" title="${editLabel}" aria-label="${editLabel}"></button>` : ""}
-        ${entry.canDelete ? `<button class="icon-button icon-button-danger" type="button" data-delete-entry="${esc(entry.id)}" data-icon="trash" title="Löschen" aria-label="Zeitblock löschen"></button>` : ""}
+        ${entry.canEditTimes && !Calight.moduleReadOnly ? `<button class="icon-button" type="button" data-edit-entry="${esc(entry.id)}" data-icon="${entry.durationFixed && !entry.hasTimes ? "clock-3" : "square-pen"}" title="${editLabel}" aria-label="${editLabel}"></button>` : ""}
+        ${entry.canDelete && !Calight.moduleReadOnly ? `<button class="icon-button icon-button-danger" type="button" data-delete-entry="${esc(entry.id)}" data-icon="trash" title="Löschen" aria-label="Zeitblock löschen"></button>` : ""}
       </span>
     </li>`;
   };
@@ -289,8 +289,8 @@
     const allowed = period.allowedTypes.includes(period.period.type);
     const openDays = (period.statusCounts.open || 0) + (period.statusCounts.reopened || 0);
     const actions = [
-      allowed && openDays ? `<button class="button button-small" type="button" data-submit-period${period.canSubmit ? "" : " disabled"} data-icon="file-up">${typeLabel} einreichen</button>` : "",
-      period.canReopen ? '<button class="button button-light button-small" type="button" data-reopen-period data-icon="undo-2">Wieder öffnen</button>' : "",
+      allowed && openDays && !Calight.moduleReadOnly ? `<button class="button button-small" type="button" data-submit-period${period.canSubmit ? "" : " disabled"} data-icon="file-up">${typeLabel} einreichen</button>` : "",
+      period.canReopen && !Calight.moduleReadOnly ? '<button class="button button-light button-small" type="button" data-reopen-period data-icon="undo-2">Wieder öffnen</button>' : "",
     ].join("");
     const events = { submit: "Eingereicht", approve: "Festgeschrieben", return: "Zur Korrektur zurückgegeben", reopen: "Wieder geöffnet" };
     return `<section class="card form-stack time-approval">
@@ -366,12 +366,13 @@
         </div>
         <div class="time-summary"><div><span>Arbeitszeit</span><strong>${hours(item.totals.netMinutes)}</strong></div><div><span>Davon Reisezeit</span><strong>${hours(item.totals.travelMinutes)}</strong></div><div><span>Auslagen</span><strong>${money(item.totals.expenseTotal)}</strong></div></div>
         ${issueList(item.errors, item.warnings)}
-        ${item.warnings.length ? '<label class="check-inline"><input type="checkbox" data-acknowledge> Hinweise geprüft und bestätigt</label>' : ""}
+        ${Calight.moduleReadOnly ? "" : `        ${item.warnings.length ? '<label class="check-inline"><input type="checkbox" data-acknowledge> Hinweise geprüft und bestätigt</label>' : ""}
         <label><span class="field-label">Kommentar (bei Rückgabe Pflicht; bei erheblichen Auffälligkeiten empfohlen)</span><textarea rows="2" maxlength="1000" data-comment></textarea></label>
         <div class="time-approval-actions">
           <button class="button" type="button" data-approve="${esc(item.id)}" data-version="${item.version}"${item.errors.length ? " disabled" : ""} data-icon="clipboard-check">Festschreiben</button>
           <button class="button button-light" type="button" data-return="${esc(item.id)}" data-version="${item.version}" data-icon="undo-2">Zur Korrektur zurückgeben</button>
         </div>
+`}
       </article>`;
     const decided = { approved: "Festgeschrieben", returned: "Zurückgegeben" };
     content.innerHTML = `${data.items.length ? data.items.map(card).join("") : '<p class="empty-state">Keine eingereichten Zeiträume.</p>'}
@@ -415,7 +416,7 @@
     const day = current;
     // Prüfhinweise genau dieses Tages (serverseitige Prüfung des Zeitraums).
     const dayIssues = issuesByDate(dayPeriod)[state.date] || { errors: [], warnings: [] };
-    const editable = day.canEdit;
+    const editable = day.canEdit && !Calight.moduleReadOnly;
     const travel = day.travel;
     const travelText = travel ? travelSummary(travel, reference.travelCategories) : "";
     content.innerHTML = `
@@ -433,7 +434,7 @@
             <span class="time-block-range">${esc(absenceDuration(absence))}</span>
             <span class="time-block-main"><span class="time-block-title">${esc(absence.label)}</span><span class="time-block-meta">Abwesenheit${absence.notes ? ` · ${esc(absence.notes)}` : ""}</span></span>
             <span class="time-block-net"><small>keine Arbeitszeit</small></span>
-            <span class="time-block-actions">${absence.canEdit ? `<button class="icon-button" type="button" data-edit-absence="${esc(absence.id)}" data-icon="square-pen" title="Abwesenheit bearbeiten" aria-label="Abwesenheit bearbeiten"></button><button class="icon-button icon-button-danger" type="button" data-delete-absence="${esc(absence.id)}" data-icon="trash" title="Abwesenheit entfernen" aria-label="Abwesenheit entfernen"></button>` : ""}</span>
+            <span class="time-block-actions">${absence.canEdit && !Calight.moduleReadOnly ? `<button class="icon-button" type="button" data-edit-absence="${esc(absence.id)}" data-icon="square-pen" title="Abwesenheit bearbeiten" aria-label="Abwesenheit bearbeiten"></button><button class="icon-button icon-button-danger" type="button" data-delete-absence="${esc(absence.id)}" data-icon="trash" title="Abwesenheit entfernen" aria-label="Abwesenheit entfernen"></button>` : ""}</span>
           </li>`).join("")}</ul>` : ""}
         ${day.entries.length ? `<ul class="time-blocks">${day.entries.map(entryRow).join("")}</ul>` : day.absences.length ? "" : '<p class="empty-state">Für diesen Tag sind noch keine Arbeitszeiten oder Abwesenheiten erfasst.</p>'}
         ${day.carriedOver.map((block) => `<p class="time-carried">Fortsetzung vom Vortag (${esc(block.sourceLabel)}) ${esc(block.start)}–${esc(block.end)}: anteilig ${hours(block.netMinutes)}${block.travelMinutes ? `, davon ${hours(block.travelMinutes)} Reise` : ""} (in den Summen enthalten)</p>`).join("")}

@@ -51,7 +51,7 @@ final readonly class SettingsController
             } catch (DocumentValidationException $exception) {
                 return Response::json(['error' => $exception->getMessage(), 'details' => $exception->errors], 422);
             }
-            // saved = false: offene Vorgänge (blockierend oder zu bestätigen), siehe openItems.
+            // saved = false: offene Vorgänge müssen bestätigt werden (openItems, confirmOpen).
             return Response::json(['data' => $result]);
         }, true));
     }

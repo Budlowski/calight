@@ -333,7 +333,7 @@
       api("/api/daily-reports/reference-data"),
       api(`/api/daily-reports/${encodeURIComponent(root.dataset.id)}`),
     ]);
-    report = current;
+    report = Calight.readOnly(current);
     employees = reference.employees;
     referenceOrders = reference.orders || [];
     referenceTargets = reference.costTargets || [];

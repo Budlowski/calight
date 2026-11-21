@@ -38,8 +38,9 @@ final readonly class OrderController
   $workTracking=$this->modules===null||$this->modules->isEnabled('work_tracking');
   $procurement=$this->modules===null||$this->modules->isEnabled('procurement');
   $reportPage=$this->dailyReports!==null&&Session::can('reports.read')?$this->dailyReports->page(['order'=>$id,'per_page'=>'10'],$actor):['items'=>[],'total'=>0];
-  $actual=$this->dailyReports?->orderTotals($id)??['hours'=>'0.000','costs'=>'0.00'];
-  if(!Session::can('costs.read'))unset($actual['costs']);
+  // Eine Stundenaggregation aus time_entries für Übersicht und Ausführung; Kosten nur mit costs.read.
+  $hours=$this->dailyReports?->orderHours($id)??['hours'=>'0.000','approvedHours'=>'0.000','provisionalHours'=>'0.000','bySource'=>[],'costs'=>'0.00','costsComplete'=>true];
+  if(!Session::can('costs.read'))unset($hours['costs'],$hours['costsComplete']);
   $purchasePage=$this->purchaseOrders!==null&&Session::can('purchases.read')?$this->purchaseOrders->page(['order'=>$id,'per_page'=>'25'],$actor):null;
   $purchaseCosts=$purchasePage!==null&&Session::can('costs.read')?$this->purchaseOrders?->costsByOrder($id,$actor):null;
   return$this->view->render('orders/show',[
@@ -49,8 +50,7 @@ final readonly class OrderController
    'materialRequests'=>$this->materialRequests?->openForOrder($id,$actor)??[],
    'workReports'=>$this->workReports!==null&&Session::can('workreports.read')?$this->workReports->forOrder($id,$actor):null,
    'measurementOverview'=>$this->measurements!==null&&Session::can('measurements.read')?$this->measurements->forOrder($id,$actor):null,
-   'actualLabor'=>$actual,
-   'orderHours'=>$this->dailyReports?->orderHours($id)??['hours'=>'0.000','approvedHours'=>'0.000'],
+   'orderHours'=>$hours,
    'purchaseOrders'=>$purchasePage,
    'purchaseCosts'=>$purchaseCosts,
   ]);

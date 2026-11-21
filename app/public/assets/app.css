@@ -1549,19 +1549,20 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
     .report-head-actions { justify-content:flex-start; }
 }
 
-/* Einstellungen → Module */
-.module-list { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
-.module-card { display: flex; flex-direction: column; gap: 6px; margin: 0; }
-.module-card p { margin: 0; }
-.module-card.is-planned { opacity: .75; }
-.module-card-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-2); }
-.module-card-heading > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.module-card-heading h2 { margin: 0; font-size: 1.05rem; }
-.module-toggle { white-space: nowrap; }
-.module-open summary { cursor: pointer; color: var(--muted); font-size: var(--font-small); }
+/* Einstellungen → Module: kompakte vertikale Liste */
+.module-rows { list-style: none; margin: 0; padding: 0; }
+.module-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); padding: 10px 4px; border-bottom: 1px solid var(--border); }
+.module-row:last-child { border-bottom: 0; }
+.module-row.is-planned { color: var(--muted); }
+.module-row.is-planned .module-icon { opacity: .5; }
+.module-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.module-text small { color: var(--muted); }
+.module-state { color: var(--muted); font-size: var(--font-small); white-space: nowrap; }
+.module-switch { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; cursor: pointer; min-height: 40px; }
+.module-switch input { width: 18px; height: 18px; }
 .module-open-items { margin: 6px 0 0; padding-left: 18px; }
 .module-notice { margin-bottom: var(--space-3); }
-@media (max-width: 640px) { .module-list { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .module-row { grid-template-columns: 20px minmax(0, 1fr); } .module-row > :last-child { grid-column: 2; } }
 
 /* Auftragsdetail: Reiter und Kennzahlen */
 .order-tabs { margin: var(--space-3) 0; }

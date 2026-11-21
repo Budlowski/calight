@@ -599,6 +599,11 @@ final class TimeApprovalTest extends TestCase
             $this->assertSame(540, $time->range($max, '2026-10-05', '2026-10-11', $tech)['totals']['netMinutes'], 'Abwesenheit zählt nicht.');
             $this->assertSame(540, $time->report('2026-10-01', '2026-10-31', $max, null, $office)['totals']['netMinutes']);
             $this->assertSame(360, $time->actualHoursForOrder($order, $office)['totals']['netMinutes'], 'Auftrag: Tagesbericht Max + Eva + Rapport.');
+            // Auftragsdetail: dieselbe Basis, getrennt nach Festschreibung und Herkunft.
+            $orderHours = $reports->orderHours($order);
+            $this->assertSame(['6.000', '0.000', '6.000'], [$orderHours['hours'], $orderHours['approvedHours'], $orderHours['provisionalHours']]);
+            $this->assertSame('6.000', (string) array_reduce($orderHours['bySource'], static fn ($sum, string $value) => \Brick\Math\BigDecimal::of($sum)->plus($value), '0'));
+            $this->assertTrue($orderHours['bySource']['work_report'] !== '0.000' && $orderHours['bySource']['daily_report'] !== '0.000', 'Rapport- und Tagesberichtstunden getrennt.');
             $this->assertSame(240, (int) $pdo->query("SELECT SUM(net_minutes) FROM time_entries WHERE cost_center_id = 'cc-k120'")->fetchColumn());
             $this->assertSame(540, $approvals->period(null, 'week', '2026-10-05', $tech)['totals']['netMinutes'], 'Prüfung nutzt dieselbe Basis.');
             $this->assertSame([[$max, 3], [$eva, 1]], array_map(static fn (array $row): array => [$row[0], (int) $row[1]],
@@ -620,6 +625,7 @@ final class TimeApprovalTest extends TestCase
             $approvals->submit(['confirmComplete' => true, 'type' => 'week', 'date' => '2026-10-05'], $tech);
             $approveAll();
             $this->assertSame('approved', $reports->detail($daily['id'], $office)['status'], 'Unterschiedliche Einreichungszeitpunkte: Festschreibung mit dem letzten Mitarbeiter.');
+            $this->assertSame('6.000', $reports->orderHours($order)['approvedHours'], 'Nach Festschreibung keine vorläufigen Auftragsstunden.');
 
             // Korrekturrapport: neue Fassung auf einem gesperrten Tag wird verhindert; gültige Fassung bleibt maßgeblich.
             $approvals->submit(['confirmComplete' => true, 'type' => 'week', 'date' => '2026-10-12'], $tech);

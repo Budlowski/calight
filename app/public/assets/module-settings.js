@@ -1,55 +1,47 @@
 (() => {
   "use strict";
 
-  // Einstellungen → Module: globale Modulschalter. Prüfung offener Vorgänge und Speicherung auf dem Server.
+  // Einstellungen → Module: kompakte Liste mit globalen Schaltern. Offene Vorgänge erst beim
+  // Deaktivieren (Bestätigungsdialog). Prüfung und Speicherung auf dem Server.
   const root = document.querySelector("#module-settings-app");
   if (!root) return;
   const { esc, api, notify } = Calight;
   const box = root.querySelector("[data-modules]");
   const message = root.querySelector("[data-message]");
 
-  const badge = (module) => {
-    if (module.core) return '<span class="status-badge status-active">Immer aktiv</span>';
-    if (!module.implemented) return '<span class="status-badge status-archived">In Planung</span>';
-    return module.enabled ? '<span class="status-badge status-active">Aktiv</span>' : '<span class="status-badge status-archived">Inaktiv</span>';
-  };
-  const list = (items) => `<ul class="module-open-items">${items.map((item) => `<li>${esc(item)}</li>`).join("")}</ul>`;
-  // Dialoginhalt als Knoten (CalightModal zeigt Zeichenketten als reinen Text).
   const fragment = (html) => { const node = document.createElement("div"); node.innerHTML = html; return node; };
+  const list = (items) => `<ul class="module-open-items">${items.map((item) => `<li>${esc(item)}</li>`).join("")}</ul>`;
 
-  const card = (module) => {
-    const toggle = module.implemented && !module.core
-      ? `<label class="check-inline module-toggle"><input type="checkbox" data-module="${esc(module.key)}"${module.enabled ? " checked" : ""}> Aktiv</label>`
-      : "";
-    const open = module.openItems.blocking.length || module.openItems.warnings.length
-      ? `<details class="module-open"><summary>Offene Vorgänge</summary>${list([...module.openItems.blocking, ...module.openItems.warnings])}</details>`
-      : "";
-    return `<section class="card module-card${module.implemented ? "" : " is-planned"}">
-      <div class="module-card-heading"><div><h2>${esc(module.label)}</h2>${badge(module)}</div>${toggle}</div>
-      <p>${esc(module.description)}</p>${module.note ? `<p class="muted">${esc(module.note)}</p>` : ""}${open}</section>`;
+  // Genau eine Zustandsangabe je Modul: Schalter (schaltbar) oder Text (fest/geplant).
+  const control = (module) => {
+    if (module.core) return '<span class="module-state">Immer aktiv</span>';
+    if (!module.implemented) return '<span class="module-state">In Planung</span>';
+    return `<label class="module-switch"><input type="checkbox" role="switch" data-module="${esc(module.key)}"${module.enabled ? " checked" : ""} aria-label="${esc(module.label)} aktiv"><span>${module.enabled ? "Aktiv" : "Inaktiv"}</span></label>`;
   };
-
-  const render = (modules) => { box.innerHTML = modules.map(card).join(""); };
+  const row = (module) => `<li class="module-row${module.implemented ? "" : " is-planned"}">
+      <span class="module-icon ui-icon icon-${esc(module.icon)}" aria-hidden="true"></span>
+      <div class="module-text"><strong>${esc(module.label)}</strong><small>${esc(module.description)}${module.note ? ` ${esc(module.note)}` : ""}</small></div>
+      ${control(module)}</li>`;
+  const render = (modules) => { box.innerHTML = `<ul class="module-rows card">${modules.map(row).join("")}</ul>`; };
 
   async function save(input, confirmOpen = false) {
-    const enabled = input.checked;
+    const key = input.dataset.module, enabled = input.checked;
     input.disabled = true;
     try {
-      const result = await api(`/api/modules/${encodeURIComponent(input.dataset.module)}`, { method: "PUT", body: { enabled, confirmOpen } });
+      const result = await api(`/api/modules/${encodeURIComponent(key)}`, { method: "PUT", body: { enabled, confirmOpen } });
       if (result.saved) {
-        // Navigation und Seiten richten sich nach den Modulen – neu laden.
-        location.reload();
+        location.reload(); // Navigation und Seiten richten sich nach den Modulen.
         return;
       }
       render(result.modules);
-      const { blocking, warnings } = result.openItems;
-      if (blocking.length) {
-        await CalightModal.open({ title: "Deaktivierung nicht möglich", content: fragment(`<p>Diese Vorgänge müssen zuerst abgeschlossen werden:</p>${list(blocking)}${warnings.length ? `<p>Außerdem vorhanden:</p>${list(warnings)}` : ""}`), actions: [{ label: "Schließen", primary: true }] });
-        return;
-      }
-      const confirmed = await CalightModal.confirm({ title: "Modul deaktivieren", content: fragment(`<p>Folgende Daten bleiben erhalten, können aber bis zur Wiederaktivierung nicht bearbeitet werden:</p>${list(warnings)}`), confirmLabel: "Deaktivieren" });
+      const confirmed = await CalightModal.confirm({
+        title: "Modul deaktivieren",
+        content: fragment(`<p>Es gibt offene Vorgänge. Sie bleiben unverändert erhalten und lesbar, können aber erst nach der Wiederaktivierung weiterbearbeitet werden. Es wird nichts abgeschlossen, freigegeben oder storniert.</p>${list(result.openItems)}`),
+        confirmLabel: "Trotzdem deaktivieren",
+        danger: true,
+      });
       if (confirmed) {
-        const again = box.querySelector(`[data-module="${CSS.escape(input.dataset.module)}"]`);
+        const again = box.querySelector(`[data-module="${CSS.escape(key)}"]`);
         again.checked = false;
         await save(again, true);
       }

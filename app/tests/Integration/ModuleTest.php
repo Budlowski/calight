@@ -91,8 +91,7 @@ final class ModuleTest extends TestCase
             // Offene Materialanforderung: Hinweis, Deaktivierung erst nach Bestätigung.
             $first = $modules->setEnabled('procurement', false, false, $admin);
             $this->assertSame(false, $first['saved']);
-            $this->assertSame([], $first['openItems']['blocking']);
-            $this->assertSame(['1 offene Materialanforderung'], $first['openItems']['warnings']);
+            $this->assertSame(['1 offene Materialanforderung'], $first['openItems']);
             $this->assertTrue($modules->isEnabled('procurement'));
             $this->assertSame(true, $modules->setEnabled('procurement', false, true, $admin)['saved']);
             $this->assertSame(1, (int) $pdo->query('SELECT COUNT(*) FROM material_requests')->fetchColumn(), 'Daten bleiben erhalten.');
@@ -105,16 +104,20 @@ final class ModuleTest extends TestCase
             $this->assertSame(true, $modules->setEnabled('procurement', true, false, $admin)['saved'], 'Wiederaktivierung jederzeit.');
             $this->assertSame(1, (int) $pdo->query("SELECT COUNT(*) FROM material_requests WHERE status = 'open'")->fetchColumn());
 
-            // Zur Korrektur geöffneter Zeiterfassungstag: Deaktivierung der Arbeitserfassung blockiert.
+            // Offene Freigabe (zur Korrektur geöffneter Tag): nur nach Bestätigung, Zustand bleibt.
             $employee = Uuid::v4();
             $pdo->prepare("INSERT INTO employees (id, user_id, display_name, hourly_cost_rate, active, created_at, updated_at) VALUES (:id, NULL, 'Max', '40.0000', 1, :now, :now)")
                 ->execute(['id' => $employee, 'now' => $now]);
             $pdo->prepare("INSERT INTO time_day_locks (employee_id, work_date, status, updated_by_user_id, updated_at) VALUES (:employee, '2026-08-31', 'reopened', :user, :now)")
                 ->execute(['employee' => $employee, 'user' => $admin['id'], 'now' => $now]);
-            $blocked = $modules->setEnabled('work_tracking', false, true, $admin);
-            $this->assertSame(false, $blocked['saved']);
-            $this->assertSame(1, count($blocked['openItems']['blocking']));
+            $pending = $modules->setEnabled('work_tracking', false, false, $admin);
+            $this->assertSame(false, $pending['saved']);
+            $this->assertSame(1, count($pending['openItems']));
             $this->assertTrue($modules->isEnabled('work_tracking'));
+            $this->assertSame(true, $modules->setEnabled('work_tracking', false, true, $admin)['saved']);
+            $this->assertSame('reopened', (string) $pdo->query("SELECT status FROM time_day_locks WHERE employee_id = " . $pdo->quote($employee))->fetchColumn(), 'Keine automatische Freigabe oder Änderung.');
+            $this->assertSame(true, $modules->setEnabled('work_tracking', true, false, $admin)['saved']);
+            $this->assertSame(null, $modules->blockedMessage('POST', '/api/time-tracking/submissions'), 'Nach Wiederaktivierung regulär bearbeitbar.');
         });
     }
 

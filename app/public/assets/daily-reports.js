@@ -161,7 +161,7 @@
       .map((employee) => `<option value="${esc(employee.id)}">${esc(employee.display_name)}${Number(employee.active) ? "" : " (inaktiv)"}</option>`)
       .join("");
     list.start();
-    if (root.dataset.initialOrder) {
+    if (root.dataset.initialOrder && !Calight.moduleReadOnly) {
       // Der Einstieg „Bericht anlegen“ öffnet den Dialog nur einmal, nicht erneut über die History.
       const url = new URL(location.href);
       url.searchParams.delete("create_for");

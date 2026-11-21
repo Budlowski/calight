@@ -598,16 +598,39 @@ final readonly class DailyReportService
     }
 
     /**
-     * Erfasste Arbeitsstunden eines Auftrags (zentrale Basis, inkl. vorläufiger Entwurfsstunden)
-     * und davon festgeschriebene Stunden – für die Auftragsübersicht.
+     * Stundenkennzahlen eines Auftrags aus der zentralen Stundenbasis – einzige Aggregation für
+     * Übersicht und Ausführung der Auftragsdetailseite: gesamt, festgeschrieben, vorläufig, je
+     * Herkunft (Rapport, Tagesbericht, manuell) und Ist-Lohnkosten (Dauer × Kostensatz-Snapshot;
+     * costsComplete = false, wenn Buchungen ohne Kostensatz existieren – nie als 0 gewertet).
      *
-     * @return array{hours:string,approvedHours:string}
+     * @return array{hours:string,approvedHours:string,provisionalHours:string,bySource:array<string,string>,costs:string,costsComplete:bool}
      */
     public function orderHours(string $orderId): array
     {
-        $minutes = $this->reports->orderMinutes($orderId);
+        $minutes = ['total' => 0, 'approved' => 0];
+        $sources = ['work_report' => 0, 'daily_report' => 0, 'manual' => 0];
+        $costs = BigDecimal::zero();
+        $complete = true;
+        foreach ($this->reports->orderBookings($orderId) as $row) {
+            $net = (int) $row['net_minutes'];
+            $minutes['total'] += $net;
+            $minutes['approved'] += (int) $row['approved'] === 1 ? $net : 0;
+            $sources[(string) $row['source_kind']] = ($sources[(string) $row['source_kind']] ?? 0) + $net;
+            if ($row['hourly_cost_rate_snapshot'] === null) {
+                $complete = false;
+                continue;
+            }
+            $costs = $costs->plus(BigDecimal::of((string) $row['hourly_cost_rate_snapshot'])->multipliedBy($net)->dividedBy(60, 6, RoundingMode::HalfUp));
+        }
         $hours = static fn (int $value): string => (string) BigDecimal::of($value)->dividedBy(60, Decimal::TIME_SCALE, RoundingMode::HalfUp);
-        return ['hours' => $hours($minutes['total']), 'approvedHours' => $hours($minutes['approved'])];
+        return [
+            'hours' => $hours($minutes['total']),
+            'approvedHours' => $hours($minutes['approved']),
+            'provisionalHours' => $hours($minutes['total'] - $minutes['approved']),
+            'bySource' => array_map($hours, $sources),
+            'costs' => Decimal::money($costs),
+            'costsComplete' => $complete,
+        ];
     }
 
     /** Leserecht für Auswertungen je Auftrag (Techniker: nur freigegebene Aufträge). @param array<string,mixed> $actor */

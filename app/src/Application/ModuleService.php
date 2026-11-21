@@ -26,40 +26,40 @@ final class ModuleService
 {
     public const CORE = 'core';
 
-    /** @var array<string,array{label:string,description:string,implemented:bool,note?:string}> */
+    /** @var array<string,array{icon:string,label:string,description:string,implemented:bool,note?:string}> */
     public const DEFINITIONS = [
         'core' => [
-            'label' => 'Basissystem', 'implemented' => true,
+            'icon' => 'layout-dashboard', 'label' => 'Basissystem', 'implemented' => true,
             'description' => 'Kunden, Projekte, Angebote, Kalkulation, Aufträge, Aufmaße, Dokumente, Stammdaten und Einstellungen.',
         ],
         'work_tracking' => [
-            'label' => 'Arbeitserfassung', 'implemented' => true,
+            'icon' => 'clock-3', 'label' => 'Arbeitserfassung', 'implemented' => true,
             'description' => 'Zeiterfassung, Tagesberichte, Rapporte, Abwesenheiten, Reisekosten, Auslagen, Freigaben und Stundennachweise.',
         ],
         'procurement' => [
-            'label' => 'Beschaffung', 'implemented' => true,
+            'icon' => 'shopping-cart', 'label' => 'Beschaffung', 'implemented' => true,
             'description' => 'Bestellungen bei Lieferanten, Materialbedarf, Eingangsrechnungen und Kostenverteilung.',
             'note' => 'Lieferanten bleiben als gemeinsame Stammdaten (Artikelstamm) immer verfügbar.',
         ],
         'billing' => [
-            'label' => 'Abrechnung', 'implemented' => false,
+            'icon' => 'badge-euro', 'label' => 'Abrechnung', 'implemented' => false,
             'description' => 'Abrechnungsaufstellungen, Teilrechnungen und externe Rechnungsreferenzen.',
         ],
         'job_costing' => [
-            'label' => 'Nachkalkulation', 'implemented' => false,
+            'icon' => 'chart-no-axes-column-increasing', 'label' => 'Nachkalkulation', 'implemented' => false,
             'description' => 'Soll-/Ist-Vergleich, Personal- und Materialkosten, Wirtschaftlichkeit.',
             'note' => 'Nutzt vorhandene Daten aus Arbeitserfassung und Beschaffung; fehlende Quellen gelten nicht als null Kosten.',
         ],
         'contacts' => [
-            'label' => 'Kontakte', 'implemented' => false,
+            'icon' => 'users', 'label' => 'Kontakte', 'implemented' => false,
             'description' => 'Erweitertes Adressbuch und CardDAV. Kunden- und Lieferantenkontakte bleiben unabhängig davon verfügbar.',
         ],
         'calendar' => [
-            'label' => 'Kalender', 'implemented' => false,
+            'icon' => 'calendar-days', 'label' => 'Kalender', 'implemented' => false,
             'description' => 'Terminverwaltung und CalDAV.',
         ],
         'lexware' => [
-            'label' => 'Lexware-Anbindung', 'implemented' => false,
+            'icon' => 'refresh-cw', 'label' => 'Lexware-Anbindung', 'implemented' => false,
             'description' => 'Externer Datenaustausch mit Lexware.',
         ],
     ];
@@ -154,24 +154,29 @@ final class ModuleService
         $this->require($actor);
         $result = [];
         foreach (self::DEFINITIONS as $key => $definition) {
-            $enabled = $this->isEnabled($key);
+            $isEnabled = $this->isEnabled($key);
             $result[] = [
-                'key' => $key, 'label' => $definition['label'], 'description' => $definition['description'],
+                'key' => $key, 'icon' => $definition['icon'], 'label' => $definition['label'], 'description' => $definition['description'],
                 'note' => $definition['note'] ?? null, 'implemented' => $definition['implemented'],
-                'core' => $key === self::CORE, 'enabled' => $enabled,
-                'openItems' => $enabled && $key !== self::CORE && $definition['implemented'] ? $this->openItems($key) : ['blocking' => [], 'warnings' => []],
+                'core' => $key === self::CORE, 'enabled' => $isEnabled,
             ];
         }
         return $result;
     }
 
     /**
-     * Modul aktivieren oder deaktivieren. Deaktivieren scheitert, solange Vorgänge auf eine
-     * Freigabe, Korrektur oder einen Abschluss warten; offene Entwürfe müssen bestätigt werden.
-     * Es werden keine Daten verändert oder gelöscht.
+     * Modul aktivieren oder deaktivieren. Offene Vorgänge verhindern die Deaktivierung nicht, müssen
+     * aber ausdrücklich bestätigt werden (confirmOpen). Es werden keine Daten verändert, gelöscht,
+     * abgeschlossen, freigegeben oder storniert; offene Vorgänge bleiben in ihrem Zustand und sind
+     * nach der Wiederaktivierung regulär weiter bearbeitbar.
+     *
+     * Eine technische Deaktivierungssperre ist nicht nötig: Der Schalter ist ein einzelner
+     * atomarer Schreibvorgang; jede Fachänderung läuft in ihrer eigenen Transaktion mit den
+     * bestehenden Sperren (Trigger, Versionen). Eine Anfrage, die die Modulprüfung vor dem
+     * Umschalten passiert hat, wird regulär abgeschlossen; danach werden Änderungen abgelehnt.
      *
      * @param array<string,mixed> $actor
-     * @return array{saved:bool,openItems:array{blocking:list<string>,warnings:list<string>},modules:list<array<string,mixed>>}
+     * @return array{saved:bool,openItems:list<string>,modules:list<array<string,mixed>>}
      */
     public function setEnabled(string $module, bool $enabled, bool $confirmOpen, array $actor): array
     {
@@ -185,7 +190,7 @@ final class ModuleService
         }
         if (!$enabled && $this->isEnabled($module)) {
             $open = $this->openItems($module);
-            if ($open['blocking'] !== [] || ($open['warnings'] !== [] && !$confirmOpen)) {
+            if ($open !== [] && !$confirmOpen) {
                 return ['saved' => false, 'openItems' => $open, 'modules' => $this->overview($actor)];
             }
         }
@@ -193,46 +198,43 @@ final class ModuleService
             ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_by_user_id = excluded.updated_by_user_id, updated_at = excluded.updated_at')
             ->execute(['key' => 'modules.' . $module, 'value' => $enabled ? '1' : '0', 'user' => (string) $actor['id'], 'now' => Clock::now()]);
         $this->state = null;
-        return ['saved' => true, 'openItems' => ['blocking' => [], 'warnings' => []], 'modules' => $this->overview($actor)];
+        return ['saved' => true, 'openItems' => [], 'modules' => $this->overview($actor)];
     }
 
     /**
-     * Offene Vorgänge eines Moduls. blocking: Vorgänge, deren Freigabe, Korrektur oder Abschluss
-     * nach einer Deaktivierung nicht mehr möglich wäre. warnings: Entwürfe und nicht eingereichte
-     * Daten, die erhalten bleiben, aber bis zur Wiederaktivierung nicht bearbeitet werden können.
+     * Offene Vorgänge eines Moduls für den Bestätigungsdialog (bleiben unverändert erhalten).
      *
-     * @return array{blocking:list<string>,warnings:list<string>}
+     * @return list<string>
      */
     public function openItems(string $module): array
     {
         $count = fn (string $sql): int => (int) $this->pdo->query($sql)->fetchColumn();
-        $blocking = [];
-        $warnings = [];
-        $add = static function (array &$list, int $number, string $singular, string $plural): void {
+        $items = [];
+        $add = static function (int $number, string $singular, string $plural) use (&$items): void {
             if ($number > 0) {
-                $list[] = $number . ' ' . ($number === 1 ? $singular : $plural);
+                $items[] = $number . ' ' . ($number === 1 ? $singular : $plural);
             }
         };
         if ($module === 'work_tracking') {
-            $add($blocking, $count("SELECT COUNT(*) FROM daily_reports WHERE status IN ('submitted', 'reopened')"),
+            $add($count("SELECT COUNT(*) FROM daily_reports WHERE status = 'draft'"), 'Tagesbericht im Entwurf', 'Tagesberichte im Entwurf');
+            $add($count("SELECT COUNT(*) FROM daily_reports WHERE status IN ('submitted', 'reopened')"),
                 'Tagesbericht wartet auf Festschreibung oder Korrektur', 'Tagesberichte warten auf Festschreibung oder Korrektur');
-            $add($blocking, $count("SELECT COUNT(*) FROM (SELECT DISTINCT employee_id, work_date FROM time_day_locks WHERE status IN ('submitted', 'reopened'))"),
-                'Zeiterfassungstag ist eingereicht oder zur Korrektur geöffnet', 'Zeiterfassungstage sind eingereicht oder zur Korrektur geöffnet');
-            $add($blocking, $count("SELECT COUNT(*) FROM work_reports WHERE status = 'submitted' AND superseded_by_id IS NULL"),
+            $add($count("SELECT COUNT(*) FROM (SELECT DISTINCT employee_id, work_date FROM time_day_locks WHERE status IN ('submitted', 'reopened'))"),
+                'Zeiterfassungstag ist eingereicht oder zur Korrektur geöffnet (Freigabe offen)', 'Zeiterfassungstage sind eingereicht oder zur Korrektur geöffnet (Freigaben offen)');
+            $add($count("SELECT COUNT(*) FROM (SELECT DISTINCT e.employee_id, e.work_date FROM time_entries e
+                WHERE NOT EXISTS (SELECT 1 FROM time_day_locks l WHERE l.employee_id = e.employee_id AND l.work_date = e.work_date AND l.status IN ('submitted', 'approved')))"),
+                'Tag mit noch nicht eingereichten Arbeitszeiten', 'Tage mit noch nicht eingereichten Arbeitszeiten');
+            $add($count("SELECT COUNT(*) FROM work_reports WHERE status = 'draft'"), 'Rapport im Entwurf', 'Rapporte im Entwurf');
+            $add($count("SELECT COUNT(*) FROM work_reports WHERE status = 'submitted' AND superseded_by_id IS NULL"),
                 'eingereichter Rapport ist noch nicht bearbeitet', 'eingereichte Rapporte sind noch nicht bearbeitet');
-            $add($warnings, $count("SELECT COUNT(*) FROM daily_reports WHERE status = 'draft'"), 'Tagesbericht im Entwurf', 'Tagesberichte im Entwurf');
-            $add($warnings, $count("SELECT COUNT(*) FROM work_reports WHERE status = 'draft'"), 'Rapport im Entwurf', 'Rapporte im Entwurf');
-            $add($warnings, $count("SELECT COUNT(*) FROM (SELECT DISTINCT e.employee_id, e.work_date FROM time_entries e
-                WHERE NOT EXISTS (SELECT 1 FROM time_day_locks l WHERE l.employee_id = e.employee_id AND l.work_date = e.work_date AND l.status = 'approved'))"),
-                'Tag mit noch nicht festgeschriebenen Arbeitszeiten', 'Tage mit noch nicht festgeschriebenen Arbeitszeiten');
         }
         if ($module === 'procurement') {
-            $add($blocking, $count("SELECT COUNT(*) FROM purchase_orders WHERE status = 'ordered' AND (delivery_status <> 'delivered' OR payment_status <> 'paid')"),
+            $add($count("SELECT COUNT(*) FROM purchase_orders WHERE status = 'draft'"), 'Bestellentwurf', 'Bestellentwürfe');
+            $add($count("SELECT COUNT(*) FROM purchase_orders WHERE status = 'ordered' AND (delivery_status <> 'delivered' OR payment_status <> 'paid')"),
                 'Bestellung ist noch nicht vollständig geliefert oder bezahlt', 'Bestellungen sind noch nicht vollständig geliefert oder bezahlt');
-            $add($warnings, $count("SELECT COUNT(*) FROM purchase_orders WHERE status = 'draft'"), 'Bestellentwurf', 'Bestellentwürfe');
-            $add($warnings, $count("SELECT COUNT(*) FROM material_requests WHERE status = 'open'"), 'offene Materialanforderung', 'offene Materialanforderungen');
+            $add($count("SELECT COUNT(*) FROM material_requests WHERE status = 'open'"), 'offene Materialanforderung', 'offene Materialanforderungen');
         }
-        return ['blocking' => $blocking, 'warnings' => $warnings];
+        return $items;
     }
 
     /** @return array<string,bool> */
