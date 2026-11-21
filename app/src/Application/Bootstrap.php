@@ -96,7 +96,7 @@ final readonly class Bootstrap
         $dailyReportRepository=new DailyReportRepository($this->pdo);
         $documentStore=new AttachmentStore($this->config->documentsPath);
         $documentArchive=new DocumentArchive(new GeneratedDocumentRepository($this->pdo),$documentStore);
-        $dailyReportService=new DailyReportService($this->pdo,$dailyReportRepository,$employeeRepository,new OrderRepository($this->pdo),$documentStore);
+        $dailyReportService=new DailyReportService($this->pdo,$dailyReportRepository,$employeeRepository,new OrderRepository($this->pdo),$documentStore,new DocumentSettingsRepository($this->pdo));
         $measurementRepository=new MeasurementRepository($this->pdo);
         $measurementService=new MeasurementService($this->pdo,$measurementRepository,new OrderRepository($this->pdo),$numberRanges);
         $workReportService=new WorkReportService($this->pdo,new WorkReportRepository($this->pdo),new OrderRepository($this->pdo),$numberRanges,$priceCalculator,$documentStore,$orderService);
@@ -127,7 +127,7 @@ final readonly class Bootstrap
             new PurchaseOrderController($view,new PurchaseOrderService($this->pdo,new PurchaseOrderRepository($this->pdo),$numberRanges,$documentStore,new PurchaseOrderPdfService($documentSettingsRepository)),$masterDataService),
             new DocumentController($view,new DocumentService($this->pdo,new AttachmentRepository($this->pdo),new DocumentRepository($this->pdo),$documentStore)),
             new TimeTrackingController($view,$timeTracking=new TimeTrackingService(new TimeTrackingRepository($this->pdo),$documentStore,new CostTargets($this->pdo)),
-                new TimeApprovalService(new TimeApprovalRepository($this->pdo),new TimeTrackingRepository($this->pdo),$timeTracking,new OperationalSettingsService($this->pdo),new DocumentSettingsRepository($this->pdo),$documentStore)),
+                new TimeApprovalService(new TimeApprovalRepository($this->pdo),new TimeTrackingRepository($this->pdo),$timeTracking,new OperationalSettingsService($this->pdo),new DocumentSettingsRepository($this->pdo),$documentStore,null,$dailyReportService)),
             new CostCenterController($view,new CostCenterService($this->pdo,new CostCenterRepository($this->pdo),dirname(__DIR__,2).'/config/cost-center-template.json')),
         );
     }

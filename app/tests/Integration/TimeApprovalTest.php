@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration;
 
+use App\Application\DailyReportPdfService;
 use App\Application\DailyReportService;
+use App\Application\DocumentService;
 use App\Application\OfferPdfService;
 use App\Application\OfferService;
 use App\Application\OperationalSettingsService;
@@ -13,6 +15,7 @@ use App\Application\TimeApprovalService;
 use App\Application\TimeTrackingService;
 use App\Application\WorkReportService;
 use App\Domain\Calculation\PriceCalculator;
+use App\Domain\DailyReportValidationException;
 use App\Domain\Document\DocumentValidationException;
 use App\Domain\Offer\OfferCalculator;
 use App\Domain\Offer\OfferValidator;
@@ -20,7 +23,9 @@ use App\Http\AccessDeniedException;
 use App\Http\Request;
 use App\Infrastructure\Database\ConnectionFactory;
 use App\Infrastructure\Database\Migrator;
+use App\Infrastructure\Persistence\AttachmentRepository;
 use App\Infrastructure\Persistence\AttachmentStore;
+use App\Infrastructure\Persistence\DocumentRepository;
 use App\Infrastructure\Persistence\DailyReportRepository;
 use App\Infrastructure\Persistence\DocumentSettingsRepository;
 use App\Infrastructure\Persistence\EmployeeRepository;
@@ -182,6 +187,8 @@ final class TimeApprovalTest extends TestCase
             };
             // Tagesbericht (KW 42) und eingereichter Rapport (KW 43) vor der Sperre.
             $report = $reports->create(['orderId' => $order, 'reportDate' => '2026-10-13', 'activities' => 'Montage', 'entries' => [['employeeId' => $employee, 'durationHours' => '3', 'targetKey' => 'order']]], $tech);
+            $this->assertSame(['daily_report_draft'], array_column($approvals->period(null, 'week', '2026-10-13', $tech)['errors'], 'code'), 'Offener Tagesbericht verhindert die Einreichung.');
+            $report = $reports->submit($report['id'], ['version' => $report['version']], $tech);
             $work = $workReports->create(['customerId' => $customer, 'orderId' => $order, 'workDate' => '2026-10-20'], $office);
             $work = $workReports->update($work['id'], ['version' => $work['version'], 'description' => 'Regie', 'labor' => [['workDate' => '2026-10-20', 'employeeId' => $employee, 'hours' => '2']], 'materials' => []], $office);
             $work = $workReports->submit($work['id'], ['version' => $work['version']], $office);
@@ -200,7 +207,10 @@ final class TimeApprovalTest extends TestCase
             }
             $approveAll();
 
-            // Tagesbericht: Stunden, Löschung und Zuordnung gesperrt; reine Beschreibung bleibt änderbar.
+            // Sammelfestschreibung: der eingereichte Bericht ist mit der Arbeitszeitfreigabe festgeschrieben.
+            $this->assertSame(['approved', 1], [$reports->detail($report['id'], $tech)['status'], count($reports->detail($report['id'], $tech)['statements'])]);
+            // Nach Wiederöffnung des Berichts: Stunden, Löschung und Zuordnung bleiben über die Zeiterfassung gesperrt; Beschreibung änderbar.
+            $report = $reports->reopen($report['id'], ['version' => $reports->detail($report['id'], $office)['version'], 'reason' => 'Text ergänzen'], $office);
             $report = $reports->detail($report['id'], $tech);
             $entries = [['id' => $report['entries'][0]['id'], 'employeeId' => $employee, 'durationHours' => '3', 'targetKey' => 'order']];
             $base = ['reportDate' => '2026-10-13', 'title' => '', 'notes' => '', 'entries' => $entries];
@@ -209,7 +219,8 @@ final class TimeApprovalTest extends TestCase
             $this->assertThrows(PDOException::class, fn () => $reports->update($report['id'], ['version' => $report['version'], 'activities' => 'x', 'entries' => []] + $base, $tech), 'Position löschen.');
             $this->assertThrows(PDOException::class, fn () => $reports->update($report['id'], ['version' => $report['version'], 'activities' => 'x', 'entries' => [['id' => $entries[0]['id'], 'employeeId' => $employee, 'durationHours' => '3', 'targetKey' => 'order', 'workDate' => '2026-10-27']]] + ['reportDate' => '2026-10-27'] + $base, $tech), 'Verschiebung aus gesperrtem Tag.');
             $this->assertThrows(PDOException::class, fn () => $reports->assignOrder($report['id'], ['version' => $report['version']], $office), 'Kostenziel.');
-            $this->assertThrows(PDOException::class, fn () => $reports->delete($report['id'], $report['version'], $office), 'Bericht löschen.');
+            $this->assertThrows(DailyReportValidationException::class, fn () => $reports->delete($report['id'], $report['version'], $office), 'Eingereichte Berichte nie löschen.');
+            $this->assertThrows(PDOException::class, fn () => $reports->cancel($report['id'], ['version' => $report['version'], 'reason' => 'Doppelt'], $office), 'Stornierung erst nach Wiederöffnung der Zeiterfassung.');
             $this->assertThrows(PDOException::class, fn () => $reports->create(['orderId' => $order, 'reportDate' => '2026-10-14', 'activities' => 'Nachtrag', 'entries' => [['employeeId' => $employee, 'durationHours' => '1', 'targetKey' => 'order']]], $tech), 'Neue Berichtsstunden.');
             $service->createEntry(['employeeId' => $eva, 'date' => '2026-10-14', 'durationMinutes' => '60', 'activity' => 'internal'], $office);
 
@@ -271,6 +282,7 @@ final class TimeApprovalTest extends TestCase
             $pdo->prepare("INSERT INTO time_entries (id, employee_id, work_date, source_kind, start_time, end_time, net_minutes, activity, created_by_user_id, created_at, updated_by_user_id, updated_at)
                 VALUES ('overlap', :employee, '2026-11-02', 'manual', '12:00', '13:00', 60, 'work', :user, 't', :user, 't')")->execute(['employee' => $employee, 'user' => $tech['id']]);
             $report = $reports->create(['orderId' => $order, 'reportDate' => '2026-11-06', 'activities' => 'Montage', 'entries' => [['employeeId' => $employee, 'durationHours' => '2', 'targetKey' => 'order']]], $tech);
+            $report = $reports->submit($report['id'], ['version' => $report['version']], $tech);
             $settings->save(['time_tracking.times_optional' => false], $admin);
             $week = $approvals->period(null, 'week', '2026-11-02', $tech);
             $this->assertSame(['overlap', 'times_missing'], $codes($week['errors']));
@@ -431,6 +443,135 @@ final class TimeApprovalTest extends TestCase
         });
     }
 
+    public function testDailyReportLifecycleArchiveAndCancellation(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['service' => $service, 'approvals' => $approvals, 'reports' => $reports, 'tech' => $tech, 'otherTech' => $otherTech, 'office' => $office,
+                'employee' => $employee, 'order' => $order, 'pdo' => $pdo, 'files' => $files] = $env;
+            $bookings = static fn (string $reportId): int => (int) $pdo->query('SELECT COALESCE(SUM(t.net_minutes), 0) FROM time_entries t JOIN daily_report_time_entries e ON e.id = t.daily_report_entry_id WHERE e.report_id = '
+                . $pdo->quote($reportId))->fetchColumn();
+            $entry = static fn (string $hours, ?string $id = null): array => array_filter(['id' => $id, 'employeeId' => $employee, 'durationHours' => $hours]);
+            $base = ['orderId' => $order, 'reportDate' => '2026-10-13', 'activities' => 'Montage'];
+
+            // Entwurf: bearbeitbar und löschbar; Stunden sofort in der Zeiterfassung.
+            $report = $reports->create($base + ['entries' => [$entry('2')]], $tech);
+            $this->assertSame(['draft', 'Entwurf', true, true, false, 120], [$report['status'], $report['statusLabel'], $report['canDelete'], $report['canSubmit'], $report['canApprove'], $bookings($report['id'])]);
+            $scratch = $reports->create($base + ['entries' => []], $tech);
+            $reports->delete($scratch['id'], $scratch['version'], $tech);
+
+            // Eingereicht: für den Mitarbeiter gesperrt (Dienst und Datenbank); Büro prüft.
+            $report = $reports->submit($report['id'], ['version' => $report['version']], $tech);
+            $this->assertSame(['submitted', false, false, true], [$report['status'], $report['canEdit'], $report['canDelete'], $reports->detail($report['id'], $office)['canApprove']]);
+            $this->assertThrows(AccessDeniedException::class, fn () => $reports->update($report['id'], ['version' => $report['version'], 'reportDate' => '2026-10-13', 'activities' => 'x', 'entries' => []], $tech));
+            $this->assertThrows(AccessDeniedException::class, fn () => $reports->delete($report['id'], $report['version'], $tech));
+            $this->assertThrows(AccessDeniedException::class, fn () => $reports->approve($report['id'], ['version' => $report['version']], $tech));
+            $this->assertThrows(PDOException::class, fn () => $pdo->exec("UPDATE daily_report_time_entries SET duration_hours = '5.000'"), 'Berichtssperre in der Datenbank.');
+            $this->assertThrows(PDOException::class, fn () => $pdo->exec('DELETE FROM daily_reports WHERE id = ' . $pdo->quote($report['id'])));
+            $this->assertThrows(DailyReportValidationException::class, fn () => $reports->assignOrder($report['id'], ['version' => $report['version']], $office), 'Zuordnung gesperrt.');
+
+            // Zurückgeben (Begründung Pflicht) → Korrektur → erneut einreichen → einzeln festschreiben.
+            $this->assertThrows(DailyReportValidationException::class, fn () => $reports->returnReport($report['id'], ['version' => $report['version'], 'reason' => ' '], $office));
+            $report = $reports->returnReport($report['id'], ['version' => $report['version'], 'reason' => 'Stunden prüfen'], $office);
+            $first = $report['entries'][0];
+            $report = $reports->update($report['id'], ['version' => $report['version'], 'reportDate' => '2026-10-13', 'activities' => 'Montage', 'entries' => [$entry('3', $first['id'])]], $tech);
+            $this->assertSame(['reopened', 180], [$report['status'], $bookings($report['id'])], 'Keine Doppelbuchung.');
+            $report = $reports->submit($report['id'], ['version' => $report['version']], $tech);
+            $report = $reports->approve($report['id'], ['version' => $report['version']], $office);
+            $this->assertThrows(DailyReportValidationException::class, fn () => $reports->approve($report['id'], ['version' => $report['version']], $office), 'Wiederholte Festschreibung.');
+            $this->assertSame(['approved', [[1, true]]], [$report['status'], array_map(static fn (array $item): array => [$item['revision'], $item['current']], $report['statements'])]);
+            $archived = $reports->statementPdf($report['id'], $report['statements'][0]['id'], $tech);
+            $this->assertTrue(str_starts_with($archived['pdf'], '%PDF') && str_contains($archived['pdf'], '(Revision) Tj') && !str_contains($archived['pdf'], '42,00'), 'Archiv ohne Kostensätze.');
+            $pdfService = new DailyReportPdfService($reports, new DocumentSettingsRepository($pdo));
+            $this->assertSame($archived['pdf'], $pdfService->pdf($report['id'], $office)['pdf'], 'PDF-Abruf liefert das Archiv.');
+            $snapshot = (string) $pdo->query('SELECT snapshot_json FROM daily_report_statements')->fetchColumn();
+            $this->assertTrue(!str_contains($snapshot, 'labor_cost') && !str_contains($snapshot, 'hourly_cost_rate'));
+            $this->assertThrows(PDOException::class, fn () => $pdo->exec("UPDATE daily_report_statements SET snapshot_json = '{}'"));
+            $this->assertThrows(PDOException::class, fn () => $pdo->exec('DELETE FROM daily_report_statements'));
+
+            // Wiederöffnen → Korrektur → neue Revision; alte Fassung bleibt unverändert.
+            $report = $reports->reopen($report['id'], ['version' => $report['version'], 'reason' => 'Text ergänzen'], $office);
+            $report = $reports->update($report['id'], ['version' => $report['version'], 'reportDate' => '2026-10-13', 'activities' => 'Montage abgeschlossen', 'entries' => [$entry('3', $first['id'])]], $tech);
+            $report = $reports->submit($report['id'], ['version' => $report['version']], $tech);
+            $report = $reports->approve($report['id'], ['version' => $report['version']], $office);
+            $this->assertSame([[1, false], [2, true]], array_map(static fn (array $item): array => [$item['revision'], $item['current']], $report['statements']));
+            $this->assertSame(hash('sha256', $archived['pdf']), hash('sha256', $reports->statementPdf($report['id'], $report['statements'][0]['id'], $office)['pdf']));
+            $this->assertSame(2, count(glob($files . '/daily-report-statements/' . $report['id'] . '/*.pdf') ?: []));
+
+            // Stornieren: nur Büro, nur nach Einreichung, mit Begründung; Bericht bleibt, Buchungen entfallen.
+            $draft = $reports->create($base + ['entries' => []], $tech);
+            $this->assertThrows(DailyReportValidationException::class, fn () => $reports->cancel($draft['id'], ['version' => $draft['version'], 'reason' => 'x'], $office), 'Entwürfe löschen statt stornieren.');
+            $this->assertThrows(AccessDeniedException::class, fn () => $reports->cancel($report['id'], ['version' => $report['version'], 'reason' => 'x'], $tech));
+            $cancelled = $reports->cancel($report['id'], ['version' => $report['version'], 'reason' => 'Doppelt erfasst'], $office);
+            $this->assertSame(['cancelled', 0, 0, false], [$cancelled['status'], $bookings($report['id']), $service->day($employee, '2026-10-13', $tech)['totals']['netMinutes'], $cancelled['statements'][1]['current']]);
+            $this->assertSame(['submit', 'return', 'submit', 'approve', 'reopen', 'submit', 'approve', 'cancel'], array_column($cancelled['events'], 'action'));
+            $this->assertThrows(DailyReportValidationException::class, fn () => $reports->delete($report['id'], $cancelled['version'], $office), 'Stornierte Berichte bleiben erhalten.');
+            $this->assertSame([], array_column($approvals->period(null, 'week', '2026-10-13', $tech)['errors'], 'code'), 'Storno ohne Konsistenzfehler; Entwurf ohne Stunden blockiert nicht.');
+
+            // Bericht ohne Mitarbeiterstunden: unabhängig festschreibbar.
+            $noHours = $reports->create(['reportDate' => '2026-10-14', 'activities' => 'Begehung'], $tech);
+            $noHours = $reports->submit($noHours['id'], ['version' => $noHours['version']], $tech);
+            $this->assertSame('approved', $reports->approve($noHours['id'], ['version' => $noHours['version']], $office)['status']);
+            $this->assertThrows(AccessDeniedException::class, fn () => $reports->statementPdf($noHours['id'], $reports->detail($noHours['id'], $office)['statements'][0]['id'], $otherTech), 'Fremder kundenloser Bericht.');
+            $this->assertSame(['draft', 'submitted', 'approved', 'reopened', 'cancelled'], array_keys(DailyReportService::STATUS));
+            $this->assertSame(1, $reports->page(['status' => 'cancelled'], $office)['total']);
+            $this->assertSame(1, $reports->page(['status' => 'open'], $office)['total'], 'Offen: der leere Entwurf.');
+            $this->assertSame([], $pdo->query('PRAGMA foreign_key_check')->fetchAll());
+        });
+    }
+
+    public function testDailyReportsBlockTimeSubmissionAndAreApprovedWithTheWeek(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['approvals' => $approvals, 'reports' => $reports, 'tech' => $tech, 'office' => $office, 'admin' => $admin, 'employee' => $employee, 'colleagueEmployee' => $eva,
+                'order' => $order, 'pdo' => $pdo, 'files' => $files, 'service' => $service] = $env;
+            $approveAll = function () use ($approvals, $office): void {
+                foreach ($approvals->pending($office)['items'] as $item) {
+                    $approvals->approve($item['id'], ['version' => $item['version'], 'acknowledgeWarnings' => true], $office);
+                }
+            };
+            // Bericht mit zwei Mitarbeitern; offener Entwurf blockiert die Einreichung der Zeiterfassung.
+            $report = $reports->create(['orderId' => $order, 'reportDate' => '2026-10-20', 'activities' => 'Montage', 'entries' => [
+                ['employeeId' => $employee, 'durationHours' => '4'], ['employeeId' => $eva, 'durationHours' => '4']]], $office);
+            $this->assertThrows(DocumentValidationException::class, fn () => $approvals->submit(['confirmComplete' => true, 'type' => 'week', 'date' => '2026-10-19'], $tech));
+            $report = $reports->submit($report['id'], ['version' => $report['version']], $office);
+
+            // Sammelfreigabe Max: Bericht bleibt eingereicht, Evas Tage bleiben unberührt.
+            $approvals->submit(['confirmComplete' => true, 'type' => 'week', 'date' => '2026-10-19'], $tech);
+            $approveAll();
+            $this->assertSame(['submitted', 0], [$reports->detail($report['id'], $office)['status'], (int) $pdo->query('SELECT COUNT(*) FROM time_day_locks WHERE employee_id = ' . $pdo->quote($eva))->fetchColumn()]);
+            // Nach Evas Freigabe: Bericht festgeschrieben und archiviert.
+            $approvals->submit(['confirmComplete' => true, 'type' => 'week', 'date' => '2026-10-19', 'employeeId' => $eva], $office);
+            $approveAll();
+            $detail = $reports->detail($report['id'], $office);
+            $this->assertSame(['approved', 1, 'approve'], [$detail['status'], count($detail['statements']), $detail['events'][1]['action']]);
+            // Stornieren erst nach Wiederöffnung der Zeiterfassungstage.
+            $detail = $reports->reopen($report['id'], ['version' => $detail['version'], 'reason' => 'Prüfung'], $office);
+            $this->assertThrows(PDOException::class, fn () => $reports->cancel($report['id'], ['version' => $detail['version'], 'reason' => 'Falsch'], $office));
+            $approvals->reopen(['employeeId' => $employee, 'from' => '2026-10-20', 'to' => '2026-10-20', 'reason' => 'Storno Bericht'], $office);
+            $approvals->reopen(['employeeId' => $eva, 'from' => '2026-10-20', 'to' => '2026-10-20', 'reason' => 'Storno Bericht'], $office);
+            $this->assertSame('cancelled', $reports->cancel($report['id'], ['version' => $detail['version'], 'reason' => 'Falsch'], $office)['status']);
+            $this->assertSame(0, $service->day($eva, '2026-10-20', $office)['totals']['netMinutes']);
+            // Erneut einreichen und festschreiben: neue Revision der Stundennachweise.
+            $approvals->submit(['confirmComplete' => true, 'type' => 'week', 'date' => '2026-10-19'], $tech);
+            $approvals->submit(['confirmComplete' => true, 'type' => 'week', 'date' => '2026-10-19', 'employeeId' => $eva], $office);
+            $approveAll();
+
+            // Dokumentenübersicht: Stundennachweise und archivierte Berichte mit Revisionen; Zugriffsschutz.
+            $documents = new DocumentService($pdo, new AttachmentRepository($pdo), new DocumentRepository($pdo), new AttachmentStore($files));
+            $titles = array_column($documents->page(['per_page' => 100], $office)['items'], 'title', 'id');
+            $statements = array_filter($titles, static fn (string $title): bool => str_starts_with($title, 'Stundennachweis'));
+            $this->assertTrue(count($statements) === 4 && count(array_filter($statements, static fn (string $title): bool => str_contains($title, '(aktuell)'))) === 2, implode(' | ', $statements));
+            $archived = array_filter($titles, static fn (string $title): bool => str_contains($title, 'Tagesbericht') && str_contains($title, 'Revision 1 (ersetzt)'));
+            $this->assertSame(1, count($archived));
+            $this->assertTrue(!in_array('Tagesbericht 20.10.2026 · Vorschau', $titles, true), 'Archivierte Berichte nicht doppelt als Vorschau.');
+            $this->assertThrows(AccessDeniedException::class, fn () => $documents->page([], $tech), 'Monteure ohne Dokumentenübersicht.');
+            $evaStatement = (string) $pdo->query('SELECT id FROM time_statements WHERE employee_id = ' . $pdo->quote($eva) . ' LIMIT 1')->fetchColumn();
+            $this->assertThrows(AccessDeniedException::class, fn () => $approvals->statementPdf($evaStatement, $tech), 'Fremder Stundennachweis.');
+            $this->assertSame(4, (int) $pdo->query('SELECT COUNT(*) FROM time_statements')->fetchColumn());
+            $this->assertTrue(count($documents->page(['type' => 'time_statement'], $admin)['items']) === 4);
+        });
+    }
+
     public function testTravelMigrationConvertsDetailsAndKilometers(): void
     {
         $tmp = sys_get_temp_dir() . '/calight-travel-migration-' . bin2hex(random_bytes(6));
@@ -503,13 +644,14 @@ final class TimeApprovalTest extends TestCase
             $store = new AttachmentStore($tmp . '/documents');
             $service = new TimeTrackingService(new TimeTrackingRepository($pdo), $store);
             $settings = new OperationalSettingsService($pdo);
+            $reports = new DailyReportService($pdo, new DailyReportRepository($pdo), new EmployeeRepository($pdo), new OrderRepository($pdo), $store, new DocumentSettingsRepository($pdo));
             $test([
                 'pdo' => $pdo, 'files' => $tmp . '/documents', 'customer' => $customer, 'order' => $released['id'],
                 'service' => $service, 'settings' => $settings,
-                'approvals' => new TimeApprovalService(new TimeApprovalRepository($pdo), new TimeTrackingRepository($pdo), $service, $settings, new DocumentSettingsRepository($pdo), $store),
+                'approvals' => new TimeApprovalService(new TimeApprovalRepository($pdo), new TimeTrackingRepository($pdo), $service, $settings, new DocumentSettingsRepository($pdo), $store, null, $reports),
                 'tech' => $tech, 'otherTech' => $otherTech, 'office' => $office, 'admin' => $this->user($pdo, 'admin', $now),
                 'employee' => $employee, 'colleagueEmployee' => $colleague,
-                'reports' => new DailyReportService($pdo, new DailyReportRepository($pdo), new EmployeeRepository($pdo), new OrderRepository($pdo)),
+                'reports' => $reports,
                 'workReports' => new WorkReportService($pdo, new WorkReportRepository($pdo), new OrderRepository($pdo), $numbers, new PriceCalculator(), null, $orders),
             ]);
         } finally {

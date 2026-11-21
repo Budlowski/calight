@@ -20,7 +20,6 @@
 
   let report;
   let employees = [];
-  let targets = [];
   let referenceOrders = [];
   let referenceTargets = [];
   let dirty = false;
@@ -35,15 +34,14 @@
     return options.join("");
   }
 
-  const targetOptions = (selected) => targets
-    .map((target) => `<option value="${esc(target.key)}"${target.key === selected ? " selected" : ""}>${"  ".repeat(Number(target.depth || 0))}${esc(target.label)}</option>`)
-    .join("");
+  /** Stunden ohne unnötige Nachkommastellen („1,5“ statt „1,500“). */
+  const hoursText = (value) => new Intl.NumberFormat("de-DE", { maximumFractionDigits: 3 }).format(Number(value) || 0);
 
   const durationOf = (input) => Number(input.value.replace(",", ".")) || 0;
 
   function updateSummary() {
     const total = [...entriesBox.querySelectorAll('[data-field="durationHours"]')].reduce((sum, input) => sum + durationOf(input), 0);
-    summary.textContent = `${format.number(total, 3)} Stunden erfasst`;
+    summary.textContent = `${hoursText(total)} ${total === 1 ? "Stunde" : "Stunden"} erfasst`;
   }
 
   function addEntry(entry = {}) {
@@ -51,16 +49,15 @@
     row.className = "report-time-row";
     row.dataset.entryId = entry.id || "";
     const cost = entry.labor_cost !== undefined
-      ? `${format.number(entry.hourly_cost_rate_snapshot, 4)} €/h · ${format.money(entry.labor_cost)}`
+      ? `Kostensatz ${format.number(entry.hourly_cost_rate_snapshot, 2)} €/h · ${format.money(entry.labor_cost)}`
       : "";
     row.innerHTML = `
       <label><span class="field-label">Mitarbeiter <span aria-hidden="true">*</span></span><select data-field="employeeId" required>${employeeOptions(entry.employee_id || (employees.length === 1 ? employees[0].id : ""), entry.employee_name || "")}</select></label>
       <label><span class="field-label">Arbeitsdatum <span aria-hidden="true">*</span></span><input data-field="workDate" type="date" value="${esc(entry.work_date || form.elements.reportDate.value)}" required></label>
-      <label><span class="field-label">Dauer (h) <span aria-hidden="true">*</span></span><input data-field="durationHours" inputmode="decimal" value="${esc(String(entry.duration_hours || "").replace(".", ","))}" required></label>
-      <label class="report-target"><span class="field-label">Zuordnung</span><select data-field="targetKey">${targetOptions(entry.targetKey || "order")}</select></label>
+      <label><span class="field-label">Dauer (h) <span aria-hidden="true">*</span></span><input data-field="durationHours" inputmode="decimal" value="${esc(entry.duration_hours ? String(Number(entry.duration_hours)).replace(".", ",") : "")}" required></label>
       <label class="report-description"><span class="field-label">Tätigkeit (optional)</span><input data-field="description" maxlength="1000" value="${esc(entry.description || "")}"></label>
-      <div class="report-entry-meta">${cost}</div>
-      <button class="icon-button icon-button-danger" type="button" data-remove data-remove-entry data-icon="trash" aria-label="Zeiteintrag entfernen" title="Zeiteintrag entfernen"></button>`;
+      <button class="icon-button icon-button-danger" type="button" data-remove data-remove-entry data-icon="trash" aria-label="Zeiteintrag entfernen" title="Zeiteintrag entfernen"></button>
+      <div class="report-entry-meta">${cost}</div>`;
     entriesBox.append(row);
     updateSummary();
     return row;
@@ -72,7 +69,6 @@
     employeeId: field(row, "employeeId"),
     workDate: field(row, "workDate"),
     durationHours: field(row, "durationHours").replace(",", "."),
-    targetKey: field(row, "targetKey"),
     description: field(row, "description"),
   }));
 
@@ -80,8 +76,74 @@
     form.querySelectorAll("input, textarea, select, button[type=submit], [data-add-entry], [data-remove]").forEach((control) => {
       control.disabled = !editable;
     });
-    remove.hidden = !editable;
+    remove.hidden = !report.canDelete;
+    entriesBox.querySelectorAll("[data-remove]").forEach((button) => (button.hidden = !editable));
+    root.querySelector("[data-add-entry]").hidden = !editable;
+    save.hidden = !editable;
   }
+
+  const EVENT_LABELS = { submit: "Eingereicht", return: "Zur Korrektur zurückgegeben", approve: "Festgeschrieben", reopen: "Wieder geöffnet", cancel: "Storniert" };
+  /** Status und erlaubte Aktionen im Kopfbereich; Verlauf und archivierte Fassungen. */
+  function renderLifecycle() {
+    const badge = root.querySelector("[data-status]");
+    badge.textContent = report.statusLabel;
+    badge.className = `status-badge is-report-${report.status}`;
+    badge.hidden = false;
+    const flags = { submit: report.canSubmit, approve: report.canApprove, return: report.canReturn, reopen: report.canReopen, cancel: report.canCancel };
+    root.querySelectorAll("[data-action]").forEach((button) => (button.hidden = !flags[button.dataset.action]));
+    const pdf = root.querySelector("[data-pdf]");
+    pdf.textContent = report.status === "approved" ? "PDF" : "PDF-Vorschau";
+    pdf.title = report.status === "approved" ? "Archiviertes PDF der aktuellen Fassung" : "Vorschau des gespeicherten Stands";
+    const section = root.querySelector("[data-lifecycle]");
+    const events = report.events || [];
+    const statements = report.statements || [];
+    section.hidden = !events.length && !statements.length;
+    root.querySelector("[data-lifecycle-content]").innerHTML = `
+      ${statements.length ? `<ul class="report-statements">${statements.map((item) => `<li${item.current ? "" : ' class="is-superseded"'}><a href="${esc(item.url)}" target="_blank" rel="noopener" data-icon="file-down">Revision ${item.revision}</a> <small class="muted">${format.dateTime(item.createdAt)} · ${item.current ? "aktuell" : "ersetzt – nicht mehr aktuell"}</small></li>`).join("")}</ul>` : ""}
+      ${events.length ? `<ul class="report-events">${events.map((event) => `<li>${format.dateTime(event.created_at)} · ${esc(EVENT_LABELS[event.action] || event.action)} von ${esc(event.user_name)}${event.reason ? ` – ${esc(event.reason)}` : ""}</li>`).join("")}</ul>` : ""}`;
+  }
+
+  /** Begründung für Zurückgeben, Wiederöffnen und Stornieren. */
+  async function askReason(title, text, label) {
+    const dialog = document.createElement("form");
+    dialog.className = "form-stack";
+    dialog.innerHTML = `<p>${esc(text)}</p><label><span class="field-label">Begründung <span aria-hidden="true">*</span></span><textarea name="reason" rows="3" maxlength="1000" required></textarea></label>`;
+    const ok = await CalightModal.open({ title, content: dialog, actions: [{ label: "Abbrechen", value: false }, { label, value: true, primary: true, validate: true }], initialFocus: '[name="reason"]' });
+    return ok ? dialog.elements.reason.value.trim() : null;
+  }
+
+  root.querySelector(".report-head-actions").addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-action]");
+    if (!button) return;
+    const action = button.dataset.action;
+    if (dirty && ["submit", "approve"].includes(action)) {
+      notify(message, "Bitte zuerst die Änderungen speichern.", "warning");
+      return;
+    }
+    let body = { version: report.version };
+    if (action === "submit" && !(await CalightModal.confirm({ title: "Tagesbericht einreichen", content: "Nach dem Einreichen ist der Bericht für Sie gesperrt; das Büro prüft und schreibt ihn fest.", confirmLabel: "Einreichen" }))) return;
+    if (action === "approve" && !(await CalightModal.confirm({ title: "Tagesbericht festschreiben", content: "Der Bericht wird verbindlich festgeschrieben und als PDF archiviert.", confirmLabel: "Festschreiben" }))) return;
+    const reasons = {
+      return: ["Zur Korrektur zurückgeben", "Der Bericht wird für den Ersteller wieder bearbeitbar.", "Zurückgeben"],
+      reopen: ["Zur Korrektur öffnen", "Die archivierte Fassung bleibt erhalten und gilt als nicht mehr aktuell; nach erneuter Festschreibung entsteht eine neue Revision.", "Öffnen"],
+      cancel: ["Tagesbericht stornieren", "Der Bericht bleibt nachvollziehbar erhalten; seine Arbeitszeiten entfallen in der Zeiterfassung.", "Stornieren"],
+    };
+    if (reasons[action]) {
+      const reason = await askReason(...reasons[action]);
+      if (reason === null) return;
+      body = { ...body, reason };
+    }
+    button.disabled = true;
+    try {
+      await api(`${reportUrl()}/${action}`, { method: "POST", body });
+      await load();
+      notify(message, { submit: "Tagesbericht eingereicht.", approve: "Tagesbericht festgeschrieben und archiviert.", return: "Zur Korrektur zurückgegeben.", reopen: "Zur Korrektur geöffnet.", cancel: "Tagesbericht storniert." }[action], "success");
+    } catch (exception) {
+      notify(message, exception.message);
+    } finally {
+      button.disabled = false;
+    }
+  });
 
   function renderHeader() {
     const reportDate = format.date(report.report_date);
@@ -112,13 +174,12 @@
         ? `<a href="/orders/${encodeURIComponent(report.order_id)}">${esc(report.order_number)} · ${esc(report.order_title)}</a>${assigned}`
         : report.cost_center_id ? `${esc(report.cost_center_number)} · ${esc(report.cost_center_name)} <small class="muted">Kostenstelle</small>${assigned}`
           : '<span class="muted">Ohne Zuordnung</span>'}</dd>`,
-      `<dt>Kunde</dt><dd>${report.customer_id ? `${esc(report.customer_name)}${report.customer_number ? ` <span class="muted">(${esc(report.customer_number)})</span>` : ""}` : '<span class="muted">–</span>'}</dd>`,
+      report.customer_id ? `<dt>Kunde</dt><dd>${esc(report.customer_name)}${report.customer_number ? ` <span class="muted">(${esc(report.customer_number)})</span>` : ""}</dd>` : "",
       report.project_id ? `<dt>Projekt</dt><dd>${esc([report.project_number, report.project_name].filter(Boolean).join(" · "))}</dd>` : "",
-      `<dt>Arbeitszeiten</dt><dd>erscheinen in der Zeiterfassung der Mitarbeiter${report.order_id ? " und zählen als Ist-Stunden dieses Auftrags" : report.cost_center_id ? " und zählen zu dieser Kostenstelle" : " (ohne Zuordnung)"}</dd>`,
     ];
     const events = report.orderEvents || [];
     box.innerHTML = `<dl class="report-assignment">${lines.join("")}</dl>
-      ${report.canAssignOrder ? `<div class="report-assignment-actions"><button class="button button-light button-small" type="button" data-assign-order data-icon="clipboard-list">${report.order_id || report.cost_center_id ? "Zuordnung ändern …" : "Auftrag / Kostenstelle zuordnen …"}</button></div>` : ""}
+      ${report.canAssignOrder ? `<div class="report-assignment-actions"><button class="button button-light button-small" type="button" data-assign-order data-icon="clipboard-list">${report.order_id || report.cost_center_id ? "Zuordnung ändern" : "Zuordnen"}</button></div>` : ""}
       ${events.length ? `<details class="report-order-events"><summary>Verlauf der Zuordnung (${events.length})</summary><ul>${events.map((event) => `<li>${format.dateTime(event.changed_at)} · ${esc(event.changed_by_name)}: ${esc(targetText(event.previous_order_number, event.previous_cost_center_number))} → ${esc(targetText(event.order_number, event.cost_center_number))}</li>`).join("")}</ul></details>` : ""}`;
   }
 
@@ -248,7 +309,7 @@
     const dialog = document.createElement("form");
     dialog.className = "form-stack";
     dialog.innerHTML = `
-      <p>Die Zuordnung ändert weder Tätigkeiten noch Stunden. Die Arbeitszeiten dieses Berichts gehören danach zum gewählten Auftrag bzw. zur Kostenstelle – oder zu keinem Ziel – und zählen dort genau einmal. Die Änderung wird mit Benutzer und Zeitpunkt protokolliert.</p>
+      <p class="muted">Die Arbeitszeiten folgen der Zuordnung; die Änderung wird protokolliert.</p>
       <label><span class="field-label">Auftrag / Kostenstelle</span><select name="costTarget"></select></label>`;
     Calight.costTargetSelect(dialog.elements.costTarget, targets, { orderId: report.order_id || "", costCenterId: report.cost_center_id || "", emptyLabel: "Ohne Zuordnung" });
     const ok = await CalightModal.open({ title: report.order_id || report.cost_center_id ? "Zuordnung ändern" : "Auftrag / Kostenstelle zuordnen", content: dialog, actions: [{ label: "Abbrechen", value: false }, { label: "Übernehmen", value: true, primary: true }] });
@@ -271,7 +332,6 @@
     ]);
     report = current;
     employees = reference.employees;
-    targets = report.targets;
     referenceOrders = reference.orders || [];
     referenceTargets = reference.costTargets || [];
     form.elements.reportDate.value = report.report_date || "";
@@ -280,6 +340,7 @@
     entriesBox.innerHTML = "";
     report.entries.forEach(addEntry);
     setEditable(report.canEdit);
+    renderLifecycle();
     renderAttachments();
     renderMaterial();
     dirty = false;

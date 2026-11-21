@@ -33,18 +33,17 @@ final class DailyReportTest extends TestCase
             $employees=new EmployeeRepository($pdo);$employeeService=new EmployeeService($employees,new UserRepository($pdo));
             $employee=$employeeService->save(null,['displayName'=>'Monteur Max','personnelNumber'=>'M-7','userId'=>$ids['technician'],'hourlyCostRate'=>'42.3333','active'=>true]);
             $service=new DailyReportService($pdo,new DailyReportRepository($pdo),$employees,new OrderRepository($pdo));$office=['id'=>$ids['office'],'role'=>'office'];
-            $targets=$service->orderTargets($ids['order'],$office);$keys=array_column($targets,'key');
-            $this->assertTrue(in_array('order:'.$ids['order'].':title-1',$keys,true));
-            $this->assertTrue(in_array('order:'.$ids['order'].':position-1',$keys,true));
-            $this->assertTrue(in_array('addendum:'.$ids['addendum'].':add-position',$keys,true));
+            // Keine Positionszuordnung je Zeile mehr: alle Stunden folgen dem Kostenziel des Berichts.
             $report=$service->create(['orderId'=>$ids['order'],'reportDate'=>'2026-11-10','title'=>'Montage','activities'=>'Verteiler montiert','entries'=>[['employeeId'=>$employee['id'],'durationHours'=>'1.500','targetKey'=>'order:'.$ids['order'].':position-1']]],$office);
+            $this->assertSame('order',(string)$pdo->query('SELECT target_kind FROM daily_report_time_entries')->fetchColumn(),'Positionsangabe wird ignoriert.');
+            $this->assertTrue(!array_key_exists('targets',$report)&&!array_key_exists('targetKey',$report['entries'][0]));
             $this->assertSame('42.3333',$report['entries'][0]['hourly_cost_rate_snapshot']);$this->assertSame('63.50',$report['entries'][0]['labor_cost']);
             $employeeService->save($employee['id'],['displayName'=>'Monteur Max','personnelNumber'=>'M-7','userId'=>$ids['technician'],'hourlyCostRate'=>'50.0000','active'=>true]);
-            $entry=$report['entries'][0];$updated=$service->update($report['id'],['version'=>$report['version'],'reportDate'=>'2026-11-10','title'=>'Montage','activities'=>'Verteiler fertig','entries'=>[['id'=>$entry['id'],'employeeId'=>$employee['id'],'workDate'=>'2026-11-10','durationHours'=>'2.000','targetKey'=>$entry['targetKey']]]],$office);
+            $entry=$report['entries'][0];$updated=$service->update($report['id'],['version'=>$report['version'],'reportDate'=>'2026-11-10','title'=>'Montage','activities'=>'Verteiler fertig','entries'=>[['id'=>$entry['id'],'employeeId'=>$employee['id'],'workDate'=>'2026-11-10','durationHours'=>'2.000','targetKey'=>'order']]],$office);
             $this->assertSame('42.3333',$updated['entries'][0]['hourly_cost_rate_snapshot']);$this->assertSame('84.67',$updated['entries'][0]['labor_cost']);$this->assertSame(['hours'=>'2.000','costs'=>'84.67'],$service->orderTotals($ids['order']));
             $officeOverview=$service->overview($office);$this->assertSame('84.67',$officeOverview[0]['total_labor_cost']);
             $technicianOverview=$service->overview(['id'=>$ids['technician'],'role'=>'technician']);$this->assertTrue(!isset($technicianOverview[0]['total_labor_cost']));
-            $duplicateEntry=$updated['entries'][0];$this->assertThrows(DailyReportValidationException::class,fn()=>$service->update($report['id'],['version'=>$updated['version'],'reportDate'=>'2026-11-10','title'=>'Montage','activities'=>'Doppelte Zeile','entries'=>[['id'=>$duplicateEntry['id'],'employeeId'=>$employee['id'],'durationHours'=>'1.000','targetKey'=>$duplicateEntry['targetKey']],['id'=>$duplicateEntry['id'],'employeeId'=>$employee['id'],'durationHours'=>'1.000','targetKey'=>$duplicateEntry['targetKey']]]],$office));
+            $duplicateEntry=$updated['entries'][0];$this->assertThrows(DailyReportValidationException::class,fn()=>$service->update($report['id'],['version'=>$updated['version'],'reportDate'=>'2026-11-10','title'=>'Montage','activities'=>'Doppelte Zeile','entries'=>[['id'=>$duplicateEntry['id'],'employeeId'=>$employee['id'],'durationHours'=>'1.000','targetKey'=>'order'],['id'=>$duplicateEntry['id'],'employeeId'=>$employee['id'],'durationHours'=>'1.000','targetKey'=>'order']]],$office));
             $this->assertThrows(DailyReportValidationException::class,fn()=>$service->update($report['id'],['version'=>$report['version'],'reportDate'=>'2026-11-10','title'=>'Veraltet','activities'=>'Veralteter Stand','entries'=>[]],$office));
             $shell=$service->create(['orderId'=>$ids['order'],'reportDate'=>'2026-11-10','title'=>'Grunddaten','activities'=>'','entries'=>[]],$office);$this->assertSame('',$shell['activities']);
             $this->assertThrows(DailyReportValidationException::class,fn()=>$service->update($shell['id'],['version'=>$shell['version'],'reportDate'=>'2026-11-10','title'=>'Grunddaten','activities'=>'','entries'=>[]],$office));
@@ -61,7 +60,7 @@ final class DailyReportTest extends TestCase
             $this->assertThrows(AccessDeniedException::class,fn()=>$service->update($foreign['id'],['version'=>$foreign['version'],'reportDate'=>'2026-11-10','activities'=>'Manipuliert','entries'=>[]],$tech));
             $this->assertThrows(AccessDeniedException::class,fn()=>$service->create(['orderId'=>$ids['order'],'reportDate'=>'2026-11-10','activities'=>'Falsche Person','entries'=>[['employeeId'=>$other['id'],'durationHours'=>'1','targetKey'=>'order']]],$tech));
             $ownReport=$service->create(['orderId'=>$ids['order'],'reportDate'=>'2026-11-10','activities'=>'Eigene Zeit','entries'=>[['employeeId'=>$own['id'],'durationHours'=>'1','targetKey'=>'order']]],$tech);$this->assertTrue($ownReport['canEdit']);$this->assertTrue(!isset($ownReport['entries'][0]['labor_cost']));
-            $pdo->prepare("UPDATE orders SET status='open' WHERE id=:id")->execute(['id'=>$ids['order']]);$this->assertThrows(AccessDeniedException::class,fn()=>$service->orderTargets($ids['order'],$tech));
+            $pdo->prepare("UPDATE orders SET status='open' WHERE id=:id")->execute(['id'=>$ids['order']]);$this->assertThrows(AccessDeniedException::class,fn()=>$service->assertOrderReadable($ids['order'],$tech));
         }finally{$this->remove($tmp);}
     }
 
@@ -101,7 +100,7 @@ final class DailyReportTest extends TestCase
             $ordersBefore = (int) $pdo->query('SELECT COUNT(*) FROM orders')->fetchColumn();
             $report = $service->create(['customerId' => $ids['customer'], 'projectId' => $project] + $base, $tech);
             $this->assertSame([null, $ids['customer'], $project, false], [$report['order_id'], $report['customer_id'], $report['project_id'], $report['labor_counts_for_order']]);
-            $this->assertSame('Ohne Auftrag', $report['targets'][0]['label']);
+            $this->assertSame('draft', $report['status']);
             $this->assertSame('2.000', $report['entries'][0]['duration_hours'], 'Mitarbeiterzeiten ohne Auftrag.');
             $this->assertSame($ordersBefore, (int) $pdo->query('SELECT COUNT(*) FROM orders')->fetchColumn());
             $this->assertTrue(!$report['canAssignOrder'], 'Monteure ordnen nicht zu.');

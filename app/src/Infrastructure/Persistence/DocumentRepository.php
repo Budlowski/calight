@@ -58,14 +58,31 @@ final readonly class DocumentRepository
     /** Tagesberichte (PDF wird vom Fachmodul erzeugt). @return list<array<string,mixed>> */
     public function dailyReports(): array
     {
-        return $this->pdo->query('SELECT r.id, r.report_date, r.title, r.updated_at, r.order_id, o.order_number, r.customer_id, r.project_id
+        return $this->pdo->query('SELECT r.id, r.report_date, r.title, r.updated_at, r.order_id, o.order_number, o.status AS order_status, r.customer_id, r.project_id, r.status, r.created_by_user_id,
+                (SELECT COUNT(*) FROM daily_report_statements s WHERE s.report_id = r.id) AS statement_count
             FROM daily_reports r LEFT JOIN orders o ON o.id = r.order_id')->fetchAll();
+    }
+
+    /** Archivierte Tagesbericht-PDFs (alle Revisionen). @return list<array<string,mixed>> */
+    public function dailyReportStatements(): array
+    {
+        return $this->pdo->query('SELECT s.id, s.report_id, s.revision, s.status, s.file_name, s.created_at, r.report_date, r.title, r.order_id, o.order_number, o.status AS order_status,
+                r.customer_id, r.project_id, r.created_by_user_id
+            FROM daily_report_statements s JOIN daily_reports r ON r.id = s.report_id LEFT JOIN orders o ON o.id = r.order_id')->fetchAll();
+    }
+
+    /** Festgeschriebene Stundennachweise (Woche/Monat, alle Revisionen). @return list<array<string,mixed>> */
+    public function timeStatements(): array
+    {
+        return $this->pdo->query('SELECT s.id, s.employee_id, s.period_type, s.period_key, s.from_date, s.to_date, s.revision, s.status, s.file_name, s.created_at,
+                e.display_name AS employee_name, e.user_id AS employee_user_id
+            FROM time_statements s JOIN employees e ON e.id = s.employee_id')->fetchAll();
     }
 
     /** Anhänge zu Tagesberichten. @return list<array<string,mixed>> */
     public function dailyReportAttachments(): array
     {
-        return $this->pdo->query('SELECT a.id, a.report_id, a.original_name, a.mime_type, a.storage_path, a.created_at, r.report_date, r.order_id, o.order_number, r.customer_id, r.project_id
+        return $this->pdo->query('SELECT a.id, a.report_id, a.original_name, a.mime_type, a.storage_path, a.created_at, r.report_date, r.order_id, o.order_number, o.status AS order_status, r.customer_id, r.project_id, r.created_by_user_id
             FROM daily_report_attachments a JOIN daily_reports r ON r.id = a.report_id LEFT JOIN orders o ON o.id = r.order_id')->fetchAll();
     }
 

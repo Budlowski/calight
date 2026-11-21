@@ -43,8 +43,13 @@ final readonly class ReportTimeBookings
     /** Buchungen eines Tagesberichts (jede Stundenposition zählt; Kostenziel – Auftrag oder Kostenstelle – folgt dem Bericht). */
     public function syncDailyReport(string $reportId, string $userId, string $now): void
     {
-        $report = $this->row('SELECT id, order_id, cost_center_id FROM daily_reports WHERE id = :id', ['id' => $reportId]);
+        $report = $this->row('SELECT id, order_id, cost_center_id, status FROM daily_reports WHERE id = :id', ['id' => $reportId]);
         if ($report === null) {
+            return;
+        }
+        if ($report['status'] === 'cancelled') {
+            // Stornierter Bericht: keine gültigen Zeitbuchungen (Tagessperre gilt per Trigger).
+            $this->pdo->prepare('DELETE FROM time_entries WHERE daily_report_entry_id IN (SELECT id FROM daily_report_time_entries WHERE report_id = :id)')->execute(['id' => $reportId]);
             return;
         }
         $rows = $this->rows('SELECT e.id, e.employee_id, e.work_date, e.duration_hours, e.hourly_cost_rate_snapshot FROM daily_report_time_entries e WHERE e.report_id = :id', ['id' => $reportId]);

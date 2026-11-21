@@ -19,7 +19,7 @@ final readonly class DailyReportRepository
 
     /** Sortierbare Spalten der Berichtsübersicht mit natürlicher Richtung. */
     public const LIST_SORTS = ['date' => 'desc', 'order' => 'asc', 'customer' => 'asc', 'title' => 'asc', 'hours' => 'desc', 'updated' => 'desc'];
-    public const LIST_FILTERS = ['order', 'date', 'employee', 'customer', 'project', 'assignment', 'cost_center'];
+    public const LIST_FILTERS = ['order', 'date', 'employee', 'customer', 'project', 'assignment', 'cost_center', 'status'];
 
     /**
      * @param string|null $technicianId Techniker: eigene Berichte sowie Berichte freigegebener Aufträge.
@@ -47,6 +47,13 @@ final readonly class DailyReportRepository
         if (isset($conditions[(string) $assignment])) {
             $page->where($conditions[(string) $assignment]);
         }
+        // Status: einzelner Status oder „open“ (Entwurf bzw. zur Korrektur geöffnet).
+        $status = (string) $query->filter('status');
+        if ($status === 'open') {
+            $page->where("r.status IN ('draft', 'reopened')");
+        } elseif (in_array($status, ['draft', 'submitted', 'approved', 'reopened', 'cancelled'], true)) {
+            $page->where('r.status = :report_status', ['report_status' => $status]);
+        }
         if ($query->filter('cost_center') !== null) {
             $page->where('r.cost_center_id = :report_cost_center', ['report_cost_center' => (string) $query->filter('cost_center')]);
         }
@@ -63,7 +70,7 @@ final readonly class DailyReportRepository
         }
 
         return $page->fetch(
-            "r.id, r.customer_id, r.project_id, r.order_id, r.cost_center_id, cc.number AS cost_center_number, cc.name AS cost_center_name, r.order_assigned_at, r.labor_counts_for_order, r.report_date, r.title, r.activities, r.created_by_user_id, r.created_at, r.updated_at,
+            "r.id, r.status, r.customer_id, r.project_id, r.order_id, r.cost_center_id, cc.number AS cost_center_number, cc.name AS cost_center_name, r.order_assigned_at, r.labor_counts_for_order, r.report_date, r.title, r.activities, r.created_by_user_id, r.created_at, r.updated_at,
              o.order_number, o.title AS order_title, o.status AS order_status, c.customer_number, {$customer} AS customer_name, p.project_number, p.name AS project_name,
              {$employeeNames} AS employee_names,
              (SELECT group_concat(t.duration_hours, '|') FROM daily_report_time_entries t WHERE t.report_id = r.id) AS duration_values,
@@ -252,5 +259,97 @@ final readonly class DailyReportRepository
     {
         // Auftragsbezug der zentralen Buchungen (folgt dem Auftrag des Berichts).
         $s=$this->pdo->prepare('SELECT t.duration_hours,t.labor_cost FROM daily_report_time_entries t JOIN time_entries b ON b.daily_report_entry_id=t.id WHERE b.order_id=:id');$s->execute(['id'=>$orderId]);return$s->fetchAll();
+    }
+
+    // -------------------------------------------------------------------------
+    // Lebenszyklus (0045)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Statuswechsel nur aus den erwarteten Status (und optional mit passender Version).
+     *
+     * @param list<string> $from
+     */
+    public function setStatus(string $id, ?int $version, array $from, string $to, string $now): bool
+    {
+        $placeholders = implode(', ', array_map(static fn (int $index): string => ':from' . $index, array_keys($from)));
+        $parameters = ['id' => $id, 'to' => $to, 'now' => $now] + array_combine(array_map(static fn (int $index): string => 'from' . $index, array_keys($from)), $from);
+        $sql = 'UPDATE daily_reports SET status = :to, submitted_once = CASE WHEN :to = \'submitted\' THEN 1 ELSE submitted_once END, version = version + 1, updated_at = :now
+            WHERE id = :id AND status IN (' . $placeholders . ')';
+        if ($version !== null) {
+            $sql .= ' AND version = :version';
+            $parameters['version'] = $version;
+        }
+        $statement = $this->pdo->prepare($sql);
+        $statement->execute($parameters);
+        return $statement->rowCount() === 1;
+    }
+
+    /** @param array<string,mixed> $data */
+    public function insertEvent(array $data): void
+    {
+        $this->pdo->prepare('INSERT INTO daily_report_events (id, report_id, action, reason, user_id, created_at) VALUES (:id, :report_id, :action, :reason, :user_id, :created_at)')->execute($data);
+    }
+
+    /** @return list<array<string,mixed>> */
+    public function events(string $reportId): array
+    {
+        $statement = $this->pdo->prepare('SELECT v.action, v.reason, v.created_at, u.display_name AS user_name FROM daily_report_events v JOIN users u ON u.id = v.user_id
+            WHERE v.report_id = :id ORDER BY v.created_at, v.rowid');
+        $statement->execute(['id' => $reportId]);
+        return $statement->fetchAll();
+    }
+
+    /** Archivierte Fassungen (ohne Datenstand). @return list<array<string,mixed>> */
+    public function statements(string $reportId): array
+    {
+        $statement = $this->pdo->prepare('SELECT id, report_id, revision, status, file_name, created_at, superseded_at FROM daily_report_statements WHERE report_id = :id ORDER BY revision');
+        $statement->execute(['id' => $reportId]);
+        return $statement->fetchAll();
+    }
+
+    /** @return array<string,mixed>|null */
+    public function statement(string $reportId, string $statementId): ?array
+    {
+        $statement = $this->pdo->prepare('SELECT * FROM daily_report_statements WHERE id = :statement AND report_id = :report');
+        $statement->execute(['statement' => $statementId, 'report' => $reportId]);
+        return $statement->fetch() ?: null;
+    }
+
+    public function nextRevision(string $reportId): int
+    {
+        $statement = $this->pdo->prepare('SELECT COALESCE(MAX(revision), 0) + 1 FROM daily_report_statements WHERE report_id = :id');
+        $statement->execute(['id' => $reportId]);
+        return (int) $statement->fetchColumn();
+    }
+
+    /** @param array<string,mixed> $data */
+    public function insertStatement(array $data): void
+    {
+        $columns = array_keys($data);
+        $this->pdo->prepare('INSERT INTO daily_report_statements (' . implode(', ', $columns) . ') VALUES (:' . implode(', :', $columns) . ')')->execute($data);
+    }
+
+    public function supersedeStatements(string $reportId, string $userId, string $now): void
+    {
+        $this->pdo->prepare("UPDATE daily_report_statements SET status = 'superseded', superseded_at = :now, superseded_by_user_id = :user WHERE report_id = :id AND status = 'current'")
+            ->execute(['now' => $now, 'user' => $userId, 'id' => $reportId]);
+    }
+
+    /**
+     * Eingereichte Berichte mit Stunden des Mitarbeiters im Zeitraum, deren sämtliche
+     * Mitarbeiter-Tage festgeschrieben sind (Sammelfreigabe ohne unbeteiligte Tage).
+     *
+     * @return list<string>
+     */
+    public function submittedReportsCoveredBy(string $employeeId, string $from, string $to): array
+    {
+        $statement = $this->pdo->prepare("SELECT DISTINCT r.id FROM daily_reports r JOIN daily_report_time_entries e ON e.report_id = r.id
+            WHERE r.status = 'submitted' AND e.employee_id = :employee AND e.work_date BETWEEN :from AND :to
+              AND NOT EXISTS (SELECT 1 FROM daily_report_time_entries x WHERE x.report_id = r.id
+                AND NOT EXISTS (SELECT 1 FROM time_day_locks l WHERE l.employee_id = x.employee_id AND l.work_date = x.work_date AND l.status = 'approved'))
+            ORDER BY r.report_date, r.id");
+        $statement->execute(['employee' => $employeeId, 'from' => $from, 'to' => $to]);
+        return $statement->fetchAll(PDO::FETCH_COLUMN);
     }
 }

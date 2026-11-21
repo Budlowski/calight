@@ -114,6 +114,9 @@ final readonly class Application
             if (str_contains($exception->getMessage(), 'calight_time_locked')) {
                 return Response::json(['error' => 'Validierung fehlgeschlagen.', 'details' => [self::TIME_LOCKED_MESSAGE]], 422);
             }
+            if (str_contains($exception->getMessage(), 'calight_report_locked')) {
+                return Response::json(['error' => 'Validierung fehlgeschlagen.', 'details' => ['Der Tagesbericht ist eingereicht, festgeschrieben oder storniert und kann so nicht geändert werden.']], 422);
+            }
             error_log((string) $exception);
             return new Response('<h1>Fehler</h1><p>Die Anfrage konnte nicht verarbeitet werden.</p>', 500, ['Content-Type' => 'text/html; charset=utf-8']);
         } catch (Throwable $exception) {

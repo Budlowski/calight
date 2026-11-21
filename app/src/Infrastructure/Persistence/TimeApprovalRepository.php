@@ -201,13 +201,22 @@ final readonly class TimeApprovalRepository
     public function reportPositions(string $employeeId, string $from, string $to): array
     {
         $statement = $this->pdo->prepare("SELECT 'daily_report' AS kind, e.id, e.work_date, e.duration_hours AS hours, t.id AS booking_id, t.work_date AS booking_date, t.net_minutes AS booking_minutes
-                FROM daily_report_time_entries e LEFT JOIN time_entries t ON t.daily_report_entry_id = e.id
-                WHERE e.employee_id = :employee AND e.work_date BETWEEN :from AND :to
+                FROM daily_report_time_entries e JOIN daily_reports r ON r.id = e.report_id LEFT JOIN time_entries t ON t.daily_report_entry_id = e.id
+                WHERE e.employee_id = :employee AND e.work_date BETWEEN :from AND :to AND r.status <> 'cancelled'
             UNION ALL
             SELECT 'work_report', l.id, COALESCE(l.work_date, w.work_date), l.hours, t.id, t.work_date, t.net_minutes
                 FROM work_report_labor l JOIN work_reports w ON w.id = l.report_id LEFT JOIN time_entries t ON t.work_report_labor_id = l.id
                 WHERE l.employee_id = :employee AND COALESCE(l.work_date, w.work_date) BETWEEN :from AND :to
                   AND w.superseded_by_id IS NULL AND (w.status <> 'draft' OR w.correction_of_id IS NULL)");
+        $statement->execute(['employee' => $employeeId, 'from' => $from, 'to' => $to]);
+        return $statement->fetchAll();
+    }
+
+    /** Noch nicht eingereichte Tagesberichte (Entwurf bzw. zur Korrektur geöffnet) mit Stunden des Mitarbeiters. @return list<array<string,mixed>> */
+    public function openDailyReports(string $employeeId, string $from, string $to): array
+    {
+        $statement = $this->pdo->prepare("SELECT r.id, r.report_date, r.title, MIN(e.work_date) AS work_date FROM daily_report_time_entries e JOIN daily_reports r ON r.id = e.report_id
+            WHERE e.employee_id = :employee AND e.work_date BETWEEN :from AND :to AND r.status IN ('draft', 'reopened') GROUP BY r.id ORDER BY MIN(e.work_date), r.id");
         $statement->execute(['employee' => $employeeId, 'from' => $from, 'to' => $to]);
         return $statement->fetchAll();
     }

@@ -16,8 +16,8 @@ use Throwable;
  * Enthält Tätigkeiten, Arbeitszeiten (ohne Kostensätze und Lohnkosten),
  * Bemerkungen und JPEG-Fotos in verkleinerter Darstellung; die Originaldateien
  * bleiben unverändert. Materialanforderungen sind interne Vorgänge und nicht
- * Bestandteil des Dokuments. Tagesberichte sind veränderlich und werden
- * daher bei jedem Abruf neu erzeugt, nicht archiviert.
+ * Bestandteil des Dokuments. Festgeschriebene Berichte liefern ihr archiviertes PDF
+ * (DailyReportService::approve); andere Stände werden als Vorschau mit Wasserzeichen erzeugt.
  */
 final readonly class DailyReportPdfService
 {
@@ -25,13 +25,36 @@ final readonly class DailyReportPdfService
     {
     }
 
-    /** @param array<string,mixed> $actor @return array{pdf:string,fileName:string} */
+    /**
+     * Festgeschrieben: archiviertes PDF der aktuellen Revision (unverändert). Sonst Vorschau des
+     * gespeicherten Stands mit Wasserzeichen.
+     *
+     * @param array<string,mixed> $actor
+     * @return array{pdf:string,fileName:string}
+     */
     public function pdf(string $id, array $actor): array
     {
         $report = $this->reports->detail($id, $actor);
+        if ($report['status'] === 'approved' && ($report['currentStatementId'] ?? null) !== null) {
+            return $this->reports->statementPdf($id, (string) $report['currentStatementId'], $actor);
+        }
+        $watermark = ['draft' => 'ENTWURF', 'submitted' => 'EINGEREICHT', 'reopened' => 'IN KORREKTUR', 'cancelled' => 'STORNIERT'][$report['status']] ?? null;
+        return self::render($report, $this->settings->get(), fn (string $attachmentId): ?string => $this->contents($id, $attachmentId, $actor), $watermark, null);
+    }
+
+    /**
+     * Gemeinsamer Renderer für Vorschau und Archiv (ohne Kostensätze).
+     *
+     * @param array<string,mixed> $report Berichtsdetail bzw. gespeicherter Datenstand
+     * @param array<string,mixed> $settings Dokumenteinstellungen
+     * @param callable(string):?string $photo JPEG-Inhalt eines Anhangs
+     * @return array{pdf:string,fileName:string}
+     */
+    public static function render(array $report, array $settings, callable $photo, ?string $watermark, ?int $revision): array
+    {
         $numbers = new PdfNumberFormatter();
         $date = (new DateTimeImmutable((string) $report['report_date']))->format('d.m.Y');
-        $pdf = new LetterheadPdf($this->settings->get());
+        $pdf = new LetterheadPdf($settings, $watermark);
         $pdf->begin(
             'Tagesbericht',
             trim((string) $report['title']) !== '' ? (string) $report['title'] : 'Interne Dokumentation vom ' . $date,
@@ -47,6 +70,7 @@ final readonly class DailyReportPdfService
                 $report['project_id'] !== null ? ['Projekt', trim(($report['project_number'] ?? '') . ' · ' . ($report['project_name'] ?? ''), ' ·')] : null,
                 ['Kundennummer', (string) ($report['customer_number'] ?? '')],
                 ['Erstellt von', (string) ($report['creator_name'] ?? '')],
+                $revision !== null ? ['Revision', (string) $revision] : null,
             ])),
         );
 
@@ -54,16 +78,14 @@ final readonly class DailyReportPdfService
         $pdf->paragraph(trim((string) $report['activities']) !== '' ? (string) $report['activities'] : '–');
 
         if ($report['entries'] !== []) {
-            $targets = array_column($report['targets'], 'label', 'key');
             $total = BigDecimal::zero();
             $rows = [];
             foreach ($report['entries'] as $entry) {
                 $total = $total->plus((string) $entry['duration_hours']);
-                $target = $entry['targetKey'] === 'order' ? '' : (string) ($targets[$entry['targetKey']] ?? '');
                 $rows[] = ['cells' => [
                     (string) $entry['employee_name'],
                     (new DateTimeImmutable((string) $entry['work_date']))->format('d.m.Y'),
-                    trim(implode(' – ', array_filter([(string) ($entry['description'] ?? ''), $target]))),
+                    (string) ($entry['description'] ?? ''),
                     $numbers->quantity((string) $entry['duration_hours']) . ' h',
                 ]];
             }
@@ -72,7 +94,7 @@ final readonly class DailyReportPdfService
             $pdf->table([
                 ['label' => 'Mitarbeiter', 'width' => 140, 'wrap' => 30],
                 ['label' => 'Datum', 'width' => 65],
-                ['label' => 'Tätigkeit / Zuordnung', 'width' => 230, 'wrap' => 50],
+                ['label' => 'Tätigkeit', 'width' => 230, 'wrap' => 50],
                 ['label' => 'Stunden', 'width' => 70, 'align' => 'right'],
             ], $rows);
         }
@@ -85,7 +107,7 @@ final readonly class DailyReportPdfService
         $others = [];
         $photoSection = false;
         foreach ($report['attachments'] as $attachment) {
-            $jpeg = $attachment['mimeType'] === 'image/jpeg' ? $this->contents((string) $report['id'], (string) $attachment['id'], $actor) : null;
+            $jpeg = $attachment['mimeType'] === 'image/jpeg' ? $photo((string) $attachment['id']) : null;
             if ($jpeg === null) {
                 $others[] = (string) $attachment['name'];
                 continue;
@@ -103,8 +125,10 @@ final readonly class DailyReportPdfService
             $pdf->paragraph(implode("\n", $others) . "\n\nDiese Anhänge sind in Calight beim Bericht hinterlegt und nicht im PDF eingebettet.", null, false, '.35 .4 .45');
         }
 
-        $fileName = 'Tagesbericht_' . str_replace('-', '', (string) $report['report_date']) . '_' . preg_replace('/[^A-Za-z0-9_-]+/', '_', (string) ($report['order_number'] ?? $report['cost_center_number'] ?? 'intern')) . '.pdf';
+        $fileName = 'Tagesbericht_' . str_replace('-', '', (string) $report['report_date']) . '_' . preg_replace('/[^A-Za-z0-9_-]+/', '_', (string) ($report['order_number'] ?? $report['cost_center_number'] ?? 'intern')) . ($revision !== null ? '_Rev' . $revision : '') . '.pdf';
         return ['pdf' => $pdf->output(), 'fileName' => $fileName];
+    }
+
     }
 
     /** @param array<string,mixed> $actor */

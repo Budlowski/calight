@@ -52,6 +52,8 @@ final readonly class TimeApprovalService
         private AttachmentStore $store,
         /** Fester „heute“-Wert nur für Tests; sonst das aktuelle Datum. */
         private ?string $fixedToday = null,
+        /** Sammelfestschreibung eingereichter Tagesberichte (optional). */
+        private ?DailyReportService $dailyReports = null,
     ) {
     }
 
@@ -201,6 +203,8 @@ final readonly class TimeApprovalService
             $this->approvals->setSubmissionDays($id, 'submitted', 'approved', (string) $actor['id'], $now);
             $this->event((string) $employee['id'], (string) $submission['from_date'], (string) $submission['to_date'], 'approve', $id, $comment, $actor, $now);
             $stored = $this->refreshStatements($employee, $submission, $settings, $actor, $now);
+            // Eingereichte Tagesberichte, deren sämtliche Mitarbeiter-Tage jetzt festgeschrieben sind.
+            $stored = [...$stored, ...($this->dailyReports?->approveCovered((string) $employee['id'], (string) $submission['from_date'], (string) $submission['to_date'], $actor, $now) ?? [])];
             $this->approvals->commit();
         } catch (Throwable $exception) {
             $this->approvals->rollBack();
@@ -483,6 +487,10 @@ final readonly class TimeApprovalService
             if ($entry['source_kind'] === 'work_report' && $entry['work_report_status'] === 'draft') {
                 $error($date, 'draft_report', 'Stunden aus einem noch nicht eingereichten Rapportentwurf. Bitte den Rapport einreichen oder die Stunden entfernen.');
             }
+        }
+        foreach ($this->approvals->openDailyReports($employeeId, $from, $to) as $open) {
+            $error((string) $open['work_date'], 'daily_report_draft', 'Tagesbericht' . ($open['title'] !== '' ? ' „' . $open['title'] . '“' : ' vom ' . self::german((string) $open['report_date']))
+                . ' ist noch nicht eingereicht. Bitte den Bericht einreichen.');
         }
         foreach ($this->approvals->reportPositions($employeeId, $from, $to) as $position) {
             $label = $position['kind'] === 'daily_report' ? 'Tagesbericht' : 'Rapport';

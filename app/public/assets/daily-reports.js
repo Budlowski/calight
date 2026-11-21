@@ -19,6 +19,8 @@
   const href = (report) => `/daily-reports/${encodeURIComponent(report.id)}`;
   const titleOf = (report) => report.title || report.order_title || report.project_name || "Ohne Bezeichnung";
   /** Kostenziel kompakt: Auftrag, sonst Kostenstelle, sonst „Ohne Zuordnung“. */
+  /** Statuskennzeichen (Entwurf, eingereicht, festgeschrieben, Korrektur, storniert). */
+  const statusBadge = (report) => `<span class="status-badge is-report-${esc(report.status || "draft")}">${esc(report.status_label || "Entwurf")}</span>`;
   const assignmentOf = (report) => report.order_number || report.cost_center_number || "Ohne Zuordnung";
   const customerOption = (customer, selected = "") => `<option value="${esc(customer.id)}"${customer.id === selected ? " selected" : ""}>${esc(customer.customerNumber || "Ohne Nr.")} · ${esc(customer.name)}</option>`;
   const projectOption = (project, selected = "") => `<option value="${esc(project.id)}"${project.id === selected ? " selected" : ""}>${esc(project.projectNumber ? `${project.projectNumber} · ` : "")}${esc(project.name)}</option>`;
@@ -26,7 +28,7 @@
 
   const renderCard = (report) => `
     <article class="overview-card" tabindex="0" data-href="${href(report)}">
-      <div class="management-card-head"><span class="service-number">${format.date(report.report_date)}</span><span>${format.hours(report.total_hours)}</span></div>
+      <div class="management-card-head"><span class="service-number">${format.date(report.report_date)}</span>${statusBadge(report)}<span>${format.hours(report.total_hours)}</span></div>
       <div class="overview-card-title" title="${esc(titleOf(report))}">${esc(titleOf(report))}</div>
       <div class="overview-card-meta">
         <span>${[assignmentOf(report), report.customer_name, report.project_name].filter(Boolean).map(esc).join(" · ")}</span>
@@ -39,7 +41,7 @@
   const renderTable = (reports, header) => `
     <thead><tr>
       ${header("date", "Berichtsdatum", "cell-date")}${header("order", "Auftrag / Kostenstelle", "cell-number")}${header("customer", "Kunde", "cell-text")}
-      ${header("title", "Bezeichnung", "cell-title")}<th class="cell-text">Mitarbeiter</th>${header("hours", "Gesamtstunden", "cell-money")}${header("updated", "Geändert", "cell-datetime")}
+      ${header("title", "Bezeichnung", "cell-title")}<th class="cell-text">Mitarbeiter</th><th class="cell-status">Status</th>${header("hours", "Gesamtstunden", "cell-money")}${header("updated", "Geändert", "cell-datetime")}
     </tr></thead>
     <tbody>${reports.map((report) => `
       <tr tabindex="0" data-href="${href(report)}">
@@ -48,6 +50,7 @@
         <td class="cell-text" title="${esc(report.customer_name || "")}">${report.customer_name ? esc(report.customer_name) : '<span class="muted">–</span>'}</td>
         <td class="cell-title" title="${esc(report.title || report.activities)}">${esc(report.title || "Ohne Bezeichnung")}</td>
         <td class="cell-text" title="${esc(report.employee_names || "")}">${esc(report.employee_names || "–")}</td>
+        <td class="cell-status">${statusBadge(report)}</td>
         <td class="cell-money">${format.hours(report.total_hours)}</td>
         <td class="cell-datetime">${format.dateTime(report.updated_at)}</td>
       </tr>`).join("")}</tbody>`;
@@ -59,7 +62,7 @@
     results: root.querySelector("[data-list]"),
     search: root.querySelector("[data-search]"),
     primaryFilters: ["customer"],
-    filters: { customer: customerFilter, project: projectFilter, assignment: root.querySelector("[data-assignment-filter]"), order: orderFilter, date: root.querySelector("[data-date-filter]"), employee: employeeFilter },
+    filters: { status: root.querySelector("[data-status-filter]"), customer: customerFilter, project: projectFilter, assignment: root.querySelector("[data-assignment-filter]"), order: orderFilter, date: root.querySelector("[data-date-filter]"), employee: employeeFilter },
     sortSelect: root.querySelector("[data-sort]"),
     count: root.querySelector("[data-count]"),
     reset: root.querySelector("[data-reset]"),

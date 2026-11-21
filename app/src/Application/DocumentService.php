@@ -47,6 +47,8 @@ final readonly class DocumentService
         'measurement' => 'Aufmaß',
         'daily_report' => 'Tagesbericht',
         'daily_report_attachment' => 'Berichtsanhang',
+        'daily_report_statement' => 'Tagesbericht (archiviert)',
+        'time_statement' => 'Stundennachweis',
     ];
     public const LIST_SORTS = ['date' => 'desc', 'title' => 'asc', 'type' => 'asc'];
     public const LIST_FILTERS = ['type', 'customer', 'contact', 'project', 'offer', 'order', 'period', 'format'];
@@ -217,22 +219,60 @@ final readonly class DocumentService
             }
         }
         if ($this->can($actor, 'reports.read')) {
+            // Monteure: eigene Berichte und Berichte freigegebener Aufträge (wie im Fachmodul).
+            $visible = fn (array $report): bool => ($actor['role'] ?? '') !== 'technician' || (string) $report['created_by_user_id'] === (string) $actor['id']
+                || ($report['order_id'] !== null && ($report['order_status'] ?? 'open') !== 'open');
             foreach ($this->documents->dailyReports() as $report) {
+                // Archivierte Berichte erscheinen mit ihren Revisionen; sonst die Vorschau des aktuellen Stands.
+                if (!$visible($report) || (int) $report['statement_count'] > 0) {
+                    continue;
+                }
                 $date = (new DateTimeImmutable((string) $report['report_date']))->format('d.m.Y');
-                $rows[] = $row('daily-report:' . $report['id'], 'daily_report', 'Tagesbericht ' . $date . ($report['title'] !== '' ? ' · ' . $report['title'] : ''),
+                $rows[] = $row('daily-report:' . $report['id'], 'daily_report', 'Tagesbericht ' . $date . ($report['title'] !== '' ? ' · ' . $report['title'] : '') . ' · Vorschau',
                     'Tagesbericht_' . $report['report_date'] . '.pdf', 'application/pdf', $report['report_date'],
                     // Berichte ohne Auftrag: keine leere Auftragsreferenz, nur der Bericht selbst.
                     $report['order_id'] !== null ? [['label' => 'Auftrag ' . $report['order_number'], 'href' => '/orders/' . rawurlencode((string) $report['order_id'])]]
                         : [['label' => 'Tagesbericht ' . $date, 'href' => '/daily-reports/' . rawurlencode((string) $report['id'])]],
                     '/api/daily-reports/' . rawurlencode((string) $report['id']) . '/pdf', $context($report['customer_id'], $report['project_id'], $report['order_id']));
             }
+            foreach ($this->documents->dailyReportStatements() as $statement) {
+                if (!$visible($statement)) {
+                    continue;
+                }
+                $date = (new DateTimeImmutable((string) $statement['report_date']))->format('d.m.Y');
+                $title = 'Tagesbericht ' . $date . ($statement['title'] !== '' ? ' · ' . $statement['title'] : '') . ' · Revision ' . $statement['revision'] . ($statement['status'] === 'current' ? ' (aktuell)' : ' (ersetzt)');
+                $rows[] = $row('daily-report-statement:' . $statement['id'], 'daily_report_statement', $title, (string) $statement['file_name'], 'application/pdf', $statement['created_at'],
+                    array_merge([['label' => 'Tagesbericht ' . $date, 'href' => '/daily-reports/' . rawurlencode((string) $statement['report_id'])]],
+                        $statement['order_id'] !== null ? [['label' => 'Auftrag ' . $statement['order_number'], 'href' => '/orders/' . rawurlencode((string) $statement['order_id'])]] : []),
+                    '/api/daily-reports/' . rawurlencode((string) $statement['report_id']) . '/statements/' . rawurlencode((string) $statement['id']) . '/pdf',
+                    $context($statement['customer_id'], $statement['project_id'], $statement['order_id']));
+            }
             foreach ($this->documents->dailyReportAttachments() as $attachment) {
+                if (!$visible($attachment)) {
+                    continue;
+                }
                 $rows[] = $row('daily-report-attachment:' . $attachment['id'], 'daily_report_attachment', (string) $attachment['original_name'], (string) $attachment['original_name'],
                     (string) $attachment['mime_type'], $attachment['created_at'],
                     array_merge([['label' => 'Tagesbericht ' . (new DateTimeImmutable((string) $attachment['report_date']))->format('d.m.Y'), 'href' => '/daily-reports/' . rawurlencode((string) $attachment['report_id'])]],
                         $attachment['order_id'] !== null ? [['label' => 'Auftrag ' . $attachment['order_number'], 'href' => '/orders/' . rawurlencode((string) $attachment['order_id'])]] : []),
                     '/api/daily-reports/' . rawurlencode((string) $attachment['report_id']) . '/attachments/' . rawurlencode((string) $attachment['id']),
                     $context($attachment['customer_id'], $attachment['project_id'], $attachment['order_id']));
+            }
+        }
+        // Stundennachweise: Büro alle, Mitarbeiter nur die eigenen (Download prüft erneut).
+        if ($this->can($actor, 'timesheet.own')) {
+            $allEmployees = $this->can($actor, 'timesheet.manage');
+            foreach ($this->documents->timeStatements() as $statement) {
+                if (!$allEmployees && (string) ($statement['employee_user_id'] ?? '') !== (string) $actor['id']) {
+                    continue;
+                }
+                $period = TimeApprovalService::periodFor((string) $statement['period_type'], (string) $statement['from_date']);
+                $title = 'Stundennachweis ' . ($statement['period_type'] === 'week' ? 'Woche ' : 'Monat ') . $period['label'] . ' · ' . $statement['employee_name']
+                    . ' · Revision ' . $statement['revision'] . ($statement['status'] === 'current' ? ' (aktuell)' : ' (ersetzt)');
+                $rows[] = $row('time-statement:' . $statement['id'], 'time_statement', $title, (string) $statement['file_name'], 'application/pdf', $statement['created_at'],
+                    [['label' => 'Zeiterfassung ' . $statement['employee_name'], 'href' => '/time-tracking?view=' . ($statement['period_type'] === 'week' ? 'week' : 'month') . '&date=' . rawurlencode((string) $statement['from_date'])
+                        . ($allEmployees ? '&employee=' . rawurlencode((string) $statement['employee_id']) : '')]],
+                    '/api/time-tracking/statements/' . rawurlencode((string) $statement['id']) . '/pdf', []);
             }
         }
         foreach ($this->attachments->allWithLinks() as $attachment) {
