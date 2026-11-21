@@ -29,7 +29,7 @@
       <div class="management-card-head"><span class="service-number">${format.date(report.report_date)}</span><span>${format.hours(report.total_hours)}</span></div>
       <div class="overview-card-title" title="${esc(titleOf(report))}">${esc(titleOf(report))}</div>
       <div class="overview-card-meta">
-        <span>${esc(assignmentOf(report))} · ${esc(report.customer_name)}${report.project_name ? ` · ${esc(report.project_name)}` : ""}</span>
+        <span>${[assignmentOf(report), report.customer_name, report.project_name].filter(Boolean).map(esc).join(" · ")}</span>
         <span>${esc(report.employee_names || "Keine Arbeitszeiten")}</span>
         ${report.total_labor_cost !== undefined ? `<span>${format.money(report.total_labor_cost)} Ist-Lohnkosten</span>` : ""}
         <span>Geändert ${format.dateTime(report.updated_at)}</span>
@@ -38,14 +38,14 @@
 
   const renderTable = (reports, header) => `
     <thead><tr>
-      ${header("date", "Berichtsdatum", "cell-date")}${header("order", "Auftrag", "cell-number")}${header("customer", "Kunde", "cell-text")}
+      ${header("date", "Berichtsdatum", "cell-date")}${header("order", "Auftrag / Kostenstelle", "cell-number")}${header("customer", "Kunde", "cell-text")}
       ${header("title", "Bezeichnung", "cell-title")}<th class="cell-text">Mitarbeiter</th>${header("hours", "Gesamtstunden", "cell-money")}${header("updated", "Geändert", "cell-datetime")}
     </tr></thead>
     <tbody>${reports.map((report) => `
       <tr tabindex="0" data-href="${href(report)}">
         <td class="cell-date">${format.date(report.report_date)}</td>
         <td class="cell-number" title="${esc(report.order_title || report.cost_center_name || "")}">${report.order_number ? esc(report.order_number) : report.cost_center_number ? esc(report.cost_center_number) : '<span class="muted">Ohne Zuordnung</span>'}</td>
-        <td class="cell-text" title="${esc(report.customer_name)}">${esc(report.customer_name)}</td>
+        <td class="cell-text" title="${esc(report.customer_name || "")}">${report.customer_name ? esc(report.customer_name) : '<span class="muted">–</span>'}</td>
         <td class="cell-title" title="${esc(report.title || report.activities)}">${esc(report.title || "Ohne Bezeichnung")}</td>
         <td class="cell-text" title="${esc(report.employee_names || "")}">${esc(report.employee_names || "–")}</td>
         <td class="cell-money">${format.hours(report.total_hours)}</td>
@@ -73,68 +73,66 @@
       hours: { label: "Gesamtstunden", type: "number", dir: "desc" },
       updated: { label: "Zuletzt geändert", type: "date", dir: "desc" },
     },
-    emptyText: "Noch keine Bautagesberichte vorhanden.",
-    noMatchText: "Keine Bautagesberichte entsprechen den gewählten Filtern.",
-    loadingText: "Bautagesberichte werden geladen …",
+    emptyText: "Noch keine Tagesberichte vorhanden.",
+    noMatchText: "Keine Tagesberichte entsprechen den gewählten Filtern.",
+    loadingText: "Tagesberichte werden geladen …",
     renderTable,
     renderCard,
   });
 
   /**
-   * Anlegen: Auftrag wählen (Kunde und Projekt werden übernommen) oder ohne Auftrag
-   * direkt einen Kunden und optional ein Projekt wählen. Es wird nie ein Auftrag angelegt.
+   * Anlegen: primär optional ein Kostenziel „Auftrag / Kostenstelle“, dann Datum und Bezeichnung;
+   * Kunde und Projekt sind nachgeordnete, optionale Kontextangaben. Mit Auftrag gelten dessen Kunde
+   * und Projekt (nur dezent angezeigt). Es wird nie ein Auftrag oder Kunde angelegt.
    */
   function createReport() {
     const form = document.createElement("form");
     // Vorauswahl: Einstieg vom Auftrag oder aktuell gefilterter Auftrag/Kunde.
     const preselectedOrder = orders.find((order) => order.id === (root.dataset.initialOrder || orderFilter.value));
-    const preselectedCustomer = preselectedOrder?.customer_id || customerFilter.value;
     form.className = "form-stack";
     form.noValidate = true;
     form.innerHTML = `
-      <label><span class="field-label">Kunde <span aria-hidden="true">*</span></span>
-        <select name="customerId" required><option value="">Kunde auswählen …</option>${customers.map((customer) => customerOption(customer, preselectedCustomer)).join("")}</select></label>
       <label><span class="field-label">Auftrag / Kostenstelle (optional)</span><select name="costTarget"></select></label>
-      <label data-project-field><span class="field-label">Projekt (optional)</span><select name="projectId"></select></label>
+      <p class="muted daily-report-order-context" data-order-context hidden></p>
       <label><span class="field-label">Berichtsdatum <span aria-hidden="true">*</span></span><input name="reportDate" type="date" required></label>
-      <label><span class="field-label">Bezeichnung (optional)</span><input name="title" maxlength="200" placeholder="z. B. Besichtigung, Bestandsaufnahme"></label>
-      <p class="muted">Ohne Zuordnung oder auf eine Kostenstelle (z. B. Vertrieb & Angebote) etwa für Besichtigungen vor dem Angebot. Das Büro kann die Zuordnung später ändern.</p>
+      <label><span class="field-label">Bezeichnung (optional)</span><input name="title" maxlength="200" placeholder="z. B. Lagerinventur, Besichtigung, Montage"></label>
+      <div class="dialog-form-grid" data-context-fields>
+        <label><span class="field-label">Kunde (optional)</span><select name="customerId"><option value="">Ohne Kunde</option>${customers.map((customer) => customerOption(customer, preselectedOrder ? "" : customerFilter.value)).join("")}</select></label>
+        <label data-project-field><span class="field-label">Projekt (optional)</span><select name="projectId"></select></label>
+      </div>
       <p class="field-error" data-dialog-error hidden></p>`;
     const now = new Date();
     form.elements.reportDate.value = new Date(now - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-    let picker = null;
+    Calight.costTargetSelect(form.elements.costTarget, costTargets, { orderId: preselectedOrder?.id || "", emptyLabel: "Ohne Zuordnung" });
     const sync = () => {
-      const customerId = form.elements.customerId.value;
-      // Gemeinsames Feld: Aufträge dieses Kunden und allgemeine Kostenstellen.
-      const current = Calight.parseCostTarget(form.elements.costTarget.value);
-      if (!form.elements.costTarget.value && preselectedOrder && !picker) current.orderId = preselectedOrder.id;
-      const customerOrders = new Set(orders.filter((order) => order.customer_id === customerId).map((order) => order.id));
-      const targets = costTargets.filter((target) => target.type !== "order" || customerOrders.has(target.id));
-      if (current.orderId && !customerOrders.has(current.orderId)) current.orderId = "";
-      form.elements.costTarget.innerHTML = Calight.costTargetOptions(targets, { ...current, emptyLabel: "Ohne Zuordnung" });
-      picker?.refresh();
-      // Mit Auftrag gilt dessen Projekt; sonst optional ein Projekt des Kunden.
-      const withOrder = Boolean(Calight.parseCostTarget(form.elements.costTarget.value).orderId);
-      const customerProjects = projects.filter((project) => project.customerId === customerId);
+      const target = Calight.parseCostTarget(form.elements.costTarget.value);
+      const order = orders.find((item) => item.id === target.orderId);
+      // Mit Auftrag: Kunde und Projekt kommen aus dem Auftrag – keine widersprüchliche Auswahl.
+      form.querySelector("[data-context-fields]").hidden = Boolean(order);
+      const context = form.querySelector("[data-order-context]");
+      context.hidden = !order;
+      context.textContent = order ? `Kunde: ${order.customer_name || "–"}${order.project_name ? ` · Projekt: ${order.project_name}` : ""} (aus dem Auftrag)` : "";
+      const customerId = order ? "" : form.elements.customerId.value;
+      const customerProjects = projects.filter((project) => customerId && project.customerId === customerId);
       form.elements.projectId.innerHTML = '<option value="">Ohne Projekt</option>' + customerProjects.map((project) => projectOption(project, form.elements.projectId.value)).join("");
-      form.querySelector("[data-project-field]").hidden = withOrder || customerProjects.length === 0;
-      if (withOrder) form.elements.projectId.value = "";
+      form.querySelector("[data-project-field]").hidden = customerProjects.length === 0;
     };
-    form.elements.customerId.addEventListener("change", sync);
     form.elements.costTarget.addEventListener("change", sync);
+    form.elements.customerId.addEventListener("change", sync);
     sync();
-    picker = Calight.searchableSelect(form.elements.costTarget, { placeholder: "Auftrag oder Kostenstelle: Nummer oder Bezeichnung …" });
     Calight.searchableSelect(form.elements.customerId, { placeholder: "Kundennummer oder Name eingeben …" });
     Calight.createDialog({
-      title: "Bautagesbericht anlegen",
+      title: "Tagesbericht anlegen",
       form,
       submitLabel: "Anlegen",
-      discardMessage: "Den begonnenen Bautagesbericht verwerfen?",
-      initialFocus: preselectedCustomer ? '[name="reportDate"]' : ".suggest-select input",
+      discardMessage: "Den begonnenen Tagesbericht verwerfen?",
+      initialFocus: preselectedOrder ? '[name="reportDate"]' : ".suggest-select input",
       submit: async () => {
+        const { costTarget, customerId, projectId, ...fields } = Object.fromEntries(new FormData(form));
+        const target = Calight.parseCostTarget(costTarget);
         const report = await api("/api/daily-reports", {
           method: "POST",
-          body: (({ costTarget, ...fields }) => ({ ...fields, ...Calight.parseCostTarget(costTarget), activities: "", notes: "", entries: [] }))(Object.fromEntries(new FormData(form))),
+          body: { ...fields, ...target, customerId: target.orderId ? "" : customerId, projectId: target.orderId ? "" : projectId, activities: "", notes: "", entries: [] },
         });
         location.assign(href(report));
       },

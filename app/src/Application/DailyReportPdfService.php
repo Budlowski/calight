@@ -11,12 +11,12 @@ use DateTimeImmutable;
 use Throwable;
 
 /**
- * PDF eines Bautagesberichts zur internen Dokumentation.
+ * PDF eines Tagesberichts zur internen Dokumentation.
  *
  * Enthält Tätigkeiten, Arbeitszeiten (ohne Kostensätze und Lohnkosten),
  * Bemerkungen und JPEG-Fotos in verkleinerter Darstellung; die Originaldateien
  * bleiben unverändert. Materialanforderungen sind interne Vorgänge und nicht
- * Bestandteil des Dokuments. Bautagesberichte sind veränderlich und werden
+ * Bestandteil des Dokuments. Tagesberichte sind veränderlich und werden
  * daher bei jedem Abruf neu erzeugt, nicht archiviert.
  */
 final readonly class DailyReportPdfService
@@ -33,16 +33,18 @@ final readonly class DailyReportPdfService
         $date = (new DateTimeImmutable((string) $report['report_date']))->format('d.m.Y');
         $pdf = new LetterheadPdf($this->settings->get());
         $pdf->begin(
-            'Bautagesbericht',
+            'Tagesbericht',
             trim((string) $report['title']) !== '' ? (string) $report['title'] : 'Interne Dokumentation vom ' . $date,
-            [(string) $report['customer_name']],
+            // Ohne Kunde kein Empfängerblock (leere Zeilen entfallen im Briefbogen).
+            $report['customer_id'] !== null ? [(string) $report['customer_name']] : [],
             // Projekt und Auftrag nur bei Angabe – ohne Auftrag keine leere oder künstliche Auftragsnummer.
             array_values(array_filter([
                 ['Berichtsdatum', $date],
-                $report['project_id'] !== null ? ['Projekt', trim(($report['project_number'] ?? '') . ' · ' . ($report['project_name'] ?? ''), ' ·')] : null,
+                // Primär das Kostenziel (Auftrag ODER Kostenstelle), dann Projekt und Kunde als Kontext.
+                // Fehlende Angaben entfallen – nie eine künstliche Auftrags- oder Kundennummer.
                 $report['order_id'] !== null ? ['Auftrag', trim($report['order_number'] . ' · ' . $report['order_title'])] : null,
-                // Allgemeine Kostenstelle statt Auftrag – nie eine künstliche Auftragsnummer.
                 ($report['cost_center_id'] ?? null) !== null ? ['Kostenstelle', trim($report['cost_center_number'] . ' · ' . $report['cost_center_name'])] : null,
+                $report['project_id'] !== null ? ['Projekt', trim(($report['project_number'] ?? '') . ' · ' . ($report['project_name'] ?? ''), ' ·')] : null,
                 ['Kundennummer', (string) ($report['customer_number'] ?? '')],
                 ['Erstellt von', (string) ($report['creator_name'] ?? '')],
             ])),
@@ -101,7 +103,7 @@ final readonly class DailyReportPdfService
             $pdf->paragraph(implode("\n", $others) . "\n\nDiese Anhänge sind in Calight beim Bericht hinterlegt und nicht im PDF eingebettet.", null, false, '.35 .4 .45');
         }
 
-        $fileName = 'Bautagesbericht_' . str_replace('-', '', (string) $report['report_date']) . '_' . preg_replace('/[^A-Za-z0-9_-]+/', '_', (string) $report['order_number']) . '.pdf';
+        $fileName = 'Tagesbericht_' . str_replace('-', '', (string) $report['report_date']) . '_' . preg_replace('/[^A-Za-z0-9_-]+/', '_', (string) ($report['order_number'] ?? $report['cost_center_number'] ?? 'intern')) . '.pdf';
         return ['pdf' => $pdf->output(), 'fileName' => $fileName];
     }
 

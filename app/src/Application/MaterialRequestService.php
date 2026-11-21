@@ -18,7 +18,7 @@ use App\Support\Uuid;
  * Materialanforderungen: vom Monteur gemeldeter Materialbedarf zu einem Auftrag.
  *
  * Organisatorische Aufgabe für die Beschaffung, keine Bestellung und keine
- * Ist-Kosten. Bearbeitung erfolgt unabhängig vom Bautagesbericht.
+ * Ist-Kosten. Bearbeitung erfolgt unabhängig vom Tagesbericht.
  */
 final readonly class MaterialRequestService
 {
@@ -67,22 +67,27 @@ final readonly class MaterialRequestService
         $orderId = trim((string) ($input['orderId'] ?? ''));
         $reportId = trim((string) ($input['dailyReportId'] ?? ''));
         $customerId = null;
+        $costCenterId = null;
+        $fromReport = false;
         if ($reportId !== '') {
             // Aus dem Bericht heraus gelten dessen Kunde und Auftrag; ein abweichender Auftrag wäre inkonsistent.
             $report = $this->reports->find($reportId);
             if ($report === null) {
-                throw new DailyReportValidationException(['Bautagesbericht wurde nicht gefunden.']);
+                throw new DailyReportValidationException(['Tagesbericht wurde nicht gefunden.']);
             }
             if ($orderId !== '' && $orderId !== (string) ($report['order_id'] ?? '')) {
-                throw new DailyReportValidationException(['Der Bautagesbericht gehört nicht zum angegebenen Auftrag.']);
+                throw new DailyReportValidationException(['Der Tagesbericht gehört nicht zum angegebenen Auftrag.']);
             }
             // Monteure: eigene Berichte oder Berichte freigegebener Aufträge (wie die Berichtsansicht).
             if ($this->isTechnician($actor) && (string) $report['created_by_user_id'] !== (string) $actor['id']
                 && ($report['order_id'] === null || $report['order_status'] === 'open')) {
                 throw new AccessDeniedException('reports.released.read');
             }
+            // Aus dem Tagesbericht: dessen Kunde (optional) und Kostenziel (Auftrag oder Kostenstelle).
             $orderId = (string) ($report['order_id'] ?? '');
-            $customerId = (string) $report['customer_id'];
+            $customerId = $report['customer_id'] !== null ? (string) $report['customer_id'] : null;
+            $costCenterId = ($report['cost_center_id'] ?? null) !== null ? (string) $report['cost_center_id'] : null;
+            $fromReport = true;
         }
         // Ohne Auftrag nur aus einem Bericht heraus; es wird nie ein Auftrag angelegt.
         $order = null;
@@ -95,7 +100,8 @@ final readonly class MaterialRequestService
                 $this->assertOrderAccess((string) $order['status'], $actor);
             }
             $customerId = (string) $order['customer_id'];
-        } elseif ($customerId === null) {
+        } elseif (!$fromReport) {
+            // Ohne Tagesbericht bleibt der Auftrag Pflicht; es wird nie ein Auftrag oder Kunde angelegt.
             throw new DailyReportValidationException(['Auftrag wurde nicht gefunden.']);
         }
         $values = $this->validate($input);
@@ -105,6 +111,7 @@ final readonly class MaterialRequestService
             'id' => $id,
             'customer_id' => $customerId,
             'order_id' => $order !== null ? $orderId : null,
+            'cost_center_id' => $order !== null ? null : $costCenterId,
             'daily_report_id' => $reportId !== '' ? $reportId : null,
             'description' => $values['description'],
             'notes' => $values['notes'],
@@ -257,6 +264,8 @@ final readonly class MaterialRequestService
             'orderTitle' => $row['order_title'],
             'customerId' => $row['customer_id'],
             'customerName' => $row['customer_name'],
+            'costCenterId' => $row['cost_center_id'] ?? null,
+            'costCenterNumber' => $row['cost_center_number'] ?? null,
             'dailyReportId' => $row['daily_report_id'],
             'reportDate' => $row['report_date'],
             'description' => $row['description'],

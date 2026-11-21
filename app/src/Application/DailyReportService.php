@@ -21,11 +21,12 @@ use PDO;
 use Throwable;
 
 /**
- * Bautagesberichte: interne Dokumentation tatsächlicher Arbeiten und Termine.
+ * Tagesberichte: interne Dokumentation tatsächlicher Arbeiten und Termine.
  *
- * Kunde ist Pflicht; Projekt und Auftrag sind optional – auch dauerhaft (z. B. Besichtigung vor
- * dem Angebot). Kostenziel: Kundenauftrag ODER allgemeine Kostenstelle ODER keines (der Kunde ist
- * kein Kostenziel; ein Bericht beim Kunden kann z. B. auf K110 Vertrieb & Angebote laufen).
+ * Tagesberichte (fachlich vormals „Tagesberichte“, technisch daily_reports): interne
+ * Dokumentation von Tätigkeiten und tatsächlichen Mitarbeiterstunden – für Kundenaufträge wie für
+ * interne Tätigkeiten. Primär optional ein Kostenziel: Kundenauftrag ODER allgemeine Kostenstelle
+ * ODER keines. Kunde und Projekt sind optionale Kontextangaben (bei Auftrag dessen Kunde).
  * Jede Mitarbeiterstundenposition ist tatsächliche Arbeitszeit und hat genau eine zentrale
  * Zeitbuchung (ReportTimeBookings, gleiche Transaktion); Stundenkorrekturen am Bericht wirken
  * unmittelbar. Die Stunden folgen dem Kostenziel des Berichts; das Büro kann es nachträglich
@@ -116,7 +117,7 @@ final readonly class DailyReportService
     /** @param array<string,mixed> $actor @return array<string,mixed> */
     public function detail(string $id,array $actor):array
     {
-        $report=$this->reports->find($id);if($report===null)throw new DailyReportValidationException(['Bautagesbericht wurde nicht gefunden.']);$this->assertReportAccess($report,$actor);
+        $report=$this->reports->find($id);if($report===null)throw new DailyReportValidationException(['Tagesbericht wurde nicht gefunden.']);$this->assertReportAccess($report,$actor);
         $entries=$this->reports->entries($id);foreach($entries as &$entry)$entry['targetKey']=$entry['target_kind']==='order'?'order':$entry['target_basis_type'].':'.$entry['target_basis_id'].':'.$entry['target_node_id'];unset($entry);if(!$this->canReadCosts($actor))foreach($entries as &$entry)unset($entry['hourly_cost_rate_snapshot'],$entry['labor_cost']);unset($entry);
         unset($report['basis_json']);$report['entries']=$entries;$report['attachments']=array_map($this->mapAttachment(...),$this->reports->attachments($id));$report['targets']=$this->targets($report['order_id']!==null?(string)$report['order_id']:null);$report['canEdit']=$this->canEdit($report,$actor);
         $report['labor_counts_for_order']=(bool)$report['labor_counts_for_order'];
@@ -139,18 +140,20 @@ final readonly class DailyReportService
     }
 
     /**
-     * Kunde (Pflicht), Projekt und Auftrag (optional) eines neuen Berichts.
-     * Mit Auftrag: Kunde und Projekt kommen aus dem Auftrag; abweichende Angaben sind ein Fehler.
+     * Zuordnung eines neuen Tagesberichts. Primär das optionale Kostenziel (Auftrag ODER
+     * Kostenstelle); Kunde und Projekt sind optionale Kontextangaben.
+     * - Mit Auftrag: Kunde und Projekt kommen aus dem Auftrag; abweichende Angaben sind ein Fehler.
+     * - Sonst: Kunde optional (aktiv); ein Projekt nur zusammen mit seinem Kunden.
      *
-     * @param array<string,mixed> $input customerId, projectId, orderId
+     * @param array<string,mixed> $input orderId | costCenterId, customerId, projectId
      * @param array<string,mixed> $actor
-     * @return array{customer_id:string,project_id:?string,order_id:?string,cost_center_id:?string}
+     * @return array{customer_id:?string,project_id:?string,order_id:?string,cost_center_id:?string}
      */
     private function resolveAssignment(array $input,array $actor):array
     {
-        $orderId=trim((string)($input['orderId']??''));
+        $orderId=trim((string)($input['orderId']??''));$customerId=trim((string)($input['customerId']??''));$projectId=trim((string)($input['projectId']??''));
         // Kostenstelle: nur ohne Auftrag (gemeinsame Prüfung in CostTargets).
-        $costCenterId=$this->costCenter($input['costCenterId']??'',$orderId!==''?$orderId:null,null);$customerId=trim((string)($input['customerId']??''));$projectId=trim((string)($input['projectId']??''));
+        $costCenterId=$this->costCenter($input['costCenterId']??'',$orderId!==''?$orderId:null,null);
         if($orderId!==''){
             $order=$this->orders->find($orderId);if($order===null)throw new DailyReportValidationException(['Auftrag wurde nicht gefunden.']);$this->assertOrderAccess($order,$actor);
             if($customerId!==''&&$customerId!==(string)$order['customer_id'])throw new DailyReportValidationException(['Der Auftrag gehört nicht zum ausgewählten Kunden.']);
@@ -158,9 +161,12 @@ final readonly class DailyReportService
             if($projectId!==''&&$projectId!==$orderProject)throw new DailyReportValidationException(['Das Projekt passt nicht zum ausgewählten Auftrag.']);
             return['customer_id'=>(string)$order['customer_id'],'project_id'=>$orderProject,'order_id'=>$orderId,'cost_center_id'=>null];
         }
-        if($customerId===''||!$this->reports->customerIsActive($customerId))throw new DailyReportValidationException(['Bitte einen aktiven Kunden auswählen.']);
-        if($projectId!==''){$project=$this->reports->project($projectId);if($project===null||(string)$project['customer_id']!==$customerId||$project['status']==='archived')throw new DailyReportValidationException(['Das Projekt gehört nicht zum ausgewählten Kunden.']);}
-        return['customer_id'=>$customerId,'project_id'=>$projectId!==''?$projectId:null,'order_id'=>null,'cost_center_id'=>$costCenterId];
+        if($customerId!==''&&!$this->reports->customerIsActive($customerId))throw new DailyReportValidationException(['Bitte einen aktiven Kunden auswählen.']);
+        if($projectId!==''){
+            if($customerId==='')throw new DailyReportValidationException(['Ein Projekt kann nur zusammen mit seinem Kunden angegeben werden.']);
+            $project=$this->reports->project($projectId);if($project===null||(string)$project['customer_id']!==$customerId||$project['status']==='archived')throw new DailyReportValidationException(['Das Projekt gehört nicht zum ausgewählten Kunden.']);
+        }
+        return['customer_id'=>$customerId!==''?$customerId:null,'project_id'=>$projectId!==''?$projectId:null,'order_id'=>null,'cost_center_id'=>$costCenterId];
     }
 
     /**
@@ -175,12 +181,13 @@ final readonly class DailyReportService
     public function assignOrder(string $id,array $input,array $actor):array
     {
         if(!$this->can($actor,'orders.write'))throw new AccessDeniedException('orders.write');
-        $report=$this->reports->find($id);if($report===null)throw new DailyReportValidationException(['Bautagesbericht wurde nicht gefunden.']);
+        $report=$this->reports->find($id);if($report===null)throw new DailyReportValidationException(['Tagesbericht wurde nicht gefunden.']);
         $orderId=trim((string)($input['orderId']??''));$order=null;
         $costCenterId=$this->costCenter($input['costCenterId']??'',$orderId!==''?$orderId:null,$report['cost_center_id']!==null?(string)$report['cost_center_id']:null);
         if($orderId!==''){
             $order=$this->orders->find($orderId);if($order===null)throw new DailyReportValidationException(['Auftrag wurde nicht gefunden.']);
-            if((string)$order['customer_id']!==(string)$report['customer_id'])throw new DailyReportValidationException(['Der Auftrag gehört nicht zum Kunden des Berichts.']);
+            // Ohne Kunde übernimmt der Bericht den Auftragskunden; ein anderer Kunde wäre ein Widerspruch.
+            if($report['customer_id']!==null&&(string)$order['customer_id']!==(string)$report['customer_id'])throw new DailyReportValidationException(['Der Auftrag gehört nicht zum Kunden des Berichts.']);
             $reportProject=$report['order_id']===null?$report['project_id']:null;
             if($reportProject!==null&&$order['project_id']!==null&&(string)$reportProject!==(string)$order['project_id'])throw new DailyReportValidationException(['Der Auftrag gehört zu einem anderen Projekt als der Bericht.']);
         }
@@ -190,7 +197,7 @@ final readonly class DailyReportService
         $now=Clock::now();
         $this->pdo->exec('BEGIN IMMEDIATE');
         try{
-            if(!$this->reports->setTarget($id,(int)($input['version']??0),$report['order_id']!==null?(string)$report['order_id']:null,$report['cost_center_id']!==null?(string)$report['cost_center_id']:null,$order!==null?(string)$order['id']:null,$costCenterId,$order!==null&&$order['project_id']!==null?(string)$order['project_id']:null,(string)$actor['id'],$now))throw new DailyReportValidationException(['Der Bautagesbericht wurde zwischenzeitlich geändert. Bitte neu laden.']);
+            if(!$this->reports->setTarget($id,(int)($input['version']??0),$report['order_id']!==null?(string)$report['order_id']:null,$report['cost_center_id']!==null?(string)$report['cost_center_id']:null,$order!==null?(string)$order['id']:null,$costCenterId,$order!==null&&$order['project_id']!==null?(string)$order['project_id']:null,(string)$actor['id'],$now,$order!==null?(string)$order['customer_id']:null))throw new DailyReportValidationException(['Der Tagesbericht wurde zwischenzeitlich geändert. Bitte neu laden.']);
             (new ReportTimeBookings($this->pdo))->syncDailyReport($id,(string)$actor['id'],$now);
             $this->pdo->commit();
         }catch(Throwable $e){if($this->pdo->inTransaction())$this->pdo->rollBack();throw$e;}
@@ -200,9 +207,9 @@ final readonly class DailyReportService
     /** @param array<string,mixed> $input @param array<string,mixed> $actor @return array<string,mixed> */
     public function update(string $id,array $input,array $actor):array
     {
-        $current=$this->reports->find($id);if($current===null)throw new DailyReportValidationException(['Bautagesbericht wurde nicht gefunden.']);$this->assertReportAccess($current,$actor);if(!$this->canEdit($current,$actor))throw new AccessDeniedException('reports.write.own');
+        $current=$this->reports->find($id);if($current===null)throw new DailyReportValidationException(['Tagesbericht wurde nicht gefunden.']);$this->assertReportAccess($current,$actor);if(!$this->canEdit($current,$actor))throw new AccessDeniedException('reports.write.own');
         $version=(int)($input['version']??0);if($version<1)throw new DailyReportValidationException(['Versionsangabe fehlt.']);$values=$this->validateReport($input);$now=Clock::now();$existing=[];foreach($this->reports->entries($id) as $entry)$existing[(string)$entry['id']]=$entry;$entries=$this->validateEntries($input['entries']??[],$id,$current['order_id']!==null?(string)$current['order_id']:null,$values['report_date'],$actor,$now,$existing);
-        $this->pdo->exec('BEGIN IMMEDIATE');try{if(!$this->reports->updateReport(['id'=>$id,'expected_version'=>$version,'report_date'=>$values['report_date'],'title'=>$values['title'],'activities'=>$values['activities'],'notes'=>$values['notes'],'updated_at'=>$now]))throw new DailyReportValidationException(['Der Bautagesbericht wurde zwischenzeitlich geändert. Bitte neu laden.']);$this->reports->replaceEntries($id,$entries);(new ReportTimeBookings($this->pdo))->syncDailyReport($id,(string)$actor['id'],$now);$this->pdo->commit();}catch(Throwable $e){if($this->pdo->inTransaction())$this->pdo->rollBack();throw$e;}
+        $this->pdo->exec('BEGIN IMMEDIATE');try{if(!$this->reports->updateReport(['id'=>$id,'expected_version'=>$version,'report_date'=>$values['report_date'],'title'=>$values['title'],'activities'=>$values['activities'],'notes'=>$values['notes'],'updated_at'=>$now]))throw new DailyReportValidationException(['Der Tagesbericht wurde zwischenzeitlich geändert. Bitte neu laden.']);$this->reports->replaceEntries($id,$entries);(new ReportTimeBookings($this->pdo))->syncDailyReport($id,(string)$actor['id'],$now);$this->pdo->commit();}catch(Throwable $e){if($this->pdo->inTransaction())$this->pdo->rollBack();throw$e;}
         return$this->detail($id,$actor);
     }
 
@@ -210,13 +217,13 @@ final readonly class DailyReportService
     public function delete(string $id,int $version,array $actor):void
     {
         $current=$this->reports->find($id);
-        if($current===null)throw new DailyReportValidationException(['Bautagesbericht wurde nicht gefunden.']);
+        if($current===null)throw new DailyReportValidationException(['Tagesbericht wurde nicht gefunden.']);
         $this->assertReportAccess($current,$actor);
         if(!$this->canEdit($current,$actor))throw new AccessDeniedException('reports.write.own');
         // Anhangszeilen werden per Fremdschlüssel mitgelöscht, Materialanforderungen bleiben
         // erhalten (Verweis wird geleert). Dateien erst nach erfolgreichem Löschen entfernen.
         $paths=$this->reports->attachmentPaths($id);
-        if(!$this->reports->delete($id,$version))throw new DailyReportValidationException(['Der Bautagesbericht wurde zwischenzeitlich geändert. Bitte neu laden.']);
+        if(!$this->reports->delete($id,$version))throw new DailyReportValidationException(['Der Tagesbericht wurde zwischenzeitlich geändert. Bitte neu laden.']);
         foreach($paths as $path)$this->removeFile((string)$path);
     }
 
@@ -274,7 +281,7 @@ final readonly class DailyReportService
     {
         $report = $this->reports->find($reportId);
         if ($report === null) {
-            throw new DailyReportValidationException(['Bautagesbericht wurde nicht gefunden.']);
+            throw new DailyReportValidationException(['Tagesbericht wurde nicht gefunden.']);
         }
         $this->assertReportAccess($report, $actor);
         $attachment = $this->reports->attachment($reportId, $attachmentId);
@@ -306,7 +313,7 @@ final readonly class DailyReportService
     {
         $report = $this->reports->find($reportId);
         if ($report === null) {
-            throw new DailyReportValidationException(['Bautagesbericht wurde nicht gefunden.']);
+            throw new DailyReportValidationException(['Tagesbericht wurde nicht gefunden.']);
         }
         $this->assertReportAccess($report, $actor);
         if (!$this->canEdit($report, $actor)) {

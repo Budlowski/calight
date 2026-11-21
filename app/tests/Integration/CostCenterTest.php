@@ -28,6 +28,7 @@ use App\Infrastructure\Database\Migrator;
 use App\Infrastructure\Persistence\AttachmentStore;
 use App\Infrastructure\Persistence\CostCenterRepository;
 use App\Infrastructure\Persistence\DailyReportRepository;
+use App\Infrastructure\Persistence\DocumentRepository;
 use App\Infrastructure\Persistence\DocumentSettingsRepository;
 use App\Infrastructure\Persistence\EmployeeRepository;
 use App\Infrastructure\Persistence\MaterialRequestRepository;
@@ -274,6 +275,92 @@ final class CostCenterTest extends TestCase
         });
     }
 
+    public function testDailyReportsWithoutCustomer(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['centers' => $centers, 'admin' => $admin, 'office' => $office, 'tech' => $tech, 'time' => $time, 'reports' => $reports, 'workReports' => $workReports,
+                'employee' => $employee, 'order' => $order, 'customer' => $customer, 'pdo' => $pdo, 'materials' => $materials, 'pdf' => $pdf, 'tmp' => $tmp] = $env;
+            $centers->importTemplate($admin);
+            $k120 = (string) $pdo->query("SELECT id FROM cost_centers WHERE number = 'K120'")->fetchColumn();
+            $k110 = (string) $pdo->query("SELECT id FROM cost_centers WHERE number = 'K110'")->fetchColumn();
+            $entries = static fn (string $hours): array => [['employeeId' => $employee, 'durationHours' => $hours, 'targetKey' => 'order']];
+            $booking = static fn (string $reportId): array => $pdo->query('SELECT b.order_id, b.cost_center_id, b.net_minutes FROM time_entries b JOIN daily_report_time_entries e ON e.id = b.daily_report_entry_id WHERE e.report_id = '
+                . $pdo->quote($reportId))->fetchAll(PDO::FETCH_NUM);
+            $customers = (int) $pdo->query('SELECT COUNT(*) FROM customers')->fetchColumn();
+            $orders = (int) $pdo->query('SELECT COUNT(*) FROM orders')->fetchColumn();
+
+            // Lagerinventur auf K120 – ohne Kunde und Projekt.
+            $inventory = $reports->create(['costCenterId' => $k120, 'reportDate' => '2026-11-20', 'title' => 'Lagerinventur', 'activities' => 'Inventur', 'entries' => $entries('3')], $tech);
+            $this->assertSame([null, null, $k120, null], [$inventory['customer_id'], $inventory['project_id'], $inventory['cost_center_id'], $inventory['order_id']]);
+            $this->assertSame([[null, $k120, 180]], $booking($inventory['id']), 'Kostenstellenstunden aus kundenlosem Tagesbericht.');
+            // Ohne Kunde und ohne Kostenziel.
+            $plain = $reports->create(['reportDate' => '2026-11-20', 'activities' => 'Interne Softwareentwicklung', 'entries' => $entries('1')], $tech);
+            $this->assertSame([[null, null, 60]], $booking($plain['id']));
+            // Kostenstelle mit optionalem Kunden; Auftrag übernimmt automatisch den Kunden.
+            $visit = $reports->create(['costCenterId' => $k110, 'customerId' => $customer, 'reportDate' => '2026-11-20', 'activities' => 'Besichtigung', 'entries' => $entries('1')], $tech);
+            $onOrder = $reports->create(['orderId' => $order, 'reportDate' => '2026-11-21', 'activities' => 'Montage', 'entries' => $entries('2')], $tech);
+            $this->assertSame([$customer, $customer], [$visit['customer_id'], $onOrder['customer_id']]);
+            $this->assertSame([$customers, $orders], [(int) $pdo->query('SELECT COUNT(*) FROM customers')->fetchColumn(), (int) $pdo->query('SELECT COUNT(*) FROM orders')->fetchColumn()], 'Kein künstlicher Kunde oder Auftrag.');
+            // Widersprüche werden abgelehnt.
+            $other = Uuid::v4();
+            $pdo->prepare("INSERT INTO customers(id,customer_number,customer_type,company_name,created_at,updated_at) VALUES(:id,'K9','company','Andere','2026-11-12T08:00:00Z','2026-11-12T08:00:00Z')")->execute(['id' => $other]);
+            $this->assertThrows(\RuntimeException::class, fn () => $reports->create(['orderId' => $order, 'customerId' => $other, 'reportDate' => '2026-11-20', 'activities' => 'x', 'entries' => []], $tech));
+            $this->assertThrows(\RuntimeException::class, fn () => $reports->create(['orderId' => $order, 'costCenterId' => $k120, 'reportDate' => '2026-11-20', 'activities' => 'x', 'entries' => []], $tech));
+
+            // Bearbeiten, Zeiterfassung, Wechsel des Kostenziels (Kunde wird bei Auftrag übernommen), keine Doppelbuchungen.
+            $edited = $reports->update($inventory['id'], ['version' => $inventory['version'], 'reportDate' => '2026-11-20', 'title' => 'Lagerinventur', 'activities' => 'Inventur abgeschlossen', 'notes' => 'Regal B fehlt',
+                'entries' => [['id' => $inventory['entries'][0]['id'], 'employeeId' => $employee, 'durationHours' => '3,5', 'targetKey' => 'order']]], $tech);
+            $this->assertSame([[null, $k120, 210]], $booking($inventory['id']));
+            $this->assertSame(210 + 60 + 60, $time->day($employee, '2026-11-20', $tech)['totals']['netMinutes']);
+            $count = (int) $pdo->query("SELECT COUNT(*) FROM time_entries WHERE source_kind = 'daily_report'")->fetchColumn();
+            $moved = $reports->assignOrder($plain['id'], ['version' => $plain['version'], 'orderId' => $order], $office);
+            $this->assertSame([$order, $customer], [$moved['order_id'], $moved['customer_id']], 'Ohne Kunde: Auftragskunde wird übernommen.');
+            $this->assertThrows(\RuntimeException::class, fn () => $reports->assignOrder($visit['id'], ['version' => $visit['version'], 'orderId' => Uuid::v4()], $office));
+            $back = $reports->assignOrder($inventory['id'], ['version' => $edited['version']], $office);
+            $this->assertSame([[null, null, 210]], $booking($inventory['id']));
+            $this->assertSame($count, (int) $pdo->query("SELECT COUNT(*) FROM time_entries WHERE source_kind = 'daily_report'")->fetchColumn(), 'Keine zusätzlichen Zeitbuchungen.');
+            $this->assertSame(null, $back['customer_id'], 'Ohne Auftrag bleibt der Bericht kundenlos.');
+            $this->assertThrows(AccessDeniedException::class, fn () => $reports->assignOrder($inventory['id'], ['version' => $back['version'], 'costCenterId' => $k120], $tech), 'Zuordnung nur durch das Büro.');
+            $inventory = $reports->assignOrder($inventory['id'], ['version' => $back['version'], 'costCenterId' => $k120], $office);
+
+            // Materialanforderung aus internem Bericht: ohne Kunde und Auftrag, Kostenstelle übernommen.
+            $request = $materials->create(['dailyReportId' => $inventory['id'], 'description' => 'Regalböden'], $tech);
+            $this->assertSame([null, null, $k120, 'K120'], [$request['customerId'], $request['orderId'], $request['costCenterId'], $request['costCenterNumber']]);
+            $this->assertSame([$customers + 1, $orders], [(int) $pdo->query('SELECT COUNT(*) FROM customers')->fetchColumn(), (int) $pdo->query('SELECT COUNT(*) FROM orders')->fetchColumn()]);
+
+            // Anhänge und Dokumentenzugriff.
+            $file = $tmp . '/foto.png';
+            file_put_contents($file, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='));
+            $attachment = $env['reportsWithFiles']->addAttachment($inventory['id'], $file, 'regal.png', $tech);
+            $this->assertSame('image/png', $env['reportsWithFiles']->attachmentFile($inventory['id'], $attachment['id'], $office)['mimeType']);
+            $documents = array_values(array_filter((new DocumentRepository($pdo))->dailyReports(), static fn (array $row): bool => $row['id'] === $inventory['id']));
+            $this->assertSame([null, null], [$documents[0]['customer_id'], $documents[0]['order_id']]);
+
+            // Übersicht, Filter und Suche; kundenlose Berichte bei „Alle Kunden“ sichtbar.
+            $this->assertSame(4, $reports->page([], $office)['total']);
+            $this->assertSame(3, $reports->page(['customer' => $customer], $office)['total'], 'Kundenfilter: Besichtigung, Auftrag, verschobener Bericht.');
+            $this->assertSame(1, $reports->page(['q' => 'Lagerinventur'], $office)['total']);
+            $this->assertSame(1, $reports->page(['q' => 'Lager & Rüst'], $office)['total'], 'Suche nach Kostenstelle.');
+            $this->assertSame(1, $reports->page(['cost_center' => $k120], $office)['total']);
+
+            // PDF ohne Kunde: Kostenstelle, kein Empfänger, keine Kundennummer, keine künstliche Auftragsnummer.
+            $document = $pdf->pdf($inventory['id'], $office);
+            $this->assertTrue(str_contains($document['pdf'], '(Kostenstelle) Tj') && !str_contains($document['pdf'], '(Kundennummer) Tj') && !str_contains($document['pdf'], '(Auftrag) Tj'));
+            $this->assertTrue(str_contains($document['pdf'], '(Tagesbericht) Tj') && str_contains($document['fileName'], 'K120'));
+
+            // Rechte: fremde kundenlose Berichte sieht ein anderer Monteur nicht.
+            $colleague = ['id' => Uuid::v4(), 'role' => 'technician'];
+            $pdo->prepare("INSERT INTO users(id,username,password_hash,display_name,role,active,created_at,updated_at) VALUES(:id,'kollege','hash','Kollege','technician',1,'t','t')")->execute(['id' => $colleague['id']]);
+            $this->assertThrows(AccessDeniedException::class, fn () => $reports->detail($inventory['id'], $colleague));
+            $this->assertSame(2, $reports->page([], $colleague)['total'], 'Nur Berichte am freigegebenen Auftrag.');
+
+            // Rapporte bleiben ausschließlich auftragsbezogen.
+            $draft = $workReports->create(['customerId' => $customer, 'workDate' => '2026-11-20'], $tech);
+            $draft = $workReports->update($draft['id'], ['version' => $draft['version'], 'description' => 'Regie', 'labor' => [['workDate' => '2026-11-20', 'employeeId' => $employee, 'hours' => '1']], 'materials' => []], $tech);
+            $this->assertThrows(OrderValidationException::class, fn () => $workReports->submit($draft['id'], ['version' => $draft['version'], 'costCenterId' => $k120], $tech));
+        });
+    }
+
     public function testMigrationKeepsExistingAssignments(): void
     {
         $tmp = sys_get_temp_dir() . '/calight-cost-centers-migration-' . bin2hex(random_bytes(6));
@@ -314,6 +401,12 @@ final class CostCenterTest extends TestCase
             $this->assertSame([], array_values(array_diff(['cost_center_id'], array_column($pdo->query('PRAGMA table_info(daily_reports)')->fetchAll(), 'name'))));
             $this->assertSame([], array_values(array_diff(['previous_cost_center_id', 'cost_center_id'], array_column($pdo->query('PRAGMA table_info(daily_report_order_events)')->fetchAll(), 'name'))));
             $this->assertSame(1, (int) $pdo->query('SELECT COUNT(*) FROM time_entries')->fetchColumn());
+            // 0041: Kunde bei Tagesberichten und Materialanforderungen optional, Kostenstelle an Materialanforderungen.
+            $notNull = static fn (string $table, string $column): int => (int) array_column($pdo->query("PRAGMA table_info({$table})")->fetchAll(), 'notnull', 'name')[$column];
+            $this->assertSame([0, 0], [$notNull('daily_reports', 'customer_id'), $notNull('material_requests', 'customer_id')]);
+            $this->assertTrue(in_array('cost_center_id', array_column($pdo->query('PRAGMA table_info(material_requests)')->fetchAll(), 'name'), true));
+            $this->assertSame([], $pdo->query("SELECT name FROM sqlite_master WHERE sql LIKE '%before_0041%'")->fetchAll(), 'Keine Verweise auf Alttabellen.');
+            $this->assertSame([$order, null], $pdo->query("SELECT order_id, cost_center_id FROM time_entries WHERE id = 't1'")->fetch(PDO::FETCH_NUM), 'Zeitbuchung nach Neuaufbau erhalten.');
             $this->assertSame(['idx_time_entries_cost_center', 'idx_time_entries_employee_date', 'idx_time_entries_order'], $pdo->query("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'time_entries' AND name LIKE 'idx_%' ORDER BY name")->fetchAll(PDO::FETCH_COLUMN));
         } finally {
             $this->remove($tmp);
@@ -357,6 +450,8 @@ final class CostCenterTest extends TestCase
                 'workReports' => new WorkReportService($pdo, new WorkReportRepository($pdo), new OrderRepository($pdo), $numbers, new PriceCalculator(), null, $orders),
                 'materials' => new MaterialRequestService(new MaterialRequestRepository($pdo), new OrderRepository($pdo), new DailyReportRepository($pdo)),
                 'pdf' => new DailyReportPdfService(new DailyReportService($pdo, new DailyReportRepository($pdo), new EmployeeRepository($pdo), new OrderRepository($pdo)), new DocumentSettingsRepository($pdo)),
+                'tmp' => $tmp,
+                'reportsWithFiles' => new DailyReportService($pdo, new DailyReportRepository($pdo), new EmployeeRepository($pdo), new OrderRepository($pdo), new AttachmentStore($tmp . '/documents')),
             ]);
         } finally {
             $this->remove($tmp);

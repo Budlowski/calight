@@ -22,7 +22,7 @@ use Throwable;
  *
  * Herkunft je Buchung (source_kind), jede Stunde zählt genau einmal:
  * - work_report:  Stundenposition eines Rapports (gültige Fassung bzw. Entwurf ohne Korrekturbezug),
- * - daily_report: Stundenposition eines Bautagesberichts,
+ * - daily_report: Stundenposition eines Tagesberichts,
  * - manual:       direkt erfasster Zeitblock (Büroarbeit, Rüstzeit, Vorbereitung …).
  * Berichtsbuchungen werden von den Berichtsdiensten gepflegt (ReportTimeBookings). Ihre Dauer ist
  * vorgegeben; hier werden nur Beginn, Ende, Pause, Reisezeit und Einsatzart ergänzt – mit Uhrzeiten
@@ -41,7 +41,7 @@ final readonly class TimeTrackingService
     public const SELECTABLE_ACTIVITIES = ['work', 'preparation', 'internal', 'other'];
     public const ASSIGNMENTS = ['regular' => 'Erste Tätigkeitsstätte', 'external' => 'Auswärtstätigkeit / wechselnder Einsatzort'];
     public const TRAVEL_DAYS = ['none' => 'Kein besonderer Reisetag', 'arrival' => 'Anreisetag', 'departure' => 'Abreisetag'];
-    public const SOURCE_KINDS = ['work_report' => 'Rapport', 'daily_report' => 'Bautagesbericht', 'manual' => 'Manuell'];
+    public const SOURCE_KINDS = ['work_report' => 'Rapport', 'daily_report' => 'Tagesbericht', 'manual' => 'Manuell'];
     public const RECEIPT_TYPES = DocumentService::ALLOWED_TYPES;
     private const LONG_DAY_MINUTES = 600;
     private const MIN_REST_MINUTES = 660;
@@ -240,7 +240,7 @@ final readonly class TimeTrackingService
             },
             'reportLabel' => match ($kind) {
                 'work_report' => 'Rapport ' . ($entry['work_report_number'] ?? 'Entwurf'),
-                'daily_report' => 'Bautagesbericht ' . (new DateTimeImmutable((string) $entry['daily_report_date']))->format('d.m.Y') . (($entry['daily_report_title'] ?? '') !== '' ? ' · ' . $entry['daily_report_title'] : ''),
+                'daily_report' => 'Tagesbericht ' . (new DateTimeImmutable((string) $entry['daily_report_date']))->format('d.m.Y') . (($entry['daily_report_title'] ?? '') !== '' ? ' · ' . $entry['daily_report_title'] : ''),
                 default => null,
             },
             // Rapportentwurf: Quelle ist noch nicht eingereicht.
@@ -291,7 +291,7 @@ final readonly class TimeTrackingService
 
     /**
      * Ist-Stunden eines Auftrags für die spätere Nachkalkulation (Phase 3.5) – ausschließlich aus
-     * der zentralen Basis: alle zählenden Buchungen mit diesem Auftrag (Rapport, Bautagesbericht,
+     * der zentralen Basis: alle zählenden Buchungen mit diesem Auftrag (Rapport, Tagesbericht,
      * manuell), jede genau einmal. Ersetzte Rapportfassungen haben keine Buchungen. Buchungen ohne Uhrzeiten zählen voll;
      * bei deaktivierter Betriebseinstellung werden sie zusätzlich als unvollständig ausgewiesen.
      *

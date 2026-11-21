@@ -89,8 +89,8 @@ final class DailyReportTest extends TestCase
             $entry = ['employeeId' => $own['id'], 'durationHours' => '2', 'targetKey' => 'order', 'description' => 'Besichtigung'];
             $base = ['reportDate' => '2026-11-12', 'title' => 'Besichtigung vor Angebot', 'activities' => 'Bestandsaufnahme Verteilung', 'entries' => [$entry]];
 
-            // Kunde ist Pflicht; Projekt muss zum Kunden gehören; Auftrag zum Kunden und zum Projekt.
-            $this->assertThrows(DailyReportValidationException::class, fn () => $service->create($base, $tech));
+            // Kunde optional (Tagesbericht); ein Projekt nur mit seinem Kunden; Auftrag zum Kunden und zum Projekt.
+            $this->assertThrows(DailyReportValidationException::class, fn () => $service->create(['projectId' => $project] + $base, $tech), 'Projekt nie ohne Kunde.');
             $this->assertThrows(DailyReportValidationException::class, fn () => $service->create(['customerId' => $ids['customer'], 'projectId' => $foreignProject] + $base, $tech));
             $this->assertThrows(DailyReportValidationException::class, fn () => $service->create(['customerId' => $otherCustomer, 'orderId' => $ids['order']] + $base, $office));
             $this->assertThrows(DailyReportValidationException::class, fn () => $service->create(['orderId' => $ids['order'], 'projectId' => $project] + $base, $office), 'Projekt passt nicht zum Auftrag.');

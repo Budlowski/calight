@@ -171,7 +171,7 @@
   const orderLink = (request, className = "") => request.orderId
     ? `<a${className ? ` class="${className}"` : ""} href="${orderHref(request)}">${esc(request.orderNumber)}</a>`
     : request.dailyReportId
-      ? `<a${className ? ` class="${className}"` : ""} href="/daily-reports/${encodeURIComponent(request.dailyReportId)}">Ohne Auftrag</a>`
+      ? `<a${className ? ` class="${className}"` : ""} href="/daily-reports/${encodeURIComponent(request.dailyReportId)}">${esc(request.costCenterNumber || "Ohne Auftrag")}</a>`
       : `<span${className ? ` class="${className}"` : ""}>Ohne Auftrag</span>`;
   const reportLink = (request) => (request.dailyReportId
     ? `<a href="/daily-reports/${encodeURIComponent(request.dailyReportId)}">Bericht ${format.date(request.reportDate)}</a>`
@@ -180,7 +180,7 @@
   const renderCard = (request) => `
     <article class="overview-card material-request-card">
       <div class="management-card-head">${orderLink(request, "service-number")}${badge(request)}</div>
-      <div class="overview-card-meta"><span>${esc(request.customerName)}</span><span>${esc(request.orderTitle)}</span></div>
+      <div class="overview-card-meta"><span>${esc(request.customerName || "–")}</span><span>${esc(request.orderTitle)}</span></div>
       <div class="material-request-text">${lines(request.description)}</div>
       ${request.notes ? `<p class="muted material-request-notes">${esc(request.notes)}</p>` : ""}
       <div class="overview-card-meta">
@@ -201,7 +201,7 @@
     <tbody>${requests.map((request) => `
       <tr>
         <td class="cell-number">${orderLink(request)}</td>
-        <td class="cell-text" title="${esc(request.customerName)}">${esc(request.customerName)}</td>
+        <td class="cell-text" title="${esc(request.customerName || "")}">${request.customerName ? esc(request.customerName) : '<span class="muted">–</span>'}</td>
         <td class="cell-title material-request-cell" title="${esc(request.description)}">${esc(request.description.split("\n")[0])}${request.description.includes("\n") ? " …" : ""}
           <small class="muted">${reportLink(request)}</small></td>
         <td class="cell-datetime">${format.dateTime(request.createdAt)}</td>

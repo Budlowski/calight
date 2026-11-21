@@ -40,7 +40,7 @@ final readonly class ReportTimeBookings
         return $minutes->isEqualTo($minutes->toScale(0, RoundingMode::Down));
     }
 
-    /** Buchungen eines Bautagesberichts (jede Stundenposition zählt; Kostenziel – Auftrag oder Kostenstelle – folgt dem Bericht). */
+    /** Buchungen eines Tagesberichts (jede Stundenposition zählt; Kostenziel – Auftrag oder Kostenstelle – folgt dem Bericht). */
     public function syncDailyReport(string $reportId, string $userId, string $now): void
     {
         $report = $this->row('SELECT id, order_id, cost_center_id FROM daily_reports WHERE id = :id', ['id' => $reportId]);

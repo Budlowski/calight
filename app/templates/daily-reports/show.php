@@ -1,7 +1,7 @@
-<?php $title='Bautagesbericht';$contentClass='content-wide'; ?>
+<?php $title='Tagesbericht';$contentClass='content-wide'; ?>
 <div id="daily-report-detail" class="detail-page" data-id="<?= $escape($reportId) ?>" data-csrf="<?= $escape($csrfToken) ?>">
-    <nav class="breadcrumb" aria-label="Brotkrümelnavigation"><ol><li><a href="/daily-reports">Bautagesberichte</a></li><li data-order-crumb hidden></li><li aria-current="page" data-current-crumb>Bautagesbericht</li></ol></nav>
-    <div class="page-heading"><div><h1 data-title>Bautagesbericht</h1><p class="muted" data-meta>Bericht wird geladen …</p></div><div class="order-detail-actions"><a class="button button-light" href="/api/daily-reports/<?= $escape(rawurlencode($reportId)) ?>/pdf" data-icon="file-down" title="Gespeicherter Stand als PDF zur internen Dokumentation">PDF</a></div></div>
+    <nav class="breadcrumb" aria-label="Brotkrümelnavigation"><ol><li><a href="/daily-reports">Tagesberichte</a></li><li data-order-crumb hidden></li><li aria-current="page" data-current-crumb>Tagesbericht</li></ol></nav>
+    <div class="page-heading"><div><h1 data-title>Tagesbericht</h1><p class="muted" data-meta>Bericht wird geladen …</p></div><div class="order-detail-actions"><a class="button button-light" href="/api/daily-reports/<?= $escape(rawurlencode($reportId)) ?>/pdf" data-icon="file-down" title="Gespeicherter Stand als PDF zur internen Dokumentation">PDF</a></div></div>
     <div class="notice" data-message role="status" hidden></div>
     <form id="daily-report-form" class="card form-stack detail-form-card" novalidate>
         <section class="report-form-section">

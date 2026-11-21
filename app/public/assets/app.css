@@ -967,7 +967,7 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
     #offer-editor .offer-revision-actions { grid-column: 1 / -1; justify-content: flex-start; }
 }
 
-/* Mitarbeiter und Bautagesberichte */
+/* Mitarbeiter und Tagesberichte */
 .employee-toolbar { grid-template-columns: minmax(260px,1fr) auto auto; }
 .employee-form-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
 .management-card.is-inactive { opacity:.72; background:#f3f5f6; }
@@ -1003,7 +1003,7 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
     .content { padding: var(--space-3); }
 }
 
-/* Bautagesbericht: Fotos und Anhänge */
+/* Tagesbericht: Fotos und Anhänge */
 .report-extra-section { display:grid; gap:var(--space-2); }
 .file-button { position:relative; overflow:hidden; cursor:pointer; }
 .file-button input[type="file"] { position:absolute; inset:0; width:100%; min-height:0; padding:0; border:0; opacity:0; cursor:pointer; }
@@ -1471,7 +1471,7 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
     .time-cal-travel { font-size: 10px; }
     .time-calendar.is-week .time-cal-date { font-size: 12px; }
 }
-/* Bautagesbericht: Zuordnung (Kunde, Projekt, Auftrag, Stundenrelevanz) */
+/* Tagesbericht: Zuordnung (Kunde, Projekt, Auftrag, Stundenrelevanz) */
 .report-assignment { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0 0 12px; }
 .report-assignment dt { color: var(--muted, #667); font-weight: 600; }
 .report-assignment dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }

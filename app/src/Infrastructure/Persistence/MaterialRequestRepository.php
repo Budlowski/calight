@@ -14,9 +14,9 @@ final readonly class MaterialRequestRepository
     public const LIST_FILTERS = ['status', 'order', 'customer'];
 
     private const CUSTOMER_NAME = "CASE WHEN c.customer_type='company' THEN c.company_name ELSE trim(c.first_name || ' ' || c.last_name) END";
-    private const SELECT = "m.*, o.order_number, o.title AS order_title, o.status AS order_status, r.report_date,
+    private const SELECT = "m.*, o.order_number, o.title AS order_title, o.status AS order_status, r.report_date, cc.number AS cost_center_number,
         u.display_name AS creator_name, cu.display_name AS completed_by_name, c.customer_number, %s AS customer_name";
-    private const FROM = 'material_requests m LEFT JOIN orders o ON o.id = m.order_id JOIN customers c ON c.id = m.customer_id
+    private const FROM = 'material_requests m LEFT JOIN orders o ON o.id = m.order_id LEFT JOIN customers c ON c.id = m.customer_id LEFT JOIN cost_centers cc ON cc.id = m.cost_center_id
         JOIN users u ON u.id = m.created_by_user_id LEFT JOIN users cu ON cu.id = m.completed_by_user_id
         LEFT JOIN daily_reports r ON r.id = m.daily_report_id';
 
@@ -94,8 +94,8 @@ final readonly class MaterialRequestRepository
     public function insert(array $data): void
     {
         $this->pdo->prepare('INSERT INTO material_requests
-            (id, customer_id, order_id, daily_report_id, description, notes, needed_by, status, created_by_user_id, version, created_at, updated_at)
-            VALUES (:id, :customer_id, :order_id, :daily_report_id, :description, :notes, :needed_by, \'open\', :created_by_user_id, 1, :created_at, :updated_at)')
+            (id, customer_id, order_id, cost_center_id, daily_report_id, description, notes, needed_by, status, created_by_user_id, version, created_at, updated_at)
+            VALUES (:id, :customer_id, :order_id, :cost_center_id, :daily_report_id, :description, :notes, :needed_by, \'open\', :created_by_user_id, 1, :created_at, :updated_at)')
             ->execute($data);
     }
 

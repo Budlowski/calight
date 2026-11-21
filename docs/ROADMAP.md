@@ -51,7 +51,7 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 
 - **Auftrag:** Eigenständiger Vorgang zur Ausführung. Entsteht aus einem angenommenen Angebot **oder direkt ohne Angebot** als Regieauftrag.
 
-- **Bautagesbericht:** Interne Dokumentation tatsächlicher Arbeiten und Termine; kein Abrechnungsnachweis. Kunde ist Pflicht, ein Auftrag optional – auch dauerhaft.
+- **Bautagesbericht:** Interne Dokumentation tatsächlicher Arbeiten und Termine; kein Abrechnungsnachweis. Auftrag, Kostenstelle und Kunde sind optional; Auftrag und Kostenstelle schließen sich aus (seit `0041` „Tagesbericht“).
 
 - **Aufmaß:** Nachweis ausgeführter Mengen zu vereinbarten Angebotspositionen.
 
@@ -450,7 +450,8 @@ Bestellungen sind **an Lieferanten gerichtete Beschaffungsdokumente**, keine Rec
 Neben Kundenaufträgen gibt es frei verwaltbare interne Kostenstellen (Stammdaten → Kostenstellen, z. B. K100 Verwaltung & Büro). Überall, wo Arbeitszeiten oder Kosten zugeordnet werden, gibt es **ein** Suchfeld „Auftrag / Kostenstelle“ für Auftrags- und Kostenstellennummern und -bezeichnungen – ohne Typauswahl. Calight bleibt ausdrücklich keine Buchhaltungssoftware.
 
 - **Zeiterfassung:** Manuelle Zeitblöcke und Auslagen auf Auftrag oder Kostenstelle. Rapportstunden folgen ausschließlich dem Auftrag ihres Rapports.
-- **Bautagesberichte (Migration `0040`):** Kostenziel über dasselbe Feld – Kundenauftrag, allgemeine Kostenstelle (z. B. Angebotsbesichtigung beim Kunden auf K110) oder keines; der Kunde bleibt Pflicht. Die Zeitbuchungen übernehmen das Ziel; das Büro kann es nachträglich in alle Richtungen wechseln (protokolliert, keine neuen Buchungen). PDF zeigt die Kostenstelle statt einer Auftragsnummer. Rapporte bleiben ausschließlich auftragsbezogen. Gesamtstunden bleiben unverändert; Auftrags-Ist-Stunden enthalten keine Kostenstellenstunden. Die Auswertung gruppiert nach Auftrag / Kostenstelle.
+- **Bautagesberichte (Migration `0040`):** Kostenziel über dasselbe Feld – Kundenauftrag, allgemeine Kostenstelle (z. B. Angebotsbesichtigung beim Kunden auf K110) oder keines; der Kunde ist seit `0041` optional. Die Zeitbuchungen übernehmen das Ziel; das Büro kann es nachträglich in alle Richtungen wechseln (protokolliert, keine neuen Buchungen). PDF zeigt die Kostenstelle statt einer Auftragsnummer. Rapporte bleiben ausschließlich auftragsbezogen. Gesamtstunden bleiben unverändert; Auftrags-Ist-Stunden enthalten keine Kostenstellenstunden. Die Auswertung gruppiert nach Auftrag / Kostenstelle.
+- **Tagesberichte (Migration `0041`):** sichtbare Umbenennung „Bautagesbericht“ → „Tagesbericht“ (technische Namen unverändert). Kunde optional (`daily_reports.customer_id` und `material_requests.customer_id` nullable, Neuaufbau von sieben Tabellen mit Datenerhalt); Materialanforderungen übernehmen die Kostenstelle des Berichts (`material_requests.cost_center_id`). Anlegen: Auftrag/Kostenstelle → Berichtsdatum → Bezeichnung → Kunde → Projekt. Rapporte unverändert auftragsbezogen.
 - **Bestellungen:** Hauptzuordnung auf Auftrag oder Kostenstelle; gemischte Bestellungen über die vorhandene Kostenverteilung (feste Nettobeträge je Auftrag oder Kostenstelle). Eine positionsweise Zuordnung sieht die Bestellarchitektur nicht vor und wurde bewusst nicht eingeführt.
 - **Übersicht je Kostenstelle und Kalenderjahr:** Arbeitszeit (zentrale Zeitbuchungen nach Buchungstag); mit `costs.read` Bestellkosten (Bestelldatum, nur bekannte Ist-Kosten, bei Verteilung nur der zugeordnete Betrag) und Auslagen. Keine Umlagen, Zuschläge, Hierarchien oder Verteilungsschlüssel.
 - **Vorlage:** Zehn typische Kostenstellen (K100–K190) optional übernehmbar, idempotent.

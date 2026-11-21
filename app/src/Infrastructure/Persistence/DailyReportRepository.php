@@ -14,7 +14,7 @@ final readonly class DailyReportRepository
     /** @return list<array<string,mixed>> */
     public function all():array
     {
-        return$this->pdo->query("SELECT r.*,o.order_number,o.title order_title,o.status order_status,cc.number cost_center_number,cc.name cost_center_name,c.customer_number,CASE WHEN c.customer_type='company' THEN c.company_name ELSE trim(c.first_name||' '||c.last_name) END customer_name,u.display_name creator_name,(SELECT COUNT(*) FROM daily_report_time_entries t WHERE t.report_id=r.id) entry_count,(SELECT group_concat(t.duration_hours,'|') FROM daily_report_time_entries t WHERE t.report_id=r.id) duration_values,(SELECT group_concat(t.labor_cost,'|') FROM daily_report_time_entries t WHERE t.report_id=r.id) cost_values,(SELECT group_concat(DISTINCT t.employee_id) FROM daily_report_time_entries t WHERE t.report_id=r.id) employee_ids,(SELECT group_concat(DISTINCT e.display_name) FROM daily_report_time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.report_id=r.id) employee_names FROM daily_reports r LEFT JOIN orders o ON o.id=r.order_id LEFT JOIN cost_centers cc ON cc.id=r.cost_center_id JOIN customers c ON c.id=r.customer_id JOIN users u ON u.id=r.created_by_user_id ORDER BY r.report_date DESC,r.created_at DESC")->fetchAll();
+        return$this->pdo->query("SELECT r.*,o.order_number,o.title order_title,o.status order_status,cc.number cost_center_number,cc.name cost_center_name,c.customer_number,CASE WHEN c.customer_type='company' THEN c.company_name ELSE trim(c.first_name||' '||c.last_name) END customer_name,u.display_name creator_name,(SELECT COUNT(*) FROM daily_report_time_entries t WHERE t.report_id=r.id) entry_count,(SELECT group_concat(t.duration_hours,'|') FROM daily_report_time_entries t WHERE t.report_id=r.id) duration_values,(SELECT group_concat(t.labor_cost,'|') FROM daily_report_time_entries t WHERE t.report_id=r.id) cost_values,(SELECT group_concat(DISTINCT t.employee_id) FROM daily_report_time_entries t WHERE t.report_id=r.id) employee_ids,(SELECT group_concat(DISTINCT e.display_name) FROM daily_report_time_entries t JOIN employees e ON e.id=t.employee_id WHERE t.report_id=r.id) employee_names FROM daily_reports r LEFT JOIN orders o ON o.id=r.order_id LEFT JOIN cost_centers cc ON cc.id=r.cost_center_id LEFT JOIN customers c ON c.id=r.customer_id JOIN users u ON u.id=r.created_by_user_id ORDER BY r.report_date DESC,r.created_at DESC")->fetchAll();
     }
 
     /** Sortierbare Spalten der Berichtsübersicht mit natürlicher Richtung. */
@@ -68,7 +68,7 @@ final readonly class DailyReportRepository
              {$employeeNames} AS employee_names,
              (SELECT group_concat(t.duration_hours, '|') FROM daily_report_time_entries t WHERE t.report_id = r.id) AS duration_values,
              (SELECT group_concat(t.labor_cost, '|') FROM daily_report_time_entries t WHERE t.report_id = r.id) AS cost_values",
-            'daily_reports r LEFT JOIN orders o ON o.id = r.order_id LEFT JOIN cost_centers cc ON cc.id = r.cost_center_id JOIN customers c ON c.id = r.customer_id LEFT JOIN projects p ON p.id = r.project_id',
+            'daily_reports r LEFT JOIN orders o ON o.id = r.order_id LEFT JOIN cost_centers cc ON cc.id = r.cost_center_id LEFT JOIN customers c ON c.id = r.customer_id LEFT JOIN projects p ON p.id = r.project_id',
             [
                 'date' => 'r.report_date',
                 'order' => "COALESCE(o.order_number, cc.number, '') COLLATE NOCASE",
@@ -87,7 +87,7 @@ final readonly class DailyReportRepository
     /** @return array<string,mixed>|null */
     public function find(string $id):?array
     {
-        $s=$this->pdo->prepare("SELECT r.*,o.order_number,o.title order_title,o.status order_status,o.basis_json,o.project_id order_project_id,cc.number cost_center_number,cc.name cost_center_name,c.customer_number,CASE WHEN c.customer_type='company' THEN c.company_name ELSE trim(c.first_name||' '||c.last_name) END customer_name,p.project_number,p.name project_name,u.display_name creator_name,ua.display_name order_assigned_by_name FROM daily_reports r LEFT JOIN orders o ON o.id=r.order_id LEFT JOIN cost_centers cc ON cc.id=r.cost_center_id JOIN customers c ON c.id=r.customer_id LEFT JOIN projects p ON p.id=r.project_id JOIN users u ON u.id=r.created_by_user_id LEFT JOIN users ua ON ua.id=r.order_assigned_by_user_id WHERE r.id=:id");$s->execute(['id'=>$id]);$row=$s->fetch();return is_array($row)?$row:null;
+        $s=$this->pdo->prepare("SELECT r.*,o.order_number,o.title order_title,o.status order_status,o.basis_json,o.project_id order_project_id,cc.number cost_center_number,cc.name cost_center_name,c.customer_number,CASE WHEN c.customer_type='company' THEN c.company_name ELSE trim(c.first_name||' '||c.last_name) END customer_name,p.project_number,p.name project_name,u.display_name creator_name,ua.display_name order_assigned_by_name FROM daily_reports r LEFT JOIN orders o ON o.id=r.order_id LEFT JOIN cost_centers cc ON cc.id=r.cost_center_id LEFT JOIN customers c ON c.id=r.customer_id LEFT JOIN projects p ON p.id=r.project_id JOIN users u ON u.id=r.created_by_user_id LEFT JOIN users ua ON ua.id=r.order_assigned_by_user_id WHERE r.id=:id");$s->execute(['id'=>$id]);$row=$s->fetch();return is_array($row)?$row:null;
     }
 
     /** @return list<array<string,mixed>> */
@@ -182,12 +182,14 @@ final readonly class DailyReportRepository
      * Die Stunden folgen dem Ziel (labor_counts_for_order = 1 nur mit Auftrag); jede Änderung wird
      * in daily_report_order_events protokolliert (eine Historie für beide Zielarten).
      */
-    public function setTarget(string $id, int $version, ?string $previousOrderId, ?string $previousCostCenterId, ?string $orderId, ?string $costCenterId, ?string $projectId, string $userId, string $at): bool
+    public function setTarget(string $id, int $version, ?string $previousOrderId, ?string $previousCostCenterId, ?string $orderId, ?string $costCenterId, ?string $projectId, string $userId, string $at, ?string $customerId = null): bool
     {
+        // Ein Bericht ohne Kunde übernimmt den Kunden des neu zugeordneten Auftrags; ein vorhandener Kunde bleibt.
         $statement = $this->pdo->prepare('UPDATE daily_reports SET order_id = :order_id, cost_center_id = :cost_center_id, project_id = COALESCE(:project_id, project_id),
+            customer_id = COALESCE(customer_id, :customer_id),
             labor_counts_for_order = CASE WHEN :order_id IS NULL THEN 0 ELSE 1 END, order_assigned_at = :at, order_assigned_by_user_id = :user,
             version = version + 1, updated_at = :at WHERE id = :id AND version = :version AND order_id IS :previous AND cost_center_id IS :previous_cost_center');
-        $statement->execute(['order_id' => $orderId, 'cost_center_id' => $costCenterId, 'project_id' => $projectId, 'at' => $at, 'user' => $userId, 'id' => $id, 'version' => $version,
+        $statement->execute(['order_id' => $orderId, 'cost_center_id' => $costCenterId, 'project_id' => $projectId, 'customer_id' => $customerId, 'at' => $at, 'user' => $userId, 'id' => $id, 'version' => $version,
             'previous' => $previousOrderId, 'previous_cost_center' => $previousCostCenterId]);
         if ($statement->rowCount() !== 1) {
             return false;

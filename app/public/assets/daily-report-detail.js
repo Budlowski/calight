@@ -85,13 +85,13 @@
 
   function renderHeader() {
     const reportDate = format.date(report.report_date);
-    root.querySelector("[data-title]").textContent = report.title || `Bautagesbericht vom ${reportDate}`;
+    root.querySelector("[data-title]").textContent = report.title || `Tagesbericht vom ${reportDate}`;
     const assignment = report.order_id ? report.order_number : report.cost_center_id ? report.cost_center_number : "Ohne Zuordnung";
     root.querySelector("[data-meta]").textContent = [assignment, report.customer_name, report.project_name, `erstellt von ${report.creator_name}`].filter(Boolean).join(" · ");
     root.querySelector("[data-order-crumb]").innerHTML = report.order_id ? `<a href="/orders/${encodeURIComponent(report.order_id)}">${esc(report.order_number)}</a>` : "";
     root.querySelector("[data-order-crumb]").hidden = !report.order_id;
     root.querySelector("[data-current-crumb]").textContent = reportDate;
-    document.title = `Bautagesbericht ${reportDate} · ${assignment}`;
+    document.title = `Tagesbericht ${reportDate} · ${assignment}`;
     renderAssignment();
   }
 
@@ -106,13 +106,14 @@
   function renderAssignment() {
     const box = root.querySelector("[data-assignment]");
     const assigned = report.order_assigned_at ? ` <small class="muted">zugeordnet von ${esc(report.order_assigned_by_name)} am ${format.dateTime(report.order_assigned_at)}</small>` : "";
+    // Primär das Kostenziel, danach Kunde und Projekt als optionale Kontextangaben.
     const lines = [
-      `<dt>Kunde</dt><dd>${esc(report.customer_name)}${report.customer_number ? ` <span class="muted">(${esc(report.customer_number)})</span>` : ""}</dd>`,
-      report.project_id ? `<dt>Projekt</dt><dd>${esc([report.project_number, report.project_name].filter(Boolean).join(" · "))}</dd>` : "",
       `<dt>Auftrag / Kostenstelle</dt><dd>${report.order_id
         ? `<a href="/orders/${encodeURIComponent(report.order_id)}">${esc(report.order_number)} · ${esc(report.order_title)}</a>${assigned}`
         : report.cost_center_id ? `${esc(report.cost_center_number)} · ${esc(report.cost_center_name)} <small class="muted">Kostenstelle</small>${assigned}`
           : '<span class="muted">Ohne Zuordnung</span>'}</dd>`,
+      `<dt>Kunde</dt><dd>${report.customer_id ? `${esc(report.customer_name)}${report.customer_number ? ` <span class="muted">(${esc(report.customer_number)})</span>` : ""}` : '<span class="muted">–</span>'}</dd>`,
+      report.project_id ? `<dt>Projekt</dt><dd>${esc([report.project_number, report.project_name].filter(Boolean).join(" · "))}</dd>` : "",
       `<dt>Arbeitszeiten</dt><dd>erscheinen in der Zeiterfassung der Mitarbeiter${report.order_id ? " und zählen als Ist-Stunden dieses Auftrags" : report.cost_center_id ? " und zählen zu dieser Kostenstelle" : " (ohne Zuordnung)"}</dd>`,
     ];
     const events = report.orderEvents || [];
@@ -240,7 +241,8 @@
       return;
     }
     // Gemeinsames Feld: Aufträge dieses Kunden (passendes Projekt) und allgemeine Kostenstellen.
-    const customerOrders = new Set(referenceOrders.filter((order) => order.customer_id === report.customer_id
+    // Mit Kunde nur dessen Aufträge (passendes Projekt); ohne Kunde alle erlaubten Aufträge (der Kunde wird übernommen).
+    const customerOrders = new Set(referenceOrders.filter((order) => (!report.customer_id || order.customer_id === report.customer_id)
       && (report.order_id || !report.project_id || !order.project_id || order.project_id === report.project_id)).map((order) => order.id));
     const targets = referenceTargets.filter((target) => target.type !== "order" || customerOrders.has(target.id));
     const dialog = document.createElement("form");
@@ -319,7 +321,7 @@
       });
       dirty = false;
       await load();
-      notify(message, "Bautagesbericht wurde gespeichert.", "success");
+      notify(message, "Tagesbericht wurde gespeichert.", "success");
     } catch (exception) {
       error.textContent = exception.message;
       error.hidden = false;
@@ -331,7 +333,7 @@
 
   remove.addEventListener("click", async () => {
     const confirmed = await CalightModal.confirm({
-      title: "Bautagesbericht löschen",
+      title: "Tagesbericht löschen",
       content: "Der Bericht und seine Zeiteinträge werden unwiderruflich gelöscht.",
       confirmLabel: "Löschen",
       danger: true,

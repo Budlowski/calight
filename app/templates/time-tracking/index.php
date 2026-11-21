@@ -3,7 +3,7 @@
     <div class="page-heading">
         <div>
             <h1>Zeiterfassung</h1>
-            <p class="muted">Arbeitszeiten aus Rapporten, Bautagesberichten und eigenen Zeitbuchungen.</p>
+            <p class="muted">Arbeitszeiten aus Rapporten, Tagesberichten und eigenen Zeitbuchungen.</p>
         </div>
     </div>
     <div class="notice" data-message role="status" hidden></div>

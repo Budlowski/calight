@@ -7,7 +7,7 @@ namespace App\Application;
 use App\Infrastructure\Pdf\SimplePdf;
 
 /**
- * Gemeinsamer Briefbogen für Rapporte, Aufmaße und Bautagesberichte.
+ * Gemeinsamer Briefbogen für Rapporte, Aufmaße und Tagesberichte.
  *
  * Kopf (Firma, Logo), Fuß (Anschrift, Kontakt, Steuer- und Bankdaten),
  * Empfängerblock, Metadaten und Seitenumbrüche folgen den Dokumenteinstellungen

@@ -60,7 +60,7 @@ if ($showShell): ?>
                 . $navLink('/orders', 'clipboard-list', 'Aufträge', ['orders.read'])
                 . $navLink('/documents', 'files', 'Dokumente', ['documents.read'])) ?>
             <?= $navGroup('Ausführung', $navLink('/time-tracking', 'clock-3', 'Zeiterfassung', ['timesheet.own'])
-                . $navLink('/daily-reports', 'calendar-days', 'Bautagesberichte', ['reports.read'])
+                . $navLink('/daily-reports', 'calendar-days', 'Tagesberichte', ['reports.read'])
                 . $navLink('/work-reports', 'clipboard-check', 'Rapporte', ['workreports.read'])
                 . $navLink('/measurements', 'ruler', 'Aufmaße', ['measurements.read'])
                 . $navLink('/material-requests', 'package', 'Materialanforderungen', ['reports.read'])) ?>

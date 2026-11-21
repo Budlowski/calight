@@ -14,7 +14,7 @@ use App\Domain\Offer\OfferStructure;
  * Übernommen werden nur verkaufsseitige Werte (Menge, Einheit, verbindlicher
  * Einzelpreis); interne Kosten und Kalkulationsbestandteile werden nie
  * weitergegeben. Ziele werden stabil über "<quelle>:<quell-id>:<knoten-id>"
- * referenziert, wie bei der Zeiterfassung der Bautagesberichte.
+ * referenziert, wie bei der Zeiterfassung der Tagesberichte.
  */
 final readonly class OrderBasisPositions
 {

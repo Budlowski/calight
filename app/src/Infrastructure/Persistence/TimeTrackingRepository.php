@@ -14,7 +14,7 @@ final readonly class TimeTrackingRepository
     }
 
     /**
-     * Gemeinsame Spalten aller Buchungen: Auftrag, Kunde und Herkunft (Bautagesbericht/Rapport).
+     * Gemeinsame Spalten aller Buchungen: Auftrag, Kunde und Herkunft (Tagesbericht/Rapport).
      * Der Kunde kommt aus dem Auftrag, sonst aus dem Bericht.
      */
     private const ENTRY_SELECT = "t.*, o.order_number, o.title AS order_title, u.display_name AS updated_by_name, cu.display_name AS created_by_name,

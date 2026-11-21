@@ -171,7 +171,7 @@
       <div class="${incomplete ? "is-incomplete" : ""}"><span>Ohne Uhrzeit${incomplete ? " · unvollständig" : ""}</span><strong>${hours(untimed)}</strong></div>${extra}
     </div>${sourceLine(totals)}`;
   };
-  /** Herkunft der Summe (Rapport, Bautagesbericht, manuell) als dezente Zeile. */
+  /** Herkunft der Summe (Rapport, Tagesbericht, manuell) als dezente Zeile. */
   const sourceLine = (totals) => {
     if (!totals.bySource) return "";
     const parts = Object.entries(reference.sourceKinds).map(([kind, label]) => (totals.bySource[kind] ? `${label} ${hours(totals.bySource[kind])}` : "")).filter(Boolean);

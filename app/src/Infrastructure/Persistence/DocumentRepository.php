@@ -55,14 +55,14 @@ final readonly class DocumentRepository
             FROM measurements m JOIN orders o ON o.id = m.order_id WHERE m.status = 'completed'")->fetchAll();
     }
 
-    /** Bautagesberichte (PDF wird vom Fachmodul erzeugt). @return list<array<string,mixed>> */
+    /** Tagesberichte (PDF wird vom Fachmodul erzeugt). @return list<array<string,mixed>> */
     public function dailyReports(): array
     {
         return $this->pdo->query('SELECT r.id, r.report_date, r.title, r.updated_at, r.order_id, o.order_number, r.customer_id, r.project_id
             FROM daily_reports r LEFT JOIN orders o ON o.id = r.order_id')->fetchAll();
     }
 
-    /** Anhänge zu Bautagesberichten. @return list<array<string,mixed>> */
+    /** Anhänge zu Tagesberichten. @return list<array<string,mixed>> */
     public function dailyReportAttachments(): array
     {
         return $this->pdo->query('SELECT a.id, a.report_id, a.original_name, a.mime_type, a.storage_path, a.created_at, r.report_date, r.order_id, o.order_number, r.customer_id, r.project_id

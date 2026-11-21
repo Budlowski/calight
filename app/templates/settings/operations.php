@@ -4,7 +4,7 @@
     <div class="page-heading"><div><h1>Betrieb</h1><p class="muted">Betriebliche Vorgaben für alle Benutzer. Änderungen verändern keine bestehenden Buchungen oder Berichte.</p></div></div>
     <div class="notice" data-message role="status" hidden></div>
     <section class="card settings-section">
-        <div class="settings-section-heading"><div><h2>Zeiterfassung</h2><p class="muted">Gilt für Rapporte, Bautagesberichte und die Zeiterfassung.</p></div></div>
+        <div class="settings-section-heading"><div><h2>Zeiterfassung</h2><p class="muted">Gilt für Rapporte, Tagesberichte und die Zeiterfassung.</p></div></div>
         <div class="form-stack" data-settings><p class="muted">Einstellungen werden geladen …</p></div>
     </section>
 </div>

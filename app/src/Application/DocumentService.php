@@ -20,7 +20,7 @@ use Throwable;
 /**
  * Zentrale Dokumentenübersicht und geschäftsbezogene Anhänge (Phase 3.4.2). Kein DMS.
  *
- * - Fachdokumente (Angebote, Bestellungen, Rapporte, Aufmaße, Bautagesberichte) bleiben in
+ * - Fachdokumente (Angebote, Bestellungen, Rapporte, Aufmaße, Tagesberichte) bleiben in
  *   ihren Modulen; hier entsteht nur eine Leseprojektion mit Links auf deren Download-Routen.
  *   Je Quelle gelten die Leserechte des Fachmoduls (Lieferantenrechnungen zusätzlich costs.read).
  * - Allgemeine Anhänge werden einmal gespeichert und direkt Kunden, Ansprechpartnern,
@@ -45,7 +45,7 @@ final readonly class DocumentService
         'work_report' => 'Rapport',
         'work_report_evidence' => 'Rapport-Nachweis',
         'measurement' => 'Aufmaß',
-        'daily_report' => 'Bautagesbericht',
+        'daily_report' => 'Tagesbericht',
         'daily_report_attachment' => 'Berichtsanhang',
     ];
     public const LIST_SORTS = ['date' => 'desc', 'title' => 'asc', 'type' => 'asc'];
@@ -219,17 +219,17 @@ final readonly class DocumentService
         if ($this->can($actor, 'reports.read')) {
             foreach ($this->documents->dailyReports() as $report) {
                 $date = (new DateTimeImmutable((string) $report['report_date']))->format('d.m.Y');
-                $rows[] = $row('daily-report:' . $report['id'], 'daily_report', 'Bautagesbericht ' . $date . ($report['title'] !== '' ? ' · ' . $report['title'] : ''),
-                    'Bautagesbericht_' . $report['report_date'] . '.pdf', 'application/pdf', $report['report_date'],
+                $rows[] = $row('daily-report:' . $report['id'], 'daily_report', 'Tagesbericht ' . $date . ($report['title'] !== '' ? ' · ' . $report['title'] : ''),
+                    'Tagesbericht_' . $report['report_date'] . '.pdf', 'application/pdf', $report['report_date'],
                     // Berichte ohne Auftrag: keine leere Auftragsreferenz, nur der Bericht selbst.
                     $report['order_id'] !== null ? [['label' => 'Auftrag ' . $report['order_number'], 'href' => '/orders/' . rawurlencode((string) $report['order_id'])]]
-                        : [['label' => 'Bautagesbericht ' . $date, 'href' => '/daily-reports/' . rawurlencode((string) $report['id'])]],
+                        : [['label' => 'Tagesbericht ' . $date, 'href' => '/daily-reports/' . rawurlencode((string) $report['id'])]],
                     '/api/daily-reports/' . rawurlencode((string) $report['id']) . '/pdf', $context($report['customer_id'], $report['project_id'], $report['order_id']));
             }
             foreach ($this->documents->dailyReportAttachments() as $attachment) {
                 $rows[] = $row('daily-report-attachment:' . $attachment['id'], 'daily_report_attachment', (string) $attachment['original_name'], (string) $attachment['original_name'],
                     (string) $attachment['mime_type'], $attachment['created_at'],
-                    array_merge([['label' => 'Bautagesbericht ' . (new DateTimeImmutable((string) $attachment['report_date']))->format('d.m.Y'), 'href' => '/daily-reports/' . rawurlencode((string) $attachment['report_id'])]],
+                    array_merge([['label' => 'Tagesbericht ' . (new DateTimeImmutable((string) $attachment['report_date']))->format('d.m.Y'), 'href' => '/daily-reports/' . rawurlencode((string) $attachment['report_id'])]],
                         $attachment['order_id'] !== null ? [['label' => 'Auftrag ' . $attachment['order_number'], 'href' => '/orders/' . rawurlencode((string) $attachment['order_id'])]] : []),
                     '/api/daily-reports/' . rawurlencode((string) $attachment['report_id']) . '/attachments/' . rawurlencode((string) $attachment['id']),
                     $context($attachment['customer_id'], $attachment['project_id'], $attachment['order_id']));
