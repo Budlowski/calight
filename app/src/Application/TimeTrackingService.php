@@ -102,7 +102,9 @@ final readonly class TimeTrackingService
         }
         $details = $this->times->details((string) $employee['id'], $date);
         $expenses = $this->times->expenses((string) $employee['id'], $date, $date);
-        $canEdit = $this->canEdit($employee, $actor);
+        // Eingereichte und festgeschriebene Tage sind für alle gesperrt (auch Büro/Admin).
+        $lockStatus = $this->times->dayLocks((string) $employee['id'], $date, $date)[$date] ?? 'open';
+        $canEdit = $this->canEdit($employee, $actor) && !self::locked($lockStatus);
         return [
             'employee' => ['id' => $employee['id'], 'name' => $employee['display_name'], 'active' => (bool) $employee['active']],
             'date' => $date,
@@ -116,6 +118,8 @@ final readonly class TimeTrackingService
             'expenseTotal' => $this->sum(array_column($expenses, 'amount')),
             'warnings' => $this->warnings((string) $employee['id'], $date, $entries),
             'canEdit' => $canEdit,
+            'lockStatus' => $lockStatus,
+            'lockLabel' => TimeApprovalService::DAY_STATUS[$lockStatus] ?? $lockStatus,
         ];
     }
 
@@ -135,6 +139,7 @@ final readonly class TimeTrackingService
         $shares = $this->dayShares($entries, $from, $to, $timesOptional);
         $details = array_column($this->times->detailsRange((string) $employee['id'], $from, $to), null, 'work_date');
         $expenses = $this->times->expenses((string) $employee['id'], $from, $to);
+        $locks = $this->times->dayLocks((string) $employee['id'], $from, $to);
         $days = [];
         $totals = ['netMinutes' => 0, 'travelMinutes' => 0, 'workMinutes' => 0, 'incompleteMinutes' => 0, 'untimedMinutes' => 0,
             'bySource' => ['work_report' => 0, 'daily_report' => 0, 'manual' => 0]];
@@ -151,6 +156,7 @@ final readonly class TimeTrackingService
                 'privateKm' => $details[$key]['private_km'] ?? null,
                 'expenseTotal' => $dayExpenses === [] ? null : $this->sum(array_column($dayExpenses, 'amount')),
                 'hasDetails' => isset($details[$key]),
+                'lockStatus' => $locks[$key] ?? 'open',
             ];
         }
         return [
@@ -414,6 +420,7 @@ final readonly class TimeTrackingService
         $employee = $this->employee(isset($input['employeeId']) ? (string) $input['employeeId'] : null, $actor);
         $this->assertEditable($employee, $actor);
         $values = $this->entryValues($input, (string) $employee['id'], null, $actor);
+        $this->assertDaysOpen((string) $employee['id'], self::touchedDates($values));
         $now = Clock::now();
         $this->times->insertEntry($values + [
             'id' => Uuid::v4(), 'employee_id' => $employee['id'], 'source_kind' => 'manual',
@@ -436,9 +443,12 @@ final readonly class TimeTrackingService
         $entry = $this->times->entry($id) ?? throw new DocumentValidationException(['Der Zeitblock wurde nicht gefunden.']);
         $employee = $this->employee((string) $entry['employee_id'], $actor);
         $this->assertEditable($employee, $actor);
+        $this->assertDaysOpen((string) $employee['id'], self::touchedDates($entry));
         $values = $entry['source_kind'] === 'manual'
             ? $this->entryValues($input, (string) $employee['id'], $entry, $actor)
             : $this->reportTimeValues($input, $entry);
+        // Verschiebung: alter und neuer Tag (inkl. Folgetag über Mitternacht).
+        $this->assertDaysOpen((string) $employee['id'], self::touchedDates($values + $entry));
         if (!$this->times->updateEntry($id, $this->version($input), $values + ['updated_by_user_id' => (string) $actor['id'], 'updated_at' => Clock::now()])) {
             throw new DocumentValidationException(['Der Zeitblock wurde zwischenzeitlich geändert. Bitte neu laden.']);
         }
@@ -454,6 +464,7 @@ final readonly class TimeTrackingService
         if ($entry['source_kind'] !== 'manual') {
             throw new DocumentValidationException(['Stunden aus ' . self::SOURCE_KINDS[$entry['source_kind']] . 'en werden im Bericht geändert, nicht in der Zeiterfassung.']);
         }
+        $this->assertDaysOpen((string) $employee['id'], self::touchedDates($entry));
         if (!$this->times->deleteEntry($id, $this->version($input))) {
             throw new DocumentValidationException(['Der Zeitblock wurde zwischenzeitlich geändert. Bitte neu laden.']);
         }
@@ -470,6 +481,7 @@ final readonly class TimeTrackingService
         $employee = $this->employee(isset($input['employeeId']) ? (string) $input['employeeId'] : null, $actor);
         $this->assertEditable($employee, $actor);
         $date = $this->date((string) ($input['date'] ?? ''));
+        $this->assertDaysOpen((string) $employee['id'], [$date]);
         // Abwesenheit (optional, nur Dokumentation).
         $absenceStart = trim((string) ($input['absenceStart'] ?? '')) !== '' ? $this->time((string) $input['absenceStart'], 'Beginn der Abwesenheit') : null;
         $absenceEnd = trim((string) ($input['absenceEnd'] ?? '')) !== '' ? $this->time((string) $input['absenceEnd'], 'Ende der Abwesenheit') : null;
@@ -505,6 +517,7 @@ final readonly class TimeTrackingService
         $employee = $this->employee(isset($input['employeeId']) && $input['employeeId'] !== '' ? (string) $input['employeeId'] : null, $actor);
         $this->assertEditable($employee, $actor);
         $date = $this->date((string) ($input['date'] ?? ''));
+        $this->assertDaysOpen((string) $employee['id'], [$date]);
         $amount = $this->decimal($input['amount'] ?? '', Decimal::MONEY_SCALE, 'Betrag');
         if ($amount === null || !BigDecimal::of($amount)->isPositive()) {
             throw new DocumentValidationException(['Bitte einen Betrag größer 0 angeben.']);
@@ -550,6 +563,7 @@ final readonly class TimeTrackingService
         $expense = $this->times->expense($id) ?? throw new DocumentValidationException(['Die Auslage wurde nicht gefunden.']);
         $employee = $this->employee((string) $expense['employee_id'], $actor);
         $this->assertEditable($employee, $actor);
+        $this->assertDaysOpen((string) $employee['id'], [(string) $expense['work_date']]);
         $this->times->deleteExpense($id);
         if ($expense['receipt_path'] !== null) {
             $this->discard((string) $expense['receipt_path']);
@@ -827,6 +841,89 @@ final readonly class TimeTrackingService
             throw new DocumentValidationException(['Ihrem Benutzerkonto ist kein Mitarbeiter zugeordnet. Bitte im Büro melden.']);
         }
         return $own;
+    }
+
+    /**
+     * Ziel-Mitarbeiter für andere Fachdienste (Freigaben): eigener Mitarbeiter oder – mit
+     * timesheet.manage – ein beliebiger.
+     *
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
+    public function resolveEmployee(?string $employeeId, array $actor): array
+    {
+        return $this->employee($employeeId, $actor);
+    }
+
+    /** Tagesangaben für Prüfung und Nachweis. @param array<string,mixed> $row @return array<string,mixed> */
+    public function detailsSnapshot(array $row): array
+    {
+        return [
+            'overnight' => (bool) $row['overnight'], 'travelDay' => $row['travel_day'], 'travelDayLabel' => self::TRAVEL_DAYS[$row['travel_day']] ?? (string) $row['travel_day'],
+            'location' => (string) $row['location'], 'notes' => (string) $row['notes'], 'privateKm' => $row['private_km'], 'privateKmPurpose' => (string) $row['private_km_purpose'],
+            'summary' => implode(' · ', array_filter([
+                $row['travel_day'] !== 'none' ? self::TRAVEL_DAYS[$row['travel_day']] ?? '' : '', (bool) $row['overnight'] ? 'Übernachtung' : '', (string) $row['location'],
+                (string) $row['private_km_purpose'], (string) $row['notes'],
+            ])),
+        ];
+    }
+
+    /**
+     * Hinweise zu unvollständigen Reiseangaben eines Tages.
+     *
+     * @param array<string,mixed>|null $details
+     * @param array<string,bool|string> $settings
+     * @return list<string>
+     */
+    public function travelWarnings(?array $details, array $settings): array
+    {
+        if ($details === null) {
+            return [];
+        }
+        $warnings = [];
+        if (($details['overnight'] || $details['travelDay'] !== 'none') && trim((string) $details['location']) === '') {
+            $warnings[] = 'Reisetag oder Übernachtung ohne Einsatzort/Reiseziel.';
+        }
+        if ($details['privateKm'] !== null && trim((string) $details['privateKmPurpose']) === '') {
+            $warnings[] = 'Privat-Pkw-Kilometer ohne Fahrtzweck.';
+        }
+        return $warnings;
+    }
+
+    /** Summen der Reiseangaben. @param list<array<string,mixed>|null> $details @return array<string,mixed> */
+    public function travelTotals(array $details): array
+    {
+        return ['privateKm' => $this->decimalSum(array_map(static fn (?array $day): ?string => $day['privateKm'] ?? null, $details), 1)];
+    }
+
+    private static function locked(string $status): bool
+    {
+        return in_array($status, ['submitted', 'approved'], true);
+    }
+
+    /** Kalendertage einer Buchung (Buchungstag und ggf. Folgetag). @param array<string,mixed> $values @return list<string> */
+    private static function touchedDates(array $values): array
+    {
+        $date = (string) $values['work_date'];
+        return (bool) ($values['ends_next_day'] ?? false) ? [$date, (new DateTimeImmutable($date))->modify('+1 day')->format('Y-m-d')] : [$date];
+    }
+
+    /**
+     * Verständliche Vorprüfung der Tagessperre. Maßgeblich ist der Datenbank-Trigger (Migration
+     * 0042), der auch parallele Änderungen und alle anderen Module abfängt.
+     *
+     * @param list<string> $dates
+     */
+    private function assertDaysOpen(string $employeeId, array $dates): void
+    {
+        sort($dates);
+        $locks = $this->times->dayLocks($employeeId, $dates[0], $dates[count($dates) - 1]);
+        foreach ($dates as $date) {
+            if (self::locked($locks[$date] ?? 'open')) {
+                throw new DocumentValidationException([sprintf('Der %s ist %s und kann nicht geändert werden. Bitte im Büro zur Korrektur öffnen lassen.',
+                    (new DateTimeImmutable($date))->format('d.m.Y'), ($locks[$date] ?? '') === 'approved' ? 'festgeschrieben' : 'eingereicht')]);
+            }
+        }
     }
 
     /** @param array<string,mixed> $employee @param array<string,mixed> $actor */

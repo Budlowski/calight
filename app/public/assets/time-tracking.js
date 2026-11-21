@@ -106,7 +106,24 @@
     </li>`;
   };
 
-  globalThis.CalightTimeTracking = Object.freeze({ addDays, weekStart, monthRange, addMonths, hours, weekday, toMinutes, toTime, isoWeek, monthGrid, travelShort, netFromTimes, entryRow });
+  // ---------------------------------------------------------------------------
+  // Freigabe: Tagesstatus, Zeitraumzusammenfassung (reine Darstellung, auch für Tests)
+  // ---------------------------------------------------------------------------
+  const LOCK_LABELS = { open: "Offen", submitted: "Eingereicht", approved: "Festgeschrieben", reopened: "Zur Korrektur geöffnet", mixed: "Teilweise eingereicht" };
+  const LOCK_SYMBOLS = { submitted: "⧗", approved: "✓", reopened: "↺" };
+  /** Kleines Kennzeichen des Tagesstatus in Kalenderzellen (offen: keines). */
+  const lockFlag = (status) => (LOCK_SYMBOLS[status] ? `<span class="time-cal-flag time-lock-flag is-${status}" title="${LOCK_LABELS[status]}">${LOCK_SYMBOLS[status]}</span>` : "");
+  /** Statuskennzeichen als Text (Tag, Woche, Monat). */
+  const lockBadge = (status) => `<span class="time-lock-badge is-${esc(status)}">${esc(LOCK_LABELS[status] || status)}</span>`;
+  /** Sperrfehler und Warnungen als kompakte Listen. */
+  const issueList = (errors, warnings) => `${errors.length ? `<ul class="time-issues is-error">${errors.map((item) => `<li>${esc(item.message)}</li>`).join("")}</ul>` : ""}
+    ${warnings.length ? `<details class="time-issues-details"${errors.length ? "" : " open"}><summary>${warnings.length} ${warnings.length === 1 ? "Hinweis" : "Hinweise"}</summary><ul class="time-issues is-warning">${warnings.map((item) => `<li>${esc(item.message)}</li>`).join("")}</ul></details>` : ""}`;
+  /** Nachweise eines Zeitraums mit Revision; ersetzte gekennzeichnet. */
+  const statementList = (statements) => (statements.length
+    ? `<ul class="time-statements">${statements.map((item) => `<li${item.current ? "" : ' class="is-superseded"'}><a href="${esc(item.url)}" target="_blank" rel="noopener" data-icon="file-down">${esc(item.type === "week" ? "Woche" : "Monat")} ${esc(item.label)} · Revision ${item.revision}</a> <small class="muted">${item.current ? "aktuell" : "ersetzt – nicht mehr aktuell"}</small></li>`).join("")}</ul>`
+    : "");
+
+  globalThis.CalightTimeTracking = Object.freeze({ addDays, weekStart, monthRange, addMonths, hours, weekday, toMinutes, toTime, isoWeek, monthGrid, travelShort, netFromTimes, entryRow, lockFlag, lockBadge, issueList, statementList });
 
   const root = document.querySelector("#time-tracking-app");
   if (!root) return;
@@ -116,12 +133,13 @@
   const employeeSelect = root.querySelector("[data-employee]");
   const params = new URLSearchParams(location.search);
   const state = {
-    view: ["day", "week", "month", "report"].includes(params.get("view")) ? params.get("view") : "week",
+    view: ["day", "week", "month", "report", "approvals"].includes(params.get("view")) ? params.get("view") : "week",
     date: /^\d{4}-\d{2}-\d{2}$/.test(params.get("date") || "") ? params.get("date") : localToday(),
     employee: params.get("employee") || "",
   };
   let reference = null;
   let current = null;
+  let currentPeriod = null;
   const money = (value) => format.money(value);
   const km = (value) => (value === null || value === undefined || value === "" ? "–" : `${format.number(value, 1)} km`);
   const activityClass = (activity) => `time-activity time-activity-${esc(activity)}`;
@@ -142,10 +160,12 @@
       button.classList.toggle("is-active", active);
       button.setAttribute("aria-selected", String(active));
     });
-    employeeSelect.closest("[data-employee-field]").hidden = !reference.canManage || state.view === "report";
+    employeeSelect.closest("[data-employee-field]").hidden = !reference.canManage || state.view === "report" || state.view === "approvals";
+    root.querySelector(".time-period").hidden = state.view === "approvals";
     try {
       if (state.view === "day") await renderDay();
       else if (state.view === "report") await renderReport();
+      else if (state.view === "approvals") await renderApprovals();
       else await renderRange();
     } catch (exception) {
       content.innerHTML = "";
@@ -183,11 +203,11 @@
     const selected = day.date === state.date;
     const untimed = day.untimedMinutes ? `, davon ${hours(day.untimedMinutes)} ohne Uhrzeit` : "";
     return `<button type="button" class="time-cal-day${today ? " is-today" : ""}${selected ? " is-selected" : ""}${outside ? " is-outside" : ""}${day.netMinutes ? " has-time" : ""}" data-open-day="${day.date}"
-        ${selected ? 'aria-current="date" ' : ""}aria-label="${weekday(day.date)} ${format.date(day.date)}: ${day.netMinutes ? hours(day.netMinutes) + untimed : "keine Einträge"}">
+        ${selected ? 'aria-current="date" ' : ""}aria-label="${weekday(day.date)} ${format.date(day.date)}: ${day.netMinutes ? hours(day.netMinutes) + untimed : "keine Einträge"}${day.lockStatus && day.lockStatus !== "open" ? `, ${LOCK_LABELS[day.lockStatus]}` : ""}">
         <span class="time-cal-head"><span class="time-cal-weekday">${weekday(day.date)}</span><span class="time-cal-date">${Number(day.date.slice(8, 10))}.${showWeek || state.view === "week" ? `${Number(day.date.slice(5, 7))}.` : ""}</span>${week}</span>
         <strong class="time-cal-hours">${day.netMinutes ? hours(day.netMinutes).replace(" h", "") : "–"}</strong>
         <small class="time-cal-travel">${travelShort(day.travelMinutes)}</small>
-        <span class="time-cal-flags" aria-hidden="true">${day.untimedMinutes ? `<span class="time-cal-flag${day.incompleteMinutes ? " is-incomplete" : ""}" title="${hours(day.untimedMinutes)} ohne Uhrzeit">◷</span>` : ""}${day.privateKm || day.expenseTotal ? '<span class="time-cal-flag" title="Kilometer oder Auslagen erfasst">•</span>' : ""}</span>
+        <span class="time-cal-flags" aria-hidden="true">${lockFlag(day.lockStatus)}${day.untimedMinutes ? `<span class="time-cal-flag${day.incompleteMinutes ? " is-incomplete" : ""}" title="${hours(day.untimedMinutes)} ohne Uhrzeit">◷</span>` : ""}${day.privateKm || day.expenseTotal ? '<span class="time-cal-flag" title="Kilometer oder Auslagen erfasst">•</span>' : ""}</span>
       </button>`;
   };
 
@@ -201,10 +221,12 @@
       ? `KW ${iso.week} · ${format.date(from)} – ${format.date(to)}`
       : new Intl.DateTimeFormat("de-DE", { month: "long", year: "numeric", timeZone: "UTC" }).format(parse(monthFrom));
     // Monatssummen exakt vom Server über die Tage des Monats (Randtage gehören zum Nachbarmonat).
-    const [data, monthData] = await Promise.all([
+    const [data, monthData, period] = await Promise.all([
       api(`/api/time-tracking/range?from=${from}&to=${to}${employeeQuery()}`),
       week ? null : api(`/api/time-tracking/range?from=${monthFrom}&to=${monthTo}${employeeQuery()}`),
+      api(`/api/time-tracking/period?type=${week ? "week" : "month"}&date=${week ? from : monthFrom}${employeeQuery()}`),
     ]);
+    currentPeriod = period;
     const byDate = Object.fromEntries(data.days.map((day) => [day.date, day]));
     const inMonth = (date) => date >= monthFrom && date <= monthTo;
     const totals = week ? data.totals : monthData.totals;
@@ -213,7 +235,129 @@
       ? `<div class="time-cal-row">${data.days.map((day) => calendarCell(day)).join("")}</div>`
       : grid.map((days) => `<div class="time-cal-row">${days.map((date, index) => calendarCell(byDate[date] || { date, netMinutes: 0, travelMinutes: 0 }, { outside: !inMonth(date), showWeek: index === 0 })).join("")}</div>`).join("");
     content.innerHTML = `${summaryTiles(totals, week ? "" : `<div><span>Privat-Pkw</span><strong>${km(totals.privateKm)}</strong></div><div><span>Auslagen</span><strong>${money(totals.expenseTotal)}</strong></div>`)}
-      <div class="time-calendar ${week ? "is-week" : "is-month"}" role="group" aria-label="${week ? "Wochenkalender" : "Monatskalender"}">${head}${body}</div>`;
+      <div class="time-calendar ${week ? "is-week" : "is-month"}" role="group" aria-label="${week ? "Wochenkalender" : "Monatskalender"}">${head}${body}</div>
+      ${periodPanel(period)}`;
+  }
+
+  /**
+   * Freigabe des angezeigten Zeitraums: Status, Prüfergebnis, Einreichen, Wiederöffnen (Büro),
+   * Nachweise mit Revisionen und Protokoll. Einreichen nur, wenn der Rhythmus den Zeitraum erlaubt.
+   */
+  function periodPanel(period) {
+    const typeLabel = period.period.type === "week" ? "Woche" : "Monat";
+    const allowed = period.allowedTypes.includes(period.period.type);
+    const openDays = (period.statusCounts.open || 0) + (period.statusCounts.reopened || 0);
+    const actions = [
+      allowed && openDays ? `<button class="button button-small" type="button" data-submit-period${period.canSubmit ? "" : " disabled"} data-icon="file-up">${typeLabel} einreichen</button>` : "",
+      period.canReopen ? '<button class="button button-light button-small" type="button" data-reopen-period data-icon="undo-2">Wieder öffnen</button>' : "",
+    ].join("");
+    const events = { submit: "Eingereicht", approve: "Festgeschrieben", return: "Zur Korrektur zurückgegeben", reopen: "Wieder geöffnet" };
+    return `<section class="card form-stack time-approval">
+      <div class="step-section-heading">
+        <div><h2>Freigabe ${esc(period.period.label)}</h2><small>${lockBadge(period.status)}${period.status === "mixed" ? ` <span class="muted">${Object.entries(period.statusCounts).map(([key, count]) => `${count} ${LOCK_LABELS[key]}`).join(" · ")}</span>` : ""}</small></div>
+        <div class="step-section-actions">${actions}</div>
+      </div>
+      ${openDays ? issueList(period.errors, period.warnings) : ""}
+      ${!allowed && openDays ? `<p class="muted">Eingereicht wird laut Betriebseinstellung ${period.rhythm === "week" ? "wöchentlich" : "monatlich"}.</p>` : ""}
+      ${statementList(period.statements)}
+      ${period.events.length ? `<details class="time-issues-details"><summary>Protokoll</summary><ul class="time-events">${period.events.map((event) => `<li>${format.dateTime(event.at)} · ${esc(events[event.action] || event.action)} (${format.date(event.from)}–${format.date(event.to)}) von ${esc(event.userName)}${event.reason ? ` – ${esc(event.reason)}` : ""}</li>`).join("")}</ul></details>` : ""}
+    </section>`;
+  }
+
+  /** Vor dem Einreichen: kompakte Zusammenfassung mit Stunden, Hinweisen und Sperrfehlern. */
+  async function submitPeriod() {
+    const period = currentPeriod;
+    const form = document.createElement("form");
+    form.className = "form-stack";
+    form.innerHTML = `<div class="time-summary"><div><span>Arbeitszeit</span><strong>${hours(period.totals.netMinutes)}</strong></div><div><span>Davon Reisezeit</span><strong>${hours(period.totals.travelMinutes)}</strong></div><div><span>Auslagen</span><strong>${money(period.totals.expenseTotal)}</strong></div></div>
+      ${issueList(period.errors, period.warnings)}
+      <p class="muted">Nach dem Einreichen sind die Zeiten, Reiseangaben und Auslagen dieser Tage gesperrt; das Büro prüft und schreibt sie fest. Auch arbeitsfreie Tage werden gesperrt.</p>
+      <p class="field-error" data-dialog-error hidden></p>`;
+    Calight.createDialog({
+      title: `${period.period.type === "week" ? "Woche" : "Monat"} ${period.period.label} einreichen`,
+      form,
+      submitLabel: "Einreichen",
+      submit: async () => {
+        await api("/api/time-tracking/submissions", { method: "POST", body: { type: period.period.type, date: period.period.from, employeeId: state.employee } });
+        notify(message, "Zeiten eingereicht.", "success");
+        await renderRange();
+      },
+    });
+  }
+
+  /** Büro: festgeschriebene Tage gezielt zur Korrektur öffnen (Begründung Pflicht). */
+  function reopenDialog(employeeId, from, to, after) {
+    const form = document.createElement("form");
+    form.className = "form-stack";
+    form.noValidate = true;
+    form.innerHTML = `<div class="dialog-form-grid">
+        <label><span class="field-label">Von</span><input name="from" type="date" required value="${esc(from)}"></label>
+        <label><span class="field-label">Bis</span><input name="to" type="date" required value="${esc(to)}"></label>
+        <label class="span-all"><span class="field-label">Begründung <span aria-hidden="true">*</span></span><textarea name="reason" rows="2" maxlength="1000" required></textarea></label>
+      </div>
+      <p class="muted">Der bisherige Nachweis bleibt unverändert erhalten und wird als nicht mehr aktuell gekennzeichnet. Nach der Korrektur sind erneute Einreichung und Festschreibung erforderlich.</p>
+      <p class="field-error" data-dialog-error hidden></p>`;
+    Calight.createDialog({
+      title: "Zur Korrektur öffnen",
+      form,
+      submitLabel: "Öffnen",
+      discardMessage: "Eingaben verwerfen?",
+      initialFocus: '[name="reason"]',
+      submit: async () => {
+        await api("/api/time-tracking/reopen", { method: "POST", body: { employeeId, from: form.elements.from.value, to: form.elements.to.value, reason: form.elements.reason.value.trim() } });
+        notify(message, "Zeitraum zur Korrektur geöffnet.", "success");
+        await after();
+      },
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Freigaben (Büro)
+  // ---------------------------------------------------------------------------
+  async function renderApprovals() {
+    const data = await api("/api/time-tracking/approvals");
+    const card = (item) => `<article class="card form-stack time-approval-item" data-submission="${esc(item.id)}">
+        <div class="step-section-heading">
+          <div><h2>${esc(item.employeeName)} · ${esc(item.type === "week" ? "Woche" : "Monat")} ${esc(item.label)}</h2>
+            <small>Eingereicht ${format.dateTime(item.submittedAt)} von ${esc(item.submittedByName)}</small></div>
+          <div class="step-section-actions"><button class="button button-light button-small" type="button" data-open-period="${esc(item.employeeId)}" data-period-type="${esc(item.type)}" data-period-date="${esc(item.from)}" data-icon="calendar-days">Zeiten ansehen</button></div>
+        </div>
+        <div class="time-summary"><div><span>Arbeitszeit</span><strong>${hours(item.totals.netMinutes)}</strong></div><div><span>Davon Reisezeit</span><strong>${hours(item.totals.travelMinutes)}</strong></div><div><span>Auslagen</span><strong>${money(item.totals.expenseTotal)}</strong></div></div>
+        ${issueList(item.errors, item.warnings)}
+        ${item.warnings.length ? '<label class="check-inline"><input type="checkbox" data-acknowledge> Hinweise geprüft und bestätigt</label>' : ""}
+        <label><span class="field-label">Kommentar (bei Rückgabe Pflicht; bei erheblichen Auffälligkeiten empfohlen)</span><textarea rows="2" maxlength="1000" data-comment></textarea></label>
+        <div class="time-approval-actions">
+          <button class="button" type="button" data-approve="${esc(item.id)}" data-version="${item.version}"${item.errors.length ? " disabled" : ""} data-icon="clipboard-check">Festschreiben</button>
+          <button class="button button-light" type="button" data-return="${esc(item.id)}" data-version="${item.version}" data-icon="undo-2">Zur Korrektur zurückgeben</button>
+        </div>
+      </article>`;
+    const decided = { approved: "Festgeschrieben", returned: "Zurückgegeben" };
+    content.innerHTML = `${data.items.length ? data.items.map(card).join("") : '<p class="empty-state">Keine eingereichten Zeiträume.</p>'}
+      ${data.recent.length ? `<section class="card form-stack"><h2>Zuletzt bearbeitet</h2><ul class="time-events">${data.recent.map((item) => `<li>${esc(item.employeeName)} · ${esc(item.label)}: ${esc(decided[item.status] || item.status)} ${item.decidedAt ? format.dateTime(item.decidedAt) : ""} ${item.decidedByName ? `von ${esc(item.decidedByName)}` : ""}${item.comment ? ` – ${esc(item.comment)}` : ""}</li>`).join("")}</ul></section>` : ""}`;
+  }
+
+  async function approvalAction(button, kind) {
+    const card = button.closest("[data-submission]");
+    try {
+      if (kind === "approve") {
+        await api(`/api/time-tracking/submissions/${encodeURIComponent(button.dataset.approve)}/approve`, { method: "POST", body: {
+          version: Number(button.dataset.version), acknowledgeWarnings: Boolean(card.querySelector("[data-acknowledge]")?.checked), comment: card.querySelector("[data-comment]").value.trim(),
+        } });
+        notify(message, "Zeiten festgeschrieben, Nachweis archiviert.", "success");
+      } else {
+        const reason = card.querySelector("[data-comment]").value.trim();
+        if (!reason) {
+          notify(message, "Bitte im Kommentarfeld eine Begründung für die Rückgabe angeben.");
+          card.querySelector("[data-comment]").focus();
+          return;
+        }
+        await api(`/api/time-tracking/submissions/${encodeURIComponent(button.dataset.return)}/return`, { method: "POST", body: { version: Number(button.dataset.version), reason } });
+        notify(message, "Zur Korrektur zurückgegeben.", "success");
+      }
+      await renderApprovals();
+    } catch (exception) {
+      notify(message, exception.message);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -233,6 +377,7 @@
       details.privateKm ? `Privat-Pkw ${km(details.privateKm)}` : "",
     ].filter(Boolean).map(esc).join(" · ") : "";
     content.innerHTML = `
+      ${day.lockStatus && day.lockStatus !== "open" ? `<p class="time-lock-note">${lockBadge(day.lockStatus)} ${day.lockStatus === "reopened" ? "Nach der Korrektur bitte erneut einreichen." : "Bearbeitung gesperrt."}</p>` : ""}
       ${summaryTiles(day.totals)}
       ${day.warnings.map((warning) => `<p class="time-hint" role="note"><span aria-hidden="true">⚠</span> ${esc(warning)}</p>`).join("")}
       ${!day.employee.active ? '<p class="notice notice-warning">Dieser Mitarbeiter ist archiviert.</p>' : ""}
@@ -545,6 +690,20 @@
       state.view = "day";
       return render();
     }
+    if (event.target.closest("[data-submit-period]")) return submitPeriod();
+    if (event.target.closest("[data-reopen-period]")) return reopenDialog(currentPeriod.employee.id, currentPeriod.period.from, currentPeriod.period.to, renderRange);
+    const approve = event.target.closest("[data-approve]");
+    if (approve) return approvalAction(approve, "approve");
+    const giveBack = event.target.closest("[data-return]");
+    if (giveBack) return approvalAction(giveBack, "return");
+    const openPeriod = event.target.closest("[data-open-period]");
+    if (openPeriod) {
+      state.employee = openPeriod.dataset.openPeriod;
+      employeeSelect.value = state.employee;
+      state.view = openPeriod.dataset.periodType;
+      state.date = openPeriod.dataset.periodDate;
+      return render();
+    }
     if (event.target.closest("[data-add-entry]")) return entryDialog();
     if (event.target.closest("[data-details]")) return detailsDialog();
     const edit = event.target.closest("[data-edit-entry]");
@@ -581,6 +740,7 @@
         if (!state.employee) state.employee = reference.ownEmployeeId ? "" : (reference.employees.find((item) => item.active)?.id || "");
         employeeSelect.value = state.employee || reference.ownEmployeeId || "";
         root.querySelector('[data-view="report"]').hidden = false;
+        root.querySelector('[data-view="approvals"]').hidden = false;
       }
       return render();
     })

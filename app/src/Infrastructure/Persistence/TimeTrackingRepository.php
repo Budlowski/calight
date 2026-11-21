@@ -75,6 +75,14 @@ final readonly class TimeTrackingRepository
         return $value === false || $value === '1';
     }
 
+    /** Tagesstatus der Freigabe (ohne Eintrag: offen). @return array<string,string> work_date => Status */
+    public function dayLocks(string $employeeId, string $from, string $to): array
+    {
+        $statement = $this->pdo->prepare('SELECT work_date, status FROM time_day_locks WHERE employee_id = :employee AND work_date BETWEEN :from AND :to');
+        $statement->execute(['employee' => $employeeId, 'from' => $from, 'to' => $to]);
+        return $statement->fetchAll(PDO::FETCH_KEY_PAIR);
+    }
+
     /** @return array<string,mixed>|null */
     public function details(string $employeeId, string $date): ?array
     {

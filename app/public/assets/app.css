@@ -1455,6 +1455,25 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 .time-cal-flags { position: absolute; top: 3px; right: 6px; display: flex; gap: 3px; }
 .time-cal-flag { color: var(--muted); font-size: 12px; line-height: 1; }
 .time-cal-flag.is-incomplete { color: #8a5a00; font-weight: 700; }
+/* Freigabe: Tagesstatus, Prüfhinweise, Nachweise (Zeiterfassung) */
+.time-lock-flag.is-approved { color: var(--success); font-weight: 700; }
+.time-lock-flag.is-submitted { color: #155f8f; font-weight: 700; }
+.time-lock-flag.is-reopened { color: #8a5a00; font-weight: 700; }
+.time-lock-badge { display: inline-block; padding: 1px 8px; border: 1px solid var(--line, #d5dbe1); border-radius: 999px; font-size: var(--font-small); font-weight: 600; color: var(--muted); }
+.time-lock-badge.is-approved { border-color: #a9cdb5; background: #e9f5ed; color: #174728; }
+.time-lock-badge.is-submitted { border-color: #a7c5dc; background: #eaf2f8; color: #12476b; }
+.time-lock-badge.is-reopened, .time-lock-badge.is-mixed { border-color: #e0c98f; background: #fbf4e2; color: #684b08; }
+.time-lock-note { margin: 0; font-size: var(--font-small); color: var(--muted); }
+.time-issues { margin: 0; padding-left: 1.2em; font-size: var(--font-small); }
+.time-issues li + li { margin-top: 2px; }
+.time-issues.is-error { color: var(--danger); font-weight: 600; }
+.time-issues.is-warning { color: #684b08; }
+.time-issues-details summary { cursor: pointer; font-size: var(--font-small); font-weight: 600; color: #684b08; }
+.time-statements, .time-events { margin: 0; padding: 0; list-style: none; font-size: var(--font-small); }
+.time-statements li, .time-events li { padding: 3px 0; overflow-wrap: anywhere; }
+.time-statements li.is-superseded a { color: var(--muted); text-decoration: line-through; }
+.time-approval-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.time-approval-item h2 { overflow-wrap: anywhere; }
 .time-cal-day.is-selected { border-color: var(--primary); background: #eaf3f9; }
 .time-assignment { padding: 1px 7px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); font-size: var(--font-small); }
 .time-travel { color: #8a5a00; }
@@ -1480,6 +1499,13 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 /* Einstellungen → Betrieb */
 .operations-setting { align-items: flex-start; }
 .operations-setting span { display: grid; gap: 2px; }
+.operations-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: center; }
+.operations-field > span:first-child { display: grid; gap: 2px; }
+.operations-number { display: inline-flex !important; grid-auto-flow: column; align-items: center; gap: 6px !important; }
+.operations-number input { width: 6.5em; text-align: right; }
+.operations-field select { max-width: 16em; }
+.operations-note { margin-top: var(--space-3); font-size: var(--font-small); }
+@media (max-width: 640px) { .operations-field { grid-template-columns: 1fr; } }
 /* Zentrale Stundenbasis: Herkunft je Buchung, fehlende Uhrzeiten */
 .time-source { color: var(--text); font-weight: 600; }
 .report-order-events { font-size: .85rem; margin-bottom: 12px; }

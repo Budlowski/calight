@@ -68,4 +68,14 @@ assert(withOrder.includes("AU1 · Halle &lt;3&gt;") && !withOrder.includes("Kund
 const onCostCenter = entryRow({ ...base, durationFixed: false, sourceKind: "manual", sourceLabel: "Manuell", reportUrl: null, reportLabel: null, reportActivity: "", notes: "Rüsten",
   costCenterNumber: "K120", costCenterName: "Lager & Rüstzeit" });
 assert(onCostCenter.includes("K120 · Lager &amp; Rüstzeit") && !onCostCenter.includes("Ohne Zuordnung"), "Kostenstelle als Zuordnung");
+// Freigabe: Tagesstatus, Hinweise, Nachweise mit Revisionen.
+const { lockFlag, lockBadge, issueList, statementList } = globalThis.CalightTimeTracking;
+assert(lockFlag("open") === "" && lockFlag("approved").includes("Festgeschrieben") && lockFlag("submitted").includes("is-submitted"), "Tageskennzeichen");
+assert(lockBadge("reopened").includes("Zur Korrektur geöffnet") && lockBadge("mixed").includes("Teilweise"), "Statuskennzeichen");
+const issues = issueList([{ message: "Überschneidung <x>" }], [{ message: "Sonntagsarbeit." }, { message: "Leerer Tag" }]);
+assert(issues.includes("is-error") && issues.includes("&lt;x&gt;") && issues.includes("2 Hinweise") && !issues.includes(" open>"), "Sperrfehler sichtbar, Hinweise eingeklappt");
+assert(issueList([], [{ message: "a" }]).includes("1 Hinweis") && issueList([], []).trim() === "", "ohne Fehler aufgeklappt, leer ohne Hinweise");
+const statements = statementList([{ type: "month", label: "November 2026", revision: 1, current: false, url: "/a" }, { type: "month", label: "November 2026", revision: 2, current: true, url: "/b" }]);
+assert(statements.includes("Revision 1") && statements.includes("ersetzt – nicht mehr aktuell") && statements.includes("Revision 2") && statements.includes("aktuell</small>"), "Revisionen");
+assert(statementList([]) === "", "keine Nachweise");
 console.log("time-tracking.test.js ok");

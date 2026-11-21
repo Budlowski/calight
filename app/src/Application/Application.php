@@ -45,6 +45,9 @@ use Throwable;
 
 final readonly class Application
 {
+    /** Meldung, wenn eine Änderung eingereichte oder festgeschriebene Arbeitszeiten beträfe. */
+    public const TIME_LOCKED_MESSAGE = 'Die Arbeitszeiten dieses Tages sind eingereicht oder festgeschrieben und können nicht geändert werden – auch nicht über Rapporte oder Tagesberichte. Bitte im Büro zur Korrektur öffnen lassen.';
+
     public function __construct(
         private Router $router,
         private View $view,
@@ -106,6 +109,13 @@ final readonly class Application
             return Response::json(['error' => 'Validierung fehlgeschlagen.', 'details' => $exception->errors], 422);
         } catch (CsrfException $exception) {
             return new Response('Sicherheitsprüfung fehlgeschlagen.', 419, ['Content-Type' => 'text/plain; charset=utf-8']);
+        } catch (\PDOException $exception) {
+            // Zentrale Tagessperre der Zeiterfassung (Trigger, Migration 0042) – gilt für alle Module.
+            if (str_contains($exception->getMessage(), 'calight_time_locked')) {
+                return Response::json(['error' => 'Validierung fehlgeschlagen.', 'details' => [self::TIME_LOCKED_MESSAGE]], 422);
+            }
+            error_log((string) $exception);
+            return new Response('<h1>Fehler</h1><p>Die Anfrage konnte nicht verarbeitet werden.</p>', 500, ['Content-Type' => 'text/html; charset=utf-8']);
         } catch (Throwable $exception) {
             error_log((string) $exception);
             return new Response('<h1>Fehler</h1><p>Die Anfrage konnte nicht verarbeitet werden.</p>', 500, ['Content-Type' => 'text/html; charset=utf-8']);

@@ -13,6 +13,7 @@
             <button class="button button-light button-small" type="button" role="tab" data-view="week">Woche</button>
             <button class="button button-light button-small" type="button" role="tab" data-view="month">Monat</button>
             <button class="button button-light button-small" type="button" role="tab" data-view="report" hidden>Auswertung</button>
+            <button class="button button-light button-small" type="button" role="tab" data-view="approvals" hidden>Freigaben</button>
         </div>
         <div class="time-period">
             <button class="icon-button" type="button" data-step="-1" title="Zurück" aria-label="Zurück">‹</button>

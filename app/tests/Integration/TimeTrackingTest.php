@@ -404,7 +404,7 @@ final class TimeTrackingTest extends TestCase
             $this->assertThrows(AccessDeniedException::class, fn () => $settings->all($office), 'Nur Administratoren.');
             $this->assertThrows(AccessDeniedException::class, fn () => $settings->save(['time_tracking.times_optional' => false], $tech));
             $this->assertSame(['operations.manage'], AuthorizationPolicy::required(new Request('PUT', '/api/operational-settings', [], [], [], '')));
-            $this->assertSame([true, true], [$settings->all($admin)[0]['value'], $settings->all($admin)[0]['default']]);
+            $this->assertSame([true, true], [$settings->all($admin)['settings'][0]['value'], $settings->all($admin)['settings'][0]['default']]);
             $this->assertThrows(DocumentValidationException::class, fn () => $settings->save(['time_tracking.times_optional' => 'nein'], $admin));
             $this->assertThrows(DocumentValidationException::class, fn () => $settings->save(['unbekannt' => true], $admin));
 
