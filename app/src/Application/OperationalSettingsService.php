@@ -31,6 +31,13 @@ final readonly class OperationalSettingsService
         'travel' => 'Reisekosten',
     ];
 
+    /** Modulzugehörigkeit der Gruppen: Einstellungen deaktivierter Module werden ausgeblendet, aber nie gelöscht. */
+    public const GROUP_MODULES = [
+        'time' => 'work_tracking',
+        'limits' => 'work_tracking',
+        'travel' => 'work_tracking',
+    ];
+
     /** @var array<string,array<string,mixed>> */
     public const DEFINITIONS = [
         'time_tracking.times_optional' => [
@@ -89,8 +96,13 @@ final readonly class OperationalSettingsService
             'label' => 'Privat-Pkw-Kilometersatz', 'description' => 'Rechnerischer Betrag je dienstlich gefahrenem Kilometer (Standard 0,30 €/km).'],
     ];
 
-    public function __construct(private PDO $pdo)
+    public function __construct(private PDO $pdo, private ?ModuleService $modules = null)
     {
+    }
+
+    private function groupVisible(string $group): bool
+    {
+        return $this->modules === null || $this->modules->isEnabled(self::GROUP_MODULES[$group] ?? ModuleService::CORE);
     }
 
     /** @param array<string,mixed> $actor @return array<string,mixed> */
@@ -102,6 +114,9 @@ final readonly class OperationalSettingsService
         $values = $this->values();
         $result = [];
         foreach (self::DEFINITIONS as $key => $definition) {
+            if (!$this->groupVisible($definition['group'])) {
+                continue;
+            }
             $row = $stored[$key] ?? null;
             $result[] = [
                 'key' => $key, 'group' => $definition['group'], 'type' => $definition['type'], 'label' => $definition['label'], 'description' => $definition['description'],
@@ -111,7 +126,7 @@ final readonly class OperationalSettingsService
                 'updatedAt' => $row['updated_at'] ?? null, 'updatedByName' => $row['updated_by_name'] ?? null,
             ];
         }
-        return ['groups' => self::GROUPS, 'settings' => $result];
+        return ['groups' => array_filter(self::GROUPS, fn (string $group): bool => $this->groupVisible($group), ARRAY_FILTER_USE_KEY), 'settings' => $result];
     }
 
     /**
@@ -162,6 +177,9 @@ final readonly class OperationalSettingsService
         $normalized = [];
         foreach ($values as $key => $value) {
             $definition = self::DEFINITIONS[$key] ?? throw new DocumentValidationException(['Unbekannte Einstellung: ' . $key]);
+            if (!$this->groupVisible($definition['group'])) {
+                throw new DocumentValidationException([$definition['label'] . ': Das zugehörige Modul ist deaktiviert.']);
+            }
             $normalized[$key] = $this->normalize($definition, $value);
         }
         $merged = array_merge($this->values(), $normalized);

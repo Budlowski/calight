@@ -43,12 +43,57 @@ $money=static function(?string $value):string{
         </form>
     </section>
 
+<?php
+// Reiter der Auftragsdetailseite: nur Bereiche aktiver Module bzw. mit vorhandenen Daten
+// (abgeschaltete Module lesend, ohne Anlegeaktionen). Inhalte aus den bestehenden Diensten.
+$workTracking=$modulesActive['work_tracking']??true;
+$procurement=$modulesActive['procurement']??true;
+$hasExecutionData=($dailyReportTotal??0)>0||($workReports??[])!==[];
+$purchaseItems=$purchaseOrders['items']??[];
+$purchaseTotal=(int)($purchaseOrders['total']??0);
+$showExecution=($workTracking&&(\App\Http\Session::can('reports.read')||\App\Http\Session::can('workreports.read')))||$hasExecutionData;
+$showMaterial=($procurement&&(\App\Http\Session::can('reports.read')||$purchaseOrders!==null))||($materialRequests??[])!==[]||$purchaseTotal>0;
+$hours=static fn(string $value):string=>rtrim(rtrim(number_format((float)$value,2,',','.'),'0'),',').' h';
+$tabs=array_filter([
+    'overview'=>'Übersicht',
+    'services'=>'Leistungen',
+    'execution'=>$showExecution?'Ausführung':null,
+    'material'=>$showMaterial?'Material':null,
+    'measurements'=>($measurementOverview??null)!==null?'Aufmaße':null,
+    'documents'=>'Dokumente',
+]);
+$openMaterial=count($materialRequests??[]);
+?>
+    <nav class="tabs order-tabs" aria-label="Auftragsbereiche" role="tablist">
+        <?php foreach($tabs as $key=>$label): ?><button class="tab-button<?= $key==='overview'?' active':'' ?>" type="button" role="tab" aria-selected="<?= $key==='overview'?'true':'false' ?>" aria-controls="order-panel-<?= $escape($key) ?>" data-order-tab="<?= $escape($key) ?>"><?= $escape($label) ?></button><?php endforeach; ?>
+    </nav>
+
+    <div class="tab-panel order-panel" id="order-panel-overview" role="tabpanel" data-order-panel="overview">
     <section class="order-value-summary" aria-label="Auftragssummen">
         <div><span>Ursprüngliche Auftragssumme netto</span><strong><?= $escape($order['originalNetTotal']===null?'Keine vereinbarte Summe':$money($order['originalNetTotal'])) ?></strong></div>
         <div><span>Angenommene Nachträge netto</span><strong><?= $escape($money($order['acceptedAddendaNetTotal'])) ?></strong></div>
         <div class="total"><span>Aktuelle Gesamtauftragssumme netto</span><strong><?= $escape($order['currentContractNetTotal']===null?'Keine vereinbarte Summe':$money($order['currentContractNetTotal'])) ?></strong></div>
     </section>
+    <section class="card order-kpis" aria-label="Kennzahlen">
+        <div class="section-heading"><div><h2>Kennzahlen</h2><span class="muted">Aus vorhandenen Daten; nicht ermittelbare Werte werden nicht angezeigt.</span></div></div>
+        <dl class="order-kpi-grid">
+            <?php if($showExecution): ?>
+            <div><dt>Erfasste Arbeitsstunden</dt><dd><?= $escape($hours($orderHours['hours'])) ?></dd><small>davon festgeschrieben <?= $escape($hours($orderHours['approvedHours'])) ?><?= $orderHours['hours']!==$orderHours['approvedHours']?' · übrige vorläufig':'' ?></small></div>
+            <div><dt>Tagesberichte</dt><dd><button class="link-button" type="button" data-order-tab-link="execution"><?= $escape((string)($dailyReportTotal??0)) ?></button></dd></div>
+            <?php if(($workReports??null)!==null): ?><div><dt>Rapporte</dt><dd><button class="link-button" type="button" data-order-tab-link="execution"><?= $escape((string)count($workReports)) ?></button></dd></div><?php endif; ?>
+            <?php endif; ?>
+            <?php if(($measurementOverview??null)!==null): ?><div><dt>Aufmaße</dt><dd><button class="link-button" type="button" data-order-tab-link="measurements"><?= $escape((string)count($measurementOverview['measurements'])) ?></button></dd></div><?php endif; ?>
+            <?php if($showMaterial): ?>
+            <div><dt>Offene Materialanforderungen</dt><dd><button class="link-button" type="button" data-order-tab-link="material"><?= $escape((string)$openMaterial) ?></button></dd></div>
+            <?php if($purchaseOrders!==null): ?><div><dt>Bestellungen</dt><dd><button class="link-button" type="button" data-order-tab-link="material"><?= $escape((string)$purchaseTotal) ?></button></dd></div><?php endif; ?>
+            <?php if($purchaseCosts!==null): $unknownCosts=count(array_filter($purchaseCosts['items'],static fn(array $item):bool=>$item['amount']===null)); ?><div><dt>Bekannte Bestell-Ist-Kosten</dt><dd><?= $escape($money($purchaseCosts['total'])) ?></dd><?php if($unknownCosts>0): ?><small><?= $escape((string)$unknownCosts) ?> Bestellung<?= $unknownCosts===1?'':'en' ?> ohne bekannte Ist-Kosten (nicht als 0 gewertet)</small><?php endif; ?></div><?php endif; ?>
+            <?php endif; ?>
+        </dl>
+    </section>
+    <section class="card order-history-card"><div class="section-heading"><div><h2>Statusverlauf</h2><span class="muted">Neuester Eintrag zuerst</span></div></div><div class="order-status-history"><?php foreach($order['history'] as $history): ?><div class="order-status-entry"><span class="status-badge status-<?= $escape($history['new_status']) ?>"><?= $escape($labels[$history['new_status']]??$history['new_status']) ?></span><span><?= $history['previous_status']===null?'Auftrag angelegt':$escape(($labels[$history['previous_status']]??$history['previous_status']).' → '.($labels[$history['new_status']]??$history['new_status'])) ?></span><time datetime="<?= $escape($history['changed_at']) ?>"><?= $escape((new DateTimeImmutable($history['changed_at']))->format('d.m.Y H:i')) ?></time></div><?php endforeach; ?></div></section>
+    </div>
 
+    <div class="tab-panel order-panel" id="order-panel-services" role="tabpanel" data-order-panel="services" hidden>
     <?php if($order['orderType']==='offer'): ?>
     <section class="card order-basis-card">
         <div class="section-heading"><div><h2>Auftragsgrundlage</h2><span class="muted">Der bei Auftragserstellung archivierte Angebotsstand bleibt unverändert.</span></div></div>
@@ -62,7 +107,64 @@ $money=static function(?string $value):string{
         <div class="section-heading"><div><h2>Nachträge</h2><span class="muted">Zusätzliche Leistungen werden erst nach Annahme Bestandteil des Auftrags.</span></div><?php if($canWriteOrders): ?><button class="button" type="button" data-create-change-order data-icon="plus">Nachtrag anlegen</button><?php endif; ?></div>
         <?php if($order['changeOrders']===[]): ?><p class="empty-state">Noch keine Nachträge vorhanden.</p><?php else: ?><div class="offer-detail-list"><?php foreach($order['changeOrders'] as $changeOrder): ?><div class="offer-detail-row order-change-order-row"><a class="offer-detail-main" href="/offers/<?= $escape(rawurlencode((string)$changeOrder['id'])) ?>"><strong><?= $escape($changeOrder['title']) ?></strong><small><?= $escape($changeOrder['offerNumber']?:'Nachtragsentwurf ohne Nummer') ?><?= $changeOrder['revision']>0?' · Revision '.$escape((string)$changeOrder['revision']):'' ?></small></a><span class="status-badge status-<?= $escape($changeOrder['status']) ?>"><?= $escape($offerLabels[$changeOrder['status']]??$changeOrder['status']) ?></span><strong class="order-change-order-total"><?= $escape($money($changeOrder['netTotal'])) ?></strong><span class="order-change-order-scope"><?php if($changeOrder['accepted']): ?>Im Auftragsumfang<?= $changeOrder['acceptedRevision']>0?' · Revision '.$escape((string)$changeOrder['acceptedRevision']):'' ?><?php elseif($changeOrder['status']==='submitted'): ?>Annahme ausstehend<?php elseif($changeOrder['status']==='rejected'): ?>Nicht übernommen<?php else: ?>Noch nicht abgegeben<?php endif; ?></span><a class="table-action" data-icon="eye" href="/offers/<?= $escape(rawurlencode((string)$changeOrder['id'])) ?>">Ansehen</a></div><?php endforeach; ?></div><?php endif; ?>
     </section>
+    </div>
+<?php if($showExecution): ?>
+    <div class="tab-panel order-panel" id="order-panel-execution" role="tabpanel" data-order-panel="execution" hidden>
+    <section class="card order-daily-reports">
+        <div class="section-heading"><div><h2>Tagesberichte</h2><span class="muted"><?= $escape((string)($dailyReportTotal??count($dailyReports??[]))) ?> Berichte · <?= $escape(number_format((float)($actualLabor['hours']??0),3,',','.')) ?> Stunden aus Tagesberichten<?php if(isset($actualLabor['costs'])): ?> · <?= $escape($money($actualLabor['costs'])) ?> Ist-Lohnkosten<?php endif; ?></span></div><?php if($workTracking&&$canWriteReports): ?><a class="button" data-icon="plus" href="/daily-reports?create_for=<?= $escape(rawurlencode((string)$order['id'])) ?>">Bericht anlegen</a><?php endif; ?></div>
+        <?php if(($dailyReports??[])===[]): ?><p class="empty-state">Noch keine Tagesberichte vorhanden.</p><?php else: ?><div class="offer-detail-list"><?php foreach($dailyReports as $report): ?><div class="offer-detail-row order-report-row"><a class="offer-detail-main" href="/daily-reports/<?= $escape(rawurlencode((string)$report['id'])) ?>"><strong><?= $escape($report['title']?:'Tagesbericht vom '.(new DateTimeImmutable($report['report_date']))->format('d.m.Y')) ?></strong><small><?= $escape($report['employee_names']?:'Keine Arbeitszeiten') ?></small></a><span><?= $escape(number_format((float)$report['total_hours'],3,',','.')) ?> h</span><time datetime="<?= $escape($report['report_date']) ?>"><?= $escape((new DateTimeImmutable($report['report_date']))->format('d.m.Y')) ?></time><a class="table-action" data-icon="eye" href="/daily-reports/<?= $escape(rawurlencode((string)$report['id'])) ?>">Ansehen</a></div><?php endforeach; ?></div><?php if(($dailyReportTotal??0)>count($dailyReports)): ?><p class="order-report-more"><a href="/daily-reports?order=<?= $escape(rawurlencode((string)$order['id'])) ?>">Alle <?= $escape((string)$dailyReportTotal) ?> Tagesberichte anzeigen</a></p><?php endif; ?><?php endif; ?>
+    </section>
 
+    <?php if (($workReports ?? null) !== null): $workReportLabels = ['draft' => 'Entwurf', 'submitted' => 'Eingereicht', 'processed' => 'Bearbeitet']; ?>
+    <section class="card order-work-reports">
+        <div class="section-heading">
+            <div><h2>Rapporte</h2><span class="muted">Leistungsnachweise für Regiearbeiten · <?= $escape((string) count($workReports)) ?> Rapporte</span></div>
+            <?php if ($workTracking && \App\Http\Session::can('workreports.write')): ?><button class="button" type="button" data-create-work-report="<?= $escape($order['id']) ?>" data-icon="plus">Rapport anlegen</button><?php endif; ?>
+        </div>
+        <div class="notice" data-work-report-message role="status" hidden></div>
+        <?php if ($workReports === []): ?><p class="empty-state">Noch keine Rapporte vorhanden.</p><?php else: ?>
+        <div class="offer-detail-list"><?php foreach ($workReports as $workReport): ?>
+            <div class="offer-detail-row order-measurement-row">
+                <a class="offer-detail-main" href="/work-reports/<?= $escape(rawurlencode((string) $workReport['id'])) ?>"><strong><?= $escape($workReport['reportNumber'] ?: 'Entwurf ohne Nummer') ?></strong><small><?= $escape($workReport['creatorName']) ?> · <?= $escape(number_format((float) $workReport['totalHours'], 2, ',', '.')) ?> h<?= $workReport['confirmationStatus'] === 'confirmed' ? ' · vom Kunden bestätigt' : '' ?><?= $workReport['correctedNumber'] ? ' · Korrektur zu ' . $escape((string) $workReport['correctedNumber']) : '' ?></small></a>
+                <span class="status-badge status-work-<?= $escape($workReport['status']) ?>"><?= $escape($workReportLabels[$workReport['status']] ?? $workReport['status']) ?></span>
+                <strong class="order-change-order-total"><?= array_key_exists('netTotal', $workReport) && $workReport['netTotal'] !== null ? $escape($money($workReport['netTotal'])) : '' ?></strong>
+                <time datetime="<?= $escape($workReport['workDate']) ?>"><?= $escape((new DateTimeImmutable($workReport['workDate']))->format('d.m.Y')) ?></time>
+                <a class="table-action" data-icon="eye" href="/work-reports/<?= $escape(rawurlencode((string) $workReport['id'])) ?>">Öffnen</a>
+            </div>
+        <?php endforeach; ?></div>
+        <?php endif; ?>
+    </section>
+    <?php endif; ?>
+
+    </div>
+<?php endif; ?>
+<?php if($showMaterial): ?>
+    <div class="tab-panel order-panel" id="order-panel-material" role="tabpanel" data-order-panel="material" hidden>
+    <section class="card order-material-requests" data-order-material data-order-id="<?= $escape($order['id']) ?>" data-order-label="<?= $escape($order['orderNumber'].' · '.$order['title']) ?>">
+        <div class="section-heading"><div><h2>Materialanforderungen</h2><span class="muted">Offener Materialbedarf zu diesem Auftrag</span></div><div class="order-detail-actions"><a class="button button-light" href="/material-requests?order=<?= $escape(rawurlencode((string)$order['id'])) ?>&amp;status=all">Alle anzeigen</a><?php if($procurement&&\App\Http\Session::can('reports.write')): ?><button class="button" type="button" data-add-material data-icon="plus">Material anfordern</button><?php endif; ?></div></div>
+        <div class="notice" data-material-message role="status" hidden></div>
+        <div data-material-requests></div>
+        <script type="application/json" data-material-json><?= json_encode($materialRequests ?? [], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR) ?></script>
+    </section>
+
+    <?php if($purchaseOrders!==null&&($procurement||$purchaseTotal>0)): ?>
+    <section class="card order-purchase-orders">
+        <div class="section-heading"><div><h2>Bestellungen</h2><span class="muted"><?= $escape((string)$purchaseTotal) ?> Bestellungen zu diesem Auftrag</span></div><a class="button button-light" href="/purchase-orders?order=<?= $escape(rawurlencode((string)$order['id'])) ?>">Alle anzeigen</a></div>
+        <?php if($purchaseItems===[]): ?><p class="empty-state">Noch keine Bestellungen vorhanden.</p><?php else: ?><div class="offer-detail-list"><?php foreach($purchaseItems as $purchase): ?>
+            <div class="offer-detail-row order-measurement-row">
+                <a class="offer-detail-main" href="/purchase-orders/<?= $escape(rawurlencode((string)$purchase['id'])) ?>"><strong><?= $escape($purchase['orderNumber']?:'Entwurf ohne Nummer') ?></strong><small><?= $escape($purchase['supplierName']) ?><?= ($purchase['title']??'')!==''?' · '.$escape($purchase['title']):'' ?></small></a>
+                <span class="status-badge status-po-status-<?= $escape($purchase['status']) ?>"><?= $escape($purchase['statusLabel']) ?></span>
+                <span><?= $escape($purchase['placed']?$purchase['deliveryLabel']:'') ?></span>
+                <time datetime="<?= $escape((string)$purchase['orderDate']) ?>"><?= $purchase['orderDate']?$escape((new DateTimeImmutable($purchase['orderDate']))->format('d.m.Y')):'' ?></time>
+                <a class="table-action" data-icon="eye" href="/purchase-orders/<?= $escape(rawurlencode((string)$purchase['id'])) ?>">Öffnen</a>
+            </div>
+        <?php endforeach; ?></div><?php endif; ?>
+    </section>
+    <?php endif; ?>
+    </div>
+<?php endif; ?>
+<?php if(($measurementOverview??null)!==null): ?>
+    <div class="tab-panel order-panel" id="order-panel-measurements" role="tabpanel" data-order-panel="measurements" hidden>
     <?php if (($measurementOverview ?? null) !== null): $mo = $measurementOverview; $measurementLabels = ['draft' => 'Entwurf', 'completed' => 'Abgeschlossen']; ?>
     <section class="card order-measurements">
         <div class="section-heading">
@@ -84,41 +186,11 @@ $money=static function(?string $value):string{
     </section>
     <?php endif; ?>
 
-    <?php if (($workReports ?? null) !== null): $workReportLabels = ['draft' => 'Entwurf', 'submitted' => 'Eingereicht', 'processed' => 'Bearbeitet']; ?>
-    <section class="card order-work-reports">
-        <div class="section-heading">
-            <div><h2>Rapporte</h2><span class="muted">Leistungsnachweise für Regiearbeiten · <?= $escape((string) count($workReports)) ?> Rapporte</span></div>
-            <?php if (\App\Http\Session::can('workreports.write')): ?><button class="button" type="button" data-create-work-report="<?= $escape($order['id']) ?>" data-icon="plus">Rapport anlegen</button><?php endif; ?>
-        </div>
-        <div class="notice" data-work-report-message role="status" hidden></div>
-        <?php if ($workReports === []): ?><p class="empty-state">Noch keine Rapporte vorhanden.</p><?php else: ?>
-        <div class="offer-detail-list"><?php foreach ($workReports as $workReport): ?>
-            <div class="offer-detail-row order-measurement-row">
-                <a class="offer-detail-main" href="/work-reports/<?= $escape(rawurlencode((string) $workReport['id'])) ?>"><strong><?= $escape($workReport['reportNumber'] ?: 'Entwurf ohne Nummer') ?></strong><small><?= $escape($workReport['creatorName']) ?> · <?= $escape(number_format((float) $workReport['totalHours'], 2, ',', '.')) ?> h<?= $workReport['confirmationStatus'] === 'confirmed' ? ' · vom Kunden bestätigt' : '' ?><?= $workReport['correctedNumber'] ? ' · Korrektur zu ' . $escape((string) $workReport['correctedNumber']) : '' ?></small></a>
-                <span class="status-badge status-work-<?= $escape($workReport['status']) ?>"><?= $escape($workReportLabels[$workReport['status']] ?? $workReport['status']) ?></span>
-                <strong class="order-change-order-total"><?= array_key_exists('netTotal', $workReport) && $workReport['netTotal'] !== null ? $escape($money($workReport['netTotal'])) : '' ?></strong>
-                <time datetime="<?= $escape($workReport['workDate']) ?>"><?= $escape((new DateTimeImmutable($workReport['workDate']))->format('d.m.Y')) ?></time>
-                <a class="table-action" data-icon="eye" href="/work-reports/<?= $escape(rawurlencode((string) $workReport['id'])) ?>">Öffnen</a>
-            </div>
-        <?php endforeach; ?></div>
-        <?php endif; ?>
-    </section>
-    <?php endif; ?>
-
-    <section class="card order-daily-reports">
-        <div class="section-heading"><div><h2>Tagesberichte</h2><span class="muted"><?= $escape((string)($dailyReportTotal??count($dailyReports??[]))) ?> Berichte · <?= $escape(number_format((float)($actualLabor['hours']??0),3,',','.')) ?> Ist-Stunden<?php if(isset($actualLabor['costs'])): ?> · <?= $escape($money($actualLabor['costs'])) ?> Ist-Lohnkosten<?php endif; ?></span></div><?php if($canWriteReports): ?><a class="button" data-icon="plus" href="/daily-reports?create_for=<?= $escape(rawurlencode((string)$order['id'])) ?>">Bericht anlegen</a><?php endif; ?></div>
-        <?php if(($dailyReports??[])===[]): ?><p class="empty-state">Noch keine Tagesberichte vorhanden.</p><?php else: ?><div class="offer-detail-list"><?php foreach($dailyReports as $report): ?><div class="offer-detail-row order-report-row"><a class="offer-detail-main" href="/daily-reports/<?= $escape(rawurlencode((string)$report['id'])) ?>"><strong><?= $escape($report['title']?:'Tagesbericht vom '.(new DateTimeImmutable($report['report_date']))->format('d.m.Y')) ?></strong><small><?= $escape($report['employee_names']?:'Keine Arbeitszeiten') ?></small></a><span><?= $escape(number_format((float)$report['total_hours'],3,',','.')) ?> h</span><time datetime="<?= $escape($report['report_date']) ?>"><?= $escape((new DateTimeImmutable($report['report_date']))->format('d.m.Y')) ?></time><a class="table-action" data-icon="eye" href="/daily-reports/<?= $escape(rawurlencode((string)$report['id'])) ?>">Ansehen</a></div><?php endforeach; ?></div><?php if(($dailyReportTotal??0)>count($dailyReports)): ?><p class="order-report-more"><a href="/daily-reports?order=<?= $escape(rawurlencode((string)$order['id'])) ?>">Alle <?= $escape((string)$dailyReportTotal) ?> Tagesberichte anzeigen</a></p><?php endif; ?><?php endif; ?>
-    </section>
-
-    <section class="card order-material-requests" data-order-material data-order-id="<?= $escape($order['id']) ?>" data-order-label="<?= $escape($order['orderNumber'].' · '.$order['title']) ?>">
-        <div class="section-heading"><div><h2>Materialanforderungen</h2><span class="muted">Offener Materialbedarf zu diesem Auftrag</span></div><div class="order-detail-actions"><a class="button button-light" href="/material-requests?order=<?= $escape(rawurlencode((string)$order['id'])) ?>&amp;status=all">Alle anzeigen</a><?php if(\App\Http\Session::can('reports.write')): ?><button class="button" type="button" data-add-material data-icon="plus">Material anfordern</button><?php endif; ?></div></div>
-        <div class="notice" data-material-message role="status" hidden></div>
-        <div data-material-requests></div>
-        <script type="application/json" data-material-json><?= json_encode($materialRequests ?? [], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR) ?></script>
-    </section>
-
-    <section class="card order-history-card"><div class="section-heading"><div><h2>Statusverlauf</h2><span class="muted">Neuester Eintrag zuerst</span></div></div><div class="order-status-history"><?php foreach($order['history'] as $history): ?><div class="order-status-entry"><span class="status-badge status-<?= $escape($history['new_status']) ?>"><?= $escape($labels[$history['new_status']]??$history['new_status']) ?></span><span><?= $history['previous_status']===null?'Auftrag angelegt':$escape(($labels[$history['previous_status']]??$history['previous_status']).' → '.($labels[$history['new_status']]??$history['new_status'])) ?></span><time datetime="<?= $escape($history['changed_at']) ?>"><?= $escape((new DateTimeImmutable($history['changed_at']))->format('d.m.Y H:i')) ?></time></div><?php endforeach; ?></div></section>
+    </div>
+<?php endif; ?>
+    <div class="tab-panel order-panel" id="order-panel-documents" role="tabpanel" data-order-panel="documents" hidden>
 <?php $documentTarget = ['order', (string) $order['id']]; $documentWritePermission = 'orders.write'; require dirname(__DIR__) . '/partials/document-section.php'; ?>
+    </div>
 </div>
 <script src="/assets/material-requests.js?v=<?= $escape((string)filemtime(dirname(__DIR__,2).'/public/assets/material-requests.js')) ?>" defer></script>
 <script src="/assets/measurements.js?v=<?= $escape((string)filemtime(dirname(__DIR__,2).'/public/assets/measurements.js')) ?>" defer></script>

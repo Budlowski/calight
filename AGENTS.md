@@ -305,6 +305,15 @@ Keine zweite Nummernlogik in einem Controller oder Frontend anlegen.
 - **Gemeinsames Suchfeld „Auftrag / Kostenstelle“:** `CostTargets` liefert die Auswahl (Aufträge mit den Freigaberegeln des Fachmoduls plus Kostenstellen, ohne Beträge) und prüft die Auswahl einheitlich (neu nur aktive Kostenstellen, nie beides). Im Client `Calight.costTargetOptions/costTargetSelect/parseCostTarget` auf Basis von `searchableSelect`; der Wert trägt Typ und ID (`order:<id>`/`cost_center:<id>`), nie wird anhand des Nummernpräfixes entschieden.
 - Keine Buchhaltung: keine Konten, Steuern, Umlagen, Zuschläge oder Kostenstellenhierarchie. Bestellkosten je Kostenstelle nutzen dieselbe Ist-Kosten-Regel wie Aufträge (`PurchaseOrderService::actualCostOf`).
 
+### 4.17b Module (Einstellungen → Module)
+
+- Zentrale Registrierung ausschließlich in `Application\ModuleService` (Definitionen, Routenpräfixe `ROUTES`, offene Vorgänge). Keine Modulprüfungen anhand verstreuter Listen in Controllern, Templates oder JavaScript; Templates nutzen `$moduleEnabled('<schlüssel>')` bzw. `$modules`.
+- Module: `core` (immer aktiv), `work_tracking`, `procurement`; `billing`, `job_costing`, `contacts`, `calendar`, `lexware` sind vorgesehen, aber nicht aktivierbar, bis sie implementiert sind.
+- Persistenz `operational_settings` (`modules.<schlüssel>` = 1/0), ohne Eintrag aktiv. Ändern nur mit `operations.manage`. Migrationen laufen unabhängig von Modulen.
+- Modul **und** Berechtigung müssen erfüllt sein. `Application::handle` lehnt schreibende Aufrufe deaktivierter Module mit 409 ab; lesende Aufrufe (historische Daten, Archiv-PDFs) bleiben erlaubt. Neue Routen eines Moduls MÜSSEN in `ModuleService::ROUTES` liegen; modulübergreifende Erzeugung zusätzlich im Dienst prüfen (Vorbild `MaterialRequestService::assertEnabled`).
+- Deaktivierung löscht nie Daten und ist gesperrt, solange Vorgänge auf Freigabe, Korrektur oder Abschluss warten (`openItems`); Entwürfe erfordern Bestätigung. Einstellungen deaktivierter Module (`OperationalSettingsService::GROUP_MODULES`) werden ausgeblendet, nicht gelöscht.
+- Kostenstellen: sichtbar und pflegbar, solange Arbeitserfassung oder Beschaffung aktiv ist. Lieferanten und Mitarbeiter sind gemeinsame Stammdaten.
+
 ### 4.18 Fachliche Abgrenzung späterer Module
 
 Folgende Punkte sind Zielbild, soweit nicht durch aktuelle Migrationen/Code implementiert:
@@ -386,7 +395,7 @@ Vor jeder Migration sind Upgrade-Pfad, Datenübernahme, Downtime/Locking, eindeu
 
 ### Gemeinsame Bausteine
 
-- `app/templates/layout/app.php`: Topbar, berechtigungsabhängige Sidebar, Flashmeldungen, globale Assets.
+- `app/templates/layout/app.php`: Topbar, berechtigungs- und modulabhängige Sidebar, Modulhinweis, Flashmeldungen, globale Assets.
 - `app/public/assets/app.css`: zentrale Variablen, Buttons, Karten, Tabellen, Formulare, Breadcrumbs, Badges, responsive Regeln.
 - `app/public/assets/calight.js`: gemeinsame Fetch-/Form-/Format-Hilfen; vor neuer Logik prüfen.
 - `app/public/assets/modal.js`: globales natives `<dialog>` mit Fokusmanagement, Tastaturbedienung, Validierung und Dirty-Guard.

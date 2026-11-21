@@ -4,6 +4,17 @@
   if(!root)return;
   const editForm=root.querySelector('[data-order-edit]'),editButton=root.querySelector('[data-edit-order]'),description=root.querySelector('[data-order-description]'),editError=root.querySelector('[data-order-edit-error]');
   let editDirty=false;
+  // Reiter: Auswahl steht im URL-Hash (#execution), damit Direktlinks und Zurück funktionieren.
+  const tabs=[...root.querySelectorAll('[data-order-tab]')];
+  const showTab=(key,focus=false)=>{
+    const tab=tabs.find(item=>item.dataset.orderTab===key)||tabs[0];if(!tab)return;
+    tabs.forEach(item=>{const active=item===tab;item.classList.toggle('active',active);item.setAttribute('aria-selected',active?'true':'false');});
+    root.querySelectorAll('[data-order-panel]').forEach(panel=>{panel.hidden=panel.dataset.orderPanel!==tab.dataset.orderTab;});
+    if(focus)tab.focus();
+  };
+  tabs.forEach(tab=>tab.addEventListener('click',()=>{history.replaceState(null,'',tab.dataset.orderTab==='overview'?location.pathname+location.search:`#${tab.dataset.orderTab}`);showTab(tab.dataset.orderTab);}));
+  root.querySelectorAll('[data-order-tab-link]').forEach(link=>link.addEventListener('click',()=>{history.replaceState(null,'',`#${link.dataset.orderTabLink}`);showTab(link.dataset.orderTabLink,true);}));
+  showTab(location.hash.slice(1)||'overview');
   const request=async(url,options)=>{
     const response=await fetch(url,options),result=await response.json();
     if(!response.ok)throw new Error((result.details||[result.error]).filter(Boolean).join(' ')||'Aktion fehlgeschlagen.');

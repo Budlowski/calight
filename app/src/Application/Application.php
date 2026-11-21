@@ -74,6 +74,7 @@ final readonly class Application
         private DocumentController $documentController,
         private TimeTrackingController $timeTrackingController,
         private CostCenterController $costCenterController,
+        private ?ModuleService $modules = null,
     ) {
         $this->registerRoutes();
     }
@@ -90,6 +91,14 @@ final readonly class Application
             $requiredPermissions=AuthorizationPolicy::required($request);
             if($requiredPermissions!==[]&&Session::user()===null)return str_starts_with($request->path,'/api/')?Response::json(['error'=>'Anmeldung erforderlich.'],401):Response::redirect('/login');
             foreach($requiredPermissions as $permission)Session::require($permission);
+            // Modulprüfung zusätzlich zur Berechtigung: Deaktivierte Module bleiben lesbar,
+            // nehmen aber keine neuen Vorgänge oder Änderungen an (auch nicht per direktem API-Aufruf).
+            $moduleBlocked=$this->modules?->blockedMessage($request->method,$request->path);
+            if($moduleBlocked!==null){
+                return str_starts_with($request->path,'/api/')
+                    ?Response::json(['error'=>$moduleBlocked,'details'=>[$moduleBlocked]],409)
+                    :new Response('<h1>Modul deaktiviert</h1><p>'.htmlspecialchars($moduleBlocked,ENT_QUOTES,'UTF-8').'</p>',409,['Content-Type'=>'text/html; charset=utf-8']);
+            }
             return $this->router->dispatch($request);
         } catch (AccessDeniedException) {
             return AuthorizationPolicy::deniedResponse($request);

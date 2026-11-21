@@ -46,25 +46,38 @@ if ($showShell): ?>
             };
 ?>
             <?php
-            // Gruppen erscheinen nur mit mindestens einem sichtbaren Eintrag. Noch nicht
-            // implementierte Bereiche (Lieferscheine, Nachkalkulation, Abrechnung)
-            // werden erst mit ihrer Umsetzung aufgenommen.
+            // Gruppen erscheinen nur mit mindestens einem sichtbaren Eintrag. Einträge erscheinen nur
+            // für implementierte, aktivierte Module (ModuleService) und mit Leserecht. Noch nicht
+            // implementierte Bereiche (Kontakte, Kalender, Abrechnung, Nachkalkulation) werden erst
+            // mit ihrer Umsetzung aufgenommen – keine Platzhalter.
             $navGroup = static function (string $label, string $links) use ($escape): string {
                 return $links === '' ? '' : '<span class="sidebar-section-label">' . $escape($label) . '</span>' . $links;
             };
+            $workTracking = $moduleEnabled('work_tracking');
+            $procurement = $moduleEnabled('procurement');
+            // Beschaffung: Bestellungen mit Materialbedarf als Reiter; ohne Bestellrecht (z. B. Monteure)
+            // führt der Eintrag direkt zum Materialbedarf.
+            $procurementLink = '';
+            if ($procurement) {
+                $procurementLink = \App\Http\Session::can('purchases.read')
+                    ? $navLink('/purchase-orders', 'shopping-cart', 'Bestellungen', ['purchases.read'])
+                    : $navLink('/material-requests', 'package', 'Materialbedarf', ['reports.read']);
+                if (\App\Http\Session::can('purchases.read') && str_starts_with($currentPath, '/material-requests')) {
+                    $procurementLink = str_replace('<a ', '<a aria-current="page" ', $procurementLink);
+                }
+            }
             ?>
             <?= $navGroup('Allgemein', $navLink('/dashboard', 'layout-dashboard', 'Übersicht', ['dashboard.read'])
                 . $navLink('/customers', 'users', 'Kunden', ['customers.read'])
                 . $navLink('/projects', 'folder-kanban', 'Projekte', ['projects.read'])
-                . $navLink('/offers', 'file-text', 'Angebote', ['offers.read'])
-                . $navLink('/orders', 'clipboard-list', 'Aufträge', ['orders.read'])
                 . $navLink('/documents', 'files', 'Dokumente', ['documents.read'])) ?>
-            <?= $navGroup('Ausführung', $navLink('/time-tracking', 'clock-3', 'Zeiterfassung', ['timesheet.own'])
+            <?= $navGroup('Auftragsabwicklung', $navLink('/offers', 'file-text', 'Angebote', ['offers.read'])
+                . $navLink('/orders', 'clipboard-list', 'Aufträge', ['orders.read'])
+                . $navLink('/measurements', 'ruler', 'Aufmaße', ['measurements.read'])) ?>
+            <?= $navGroup('Arbeitserfassung', $workTracking ? $navLink('/time-tracking', 'clock-3', 'Zeiterfassung', ['timesheet.own'])
                 . $navLink('/daily-reports', 'calendar-days', 'Tagesberichte', ['reports.read'])
-                . $navLink('/work-reports', 'clipboard-check', 'Rapporte', ['workreports.read'])
-                . $navLink('/measurements', 'ruler', 'Aufmaße', ['measurements.read'])
-                . $navLink('/material-requests', 'package', 'Materialanforderungen', ['reports.read'])) ?>
-            <?= $navGroup('Kaufmännisch', $navLink('/purchase-orders', 'shopping-cart', 'Bestellungen', ['purchases.read'])) ?>
+                . $navLink('/work-reports', 'clipboard-check', 'Rapporte', ['workreports.read']) : '') ?>
+            <?= $navGroup('Beschaffung', $procurementLink) ?>
 
             <?php $managementLinks = $navLink('/master-data', 'database', 'Stammdaten', ['master_data.read', 'costs.read']) . $navLink('/settings', 'settings', 'Einstellungen', ['settings.manage']); ?>
             <div class="sidebar-management"<?= $managementLinks === '' ? ' hidden' : '' ?>>
@@ -76,6 +89,12 @@ if ($showShell): ?>
 <?php else: ?>
         <main class="content <?= ($bareLayout ?? false) ? 'content-bare' : 'content-narrow' ?>">
 <?php endif; ?>
+            <?php
+            // Seiten eines deaktivierten Moduls bleiben für historische Daten lesbar (Direktlinks).
+            $pageModule = isset($currentPath) ? \App\Application\ModuleService::moduleForPath($currentPath) : null;
+            if ($pageModule !== null && !$moduleEnabled($pageModule)): ?>
+                <div class="notice notice-warning module-notice" role="status"><?= $escape(\App\Application\ModuleService::disabledMessage($pageModule)) ?></div>
+            <?php endif; ?>
             <?php foreach ($flashMessages as $flash): ?>
                 <div class="notice notice-<?= $escape($flash['type']) ?>" role="status"><?= $escape($flash['message']) ?></div>
             <?php endforeach; ?>

@@ -282,9 +282,12 @@
 
   function renderMaterial() {
     materialBox.innerHTML = CalightMaterialRequests.renderCompact(report.materialRequests || []);
+    // Ohne Beschaffungsmodul nur vorhandene Anforderungen anzeigen (lesend).
+    const section = root.querySelector("[data-material-section]");
+    if (section?.hasAttribute("data-material-readonly")) section.hidden = !(report.materialRequests || []).length;
   }
 
-  root.querySelector("[data-add-material]").addEventListener("click", () => CalightMaterialRequests.openDialog({
+  root.querySelector("[data-add-material]")?.addEventListener("click", () => CalightMaterialRequests.openDialog({
     dailyReportId: report.id,
     orderLabel: report.order_id ? `${report.order_number} · ${report.order_title}` : "",
     onSaved: async () => {

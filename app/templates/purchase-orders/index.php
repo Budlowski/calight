@@ -1,4 +1,4 @@
-<?php $title = 'Bestellungen'; $contentClass = 'content-wide'; ?>
+<?php $title = 'Bestellungen'; $contentClass = 'content-wide'; $canWrite = $canWrite && $moduleEnabled('procurement'); ?>
 <div id="purchase-orders-app" class="overview-page" data-csrf="<?= $escape($csrfToken) ?>" data-can-costs="<?= $canCosts ? '1' : '0' ?>" data-can-write="<?= $canWrite ? '1' : '0' ?>">
     <div class="page-heading">
         <div>
@@ -12,6 +12,7 @@
         </div>
         <?php endif; ?>
     </div>
+    <?php $procurementTab = 'orders'; require dirname(__DIR__) . '/partials/procurement-tabs.php'; ?>
     <div class="notice" data-message role="status" hidden></div>
     <div class="overview-toolbar">
         <input type="search" data-search placeholder="Nummer, Referenz, Lieferant oder Auftrag durchsuchen">

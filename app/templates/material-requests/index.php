@@ -1,11 +1,12 @@
-<?php $title = 'Materialanforderungen'; $contentClass = 'content-wide'; ?>
+<?php $title = 'Materialbedarf'; $contentClass = 'content-wide'; ?>
 <div id="material-requests-app" class="overview-page" data-csrf="<?= $escape($csrfToken) ?>">
     <div class="page-heading">
         <div>
-            <h1>Materialanforderungen</h1>
-            <p class="muted"><?= $canManage ? 'Von Monteuren gemeldeten Materialbedarf auftragsübergreifend bearbeiten.' : 'Gemeldeten Materialbedarf Ihrer freigegebenen Aufträge einsehen.' ?></p>
+            <h1>Materialbedarf</h1>
+            <p class="muted"><?= $canManage ? 'Materialanforderungen aus Tagesberichten und Aufträgen auftragsübergreifend bearbeiten.' : 'Gemeldeten Materialbedarf Ihrer freigegebenen Aufträge einsehen.' ?></p>
         </div>
     </div>
+    <?php $procurementTab = 'materials'; require dirname(__DIR__) . '/partials/procurement-tabs.php'; ?>
     <div class="notice" data-message role="status" hidden></div>
     <div class="overview-toolbar">
         <input type="search" data-search placeholder="Material, Auftrag, Kunde oder Ersteller durchsuchen">

@@ -636,22 +636,34 @@ Umgesetzt: einheitliche Aktionen, Menüs, Statusfarben, Formulare und Suchkompon
 
 - Bestehende Angebots-JSONs, SQLite-Dateien und Archivdateien dürfen durch Migrationen, Tests oder Git-Operationen nicht beschädigt oder versehentlich eingecheckt werden.
 
+## Modularisierung (implementiert, ohne Migration)
+
+Funktionsbereiche lassen sich global unter **Einstellungen → Module** schalten (nur Administratoren, `operations.manage`). Zentrale Registrierung: `Application\ModuleService` (Definitionen, Routenpräfixe, offene Vorgänge); Persistenz in `operational_settings` (`modules.<schlüssel>`), ohne Eintrag aktiv – bestehende Installationen behalten den vollen Umfang.
+
+| Modul | Schlüssel | Stand |
+|---|---|---|
+| Basissystem | `core` | immer aktiv |
+| Arbeitserfassung | `work_tracking` | implementiert, schaltbar |
+| Beschaffung | `procurement` | implementiert, schaltbar (inkl. Materialbedarf) |
+| Abrechnung, Nachkalkulation, Kontakte, Kalender, Lexware | `billing`, `job_costing`, `contacts`, `calendar`, `lexware` | vorgesehen, noch nicht aktivierbar |
+
+- Deaktiviert: lesende Aufrufe und Direktlinks bleiben möglich (Hinweis im Seitenkopf), schreibende Aufrufe der Modulrouten lehnt `Application::handle` mit 409 ab – zusätzlich zur Berechtigung. Keine Daten werden gelöscht; Einstellungen bleiben gespeichert und sind nach Reaktivierung wieder sichtbar.
+- Deaktivierung wird verhindert, solange Vorgänge auf Freigabe, Korrektur oder Abschluss warten (eingereichte/zur Korrektur geöffnete Tagesberichte und Zeiterfassungstage, unbearbeitete Rapporte, nicht vollständig gelieferte/bezahlte Bestellungen); Entwürfe und offene Materialanforderungen müssen bestätigt werden.
+- Kostenstellen sind sichtbar und pflegbar, solange Arbeitserfassung oder Beschaffung aktiv ist. Lieferanten und Mitarbeiter bleiben gemeinsame Stammdaten des Basissystems.
+- Ohne Beschaffung keine neuen Materialanforderungen (auch nicht aus Tagesberichten, Prüfung zusätzlich in `MaterialRequestService`).
+
 ## Navigation
 
-Aktuell umgesetzt:
-- **Allgemein:** Übersicht, Kunden, Projekte, Angebote, Aufträge
-- **Ausführung:** Tagesberichte, Rapporte, Aufmaße, Materialanforderungen
-- **Verwaltung:** Stammdaten, Einstellungen
+Aktuell umgesetzt (nur implementierte, aktive und berechtigte Einträge; leere Gruppen entfallen):
+- **Allgemein:** Übersicht · Kunden · Projekte · Dokumente
+- **Auftragsabwicklung:** Angebote · Aufträge · Aufmaße
+- **Arbeitserfassung:** Zeiterfassung · Tagesberichte · Rapporte
+- **Beschaffung:** Bestellungen (Reiter „Bestellungen | Materialbedarf“; ohne Bestellrecht direkt „Materialbedarf“)
+- **Verwaltung:** Stammdaten · Einstellungen
 
-Gruppen ohne sichtbaren Eintrag (fehlende Rechte) werden nicht angezeigt. Es gibt keine deaktivierten Platzhalter. Zielbild:
+Kontakte und Kalender (Allgemein) sowie **Kaufmännisch** (Abrechnung, Nachkalkulation) erscheinen erst mit ihrer Implementierung. Lexware und weitere Integrationen gehören später unter Einstellungen.
 
-- **Allgemein:** Übersicht · Kunden · Projekte · Angebote · Aufträge
-- **Ausführung:** Zeiterfassung · Tagesberichte · Rapporte · Aufmaße · Materialanforderungen
-- **Kaufmännisch:** Bestellungen · Lieferscheine · Nachkalkulation · Abrechnung
-- **Planung:** Kalender / Einsatzplanung (erst mit Phase 5)
-- **Verwaltung:** Kontakte · Stammdaten · Einstellungen
-
-Auftragsdetails bündeln zugehörige Leistungen, Tagesberichte, Aufmaße/Rapporte, Materialanforderungen, Bestellungen, Lieferscheine, Nachkalkulation und Abrechnung. Übergreifende Übersichten sind möglich, ohne für jede Datenart einen Hauptmenüpunkt einzuführen. Neue Menüpunkte erst aktivieren, wenn die Funktion existiert. Bestehende Funktionen und Zugriffsrechte nicht ersatzlos entfernen. Die Menügliederung ist ein Zielbild und wird bei der UX-Überarbeitung anhand der tatsächlichen Nutzung geprüft.
+Die Auftragsdetailseite ist in Reiter gegliedert: Übersicht (Summen, Kennzahlen, Statusverlauf), Leistungen (Auftragsgrundlage, Nachträge), Ausführung (Tagesberichte, Rapporte), Material (Materialbedarf, Bestellungen), Aufmaße, Dokumente. Reiter abgeschalteter Module erscheinen nur bei vorhandenen Daten und ohne Anlegeaktionen. Erfasste Stunden werden mit dem festgeschriebenen Anteil gezeigt; Bestell-Ist-Kosten nur mit `costs.read`, Bestellungen ohne bekannte Ist-Kosten werden gesondert genannt und nicht als 0 gewertet.
 
 ## Technische Leitlinien
 

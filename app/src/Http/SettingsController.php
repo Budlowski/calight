@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http;
 
 use App\Application\DocumentSettingsService;
+use App\Application\ModuleService;
 use App\Application\OperationalSettingsService;
 use App\Domain\Document\DocumentValidationException;
 use App\View\View;
@@ -13,7 +14,7 @@ use JsonException;
 
 final readonly class SettingsController
 {
-    public function __construct(private View $view, private DocumentSettingsService $service, private ?OperationalSettingsService $operations = null) {}
+    public function __construct(private View $view, private DocumentSettingsService $service, private ?OperationalSettingsService $operations = null, private ?ModuleService $modules = null) {}
     public function register(Router $router):void
     {
         $router->add('GET','/settings',fn():Response=>$this->auth(fn()=> $this->view->render('settings/index')));
@@ -25,6 +26,39 @@ final readonly class SettingsController
             try{return Response::json(['settings'=>$this->service->save($data)]);}catch(InvalidArgumentException $e){return Response::json(['error'=>$e->getMessage()],422);}
         },true));
         $this->registerOperations($router);
+        $this->registerModules($router);
+    }
+
+    /** Einstellungen → Module (nur Administratoren; operations.manage, Prüfung zusätzlich im Service). */
+    private function registerModules(Router $router): void
+    {
+        $router->add('GET', '/settings/modules', fn (): Response => $this->auth(fn () => $this->view->render('settings/modules')));
+        $router->add('GET', '/api/modules', fn (): Response => $this->auth(fn () => Response::json(['data' => $this->moduleService()->overview(Session::user() ?? [])]), true));
+        $router->add('PUT', '/api/modules/{key}', fn (Request $request, array $parameters): Response => $this->auth(function () use ($request, $parameters): Response {
+            if (!Session::verifyCsrf($request->headers['x-csrf-token'] ?? null)) {
+                throw new CsrfException('Sicherheitsprüfung fehlgeschlagen.');
+            }
+            try {
+                $data = json_decode($request->body, true, flags: JSON_THROW_ON_ERROR);
+            } catch (JsonException) {
+                return Response::json(['error' => 'Ungültiges JSON.'], 400);
+            }
+            if (!is_array($data) || !is_bool($data['enabled'] ?? null)) {
+                return Response::json(['error' => 'Bitte angeben, ob das Modul aktiv sein soll.'], 422);
+            }
+            try {
+                $result = $this->moduleService()->setEnabled((string) $parameters['key'], $data['enabled'], ($data['confirmOpen'] ?? false) === true, Session::user() ?? []);
+            } catch (DocumentValidationException $exception) {
+                return Response::json(['error' => $exception->getMessage(), 'details' => $exception->errors], 422);
+            }
+            // saved = false: offene Vorgänge (blockierend oder zu bestätigen), siehe openItems.
+            return Response::json(['data' => $result]);
+        }, true));
+    }
+
+    private function moduleService(): ModuleService
+    {
+        return $this->modules ?? throw new \RuntimeException('Modulverwaltung ist nicht konfiguriert.');
     }
     /** Einstellungen → Betrieb (nur Administratoren; Recht operations.manage, Prüfung zusätzlich im Service). */
     private function registerOperations(Router $router): void

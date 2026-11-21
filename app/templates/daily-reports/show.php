@@ -58,11 +58,12 @@
         <div data-attachments aria-live="polite"></div>
     </section>
 
-    <section class="card report-extra-section" aria-labelledby="report-material-heading">
+    <?php // Materialbedarf gehört zur Beschaffung: ohne Modul nur vorhandene Anforderungen lesend (sonst ausgeblendet). ?>
+    <section class="card report-extra-section" aria-labelledby="report-material-heading" data-material-section<?= $moduleEnabled('procurement') ? '' : ' data-material-readonly hidden' ?>>
         <div class="step-section-heading">
             <span class="step-section-number">6</span>
-            <div><h2 id="report-material-heading">Materialbedarf</h2><small>Benötigtes Material an das Büro melden; wird sofort und unabhängig vom Bericht gespeichert.</small></div>
-            <div class="step-section-actions"><button class="button button-light button-small" type="button" data-add-material data-icon="plus">Material anfordern</button></div>
+            <div><h2 id="report-material-heading">Materialbedarf</h2><small><?= $moduleEnabled('procurement') ? 'Benötigtes Material an das Büro melden; wird sofort und unabhängig vom Bericht gespeichert.' : 'Beschaffung ist deaktiviert – vorhandene Anforderungen nur lesend.' ?></small></div>
+            <?php if ($moduleEnabled('procurement')): ?><div class="step-section-actions"><button class="button button-light button-small" type="button" data-add-material data-icon="plus">Material anfordern</button></div><?php endif; ?>
         </div>
         <div data-material-requests></div>
     </section>

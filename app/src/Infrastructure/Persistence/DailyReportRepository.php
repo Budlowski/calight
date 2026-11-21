@@ -255,6 +255,22 @@ final readonly class DailyReportRepository
     }
 
     /** @return list<array{duration_hours:string,labor_cost:string}> */
+    /**
+     * Arbeitsminuten eines Auftrags aus der zentralen Stundenbasis (alle Herkünfte, jede Buchung
+     * einmal) und davon festgeschrieben (Tagessperre approved am Buchungstag).
+     *
+     * @return array{total:int,approved:int}
+     */
+    public function orderMinutes(string $orderId): array
+    {
+        $statement = $this->pdo->prepare("SELECT COALESCE(SUM(b.net_minutes), 0) AS total,
+            COALESCE(SUM(CASE WHEN EXISTS (SELECT 1 FROM time_day_locks l WHERE l.employee_id = b.employee_id AND l.work_date = b.work_date AND l.status = 'approved') THEN b.net_minutes ELSE 0 END), 0) AS approved
+            FROM time_entries b WHERE b.order_id = :id");
+        $statement->execute(['id' => $orderId]);
+        $row = $statement->fetch();
+        return ['total' => (int) $row['total'], 'approved' => (int) $row['approved']];
+    }
+
     public function costRowsForOrder(string $orderId):array
     {
         // Auftragsbezug der zentralen Buchungen (folgt dem Auftrag des Berichts).

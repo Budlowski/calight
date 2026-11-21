@@ -1548,3 +1548,28 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
     .report-time-row > [data-remove-entry] { grid-row:auto; grid-column:1; justify-self:end; }
     .report-head-actions { justify-content:flex-start; }
 }
+
+/* Einstellungen → Module */
+.module-list { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+.module-card { display: flex; flex-direction: column; gap: 6px; margin: 0; }
+.module-card p { margin: 0; }
+.module-card.is-planned { opacity: .75; }
+.module-card-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-2); }
+.module-card-heading > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.module-card-heading h2 { margin: 0; font-size: 1.05rem; }
+.module-toggle { white-space: nowrap; }
+.module-open summary { cursor: pointer; color: var(--muted); font-size: var(--font-small); }
+.module-open-items { margin: 6px 0 0; padding-left: 18px; }
+.module-notice { margin-bottom: var(--space-3); }
+@media (max-width: 640px) { .module-list { grid-template-columns: 1fr; } }
+
+/* Auftragsdetail: Reiter und Kennzahlen */
+.order-tabs { margin: var(--space-3) 0; }
+.order-panel { display: flex; flex-direction: column; gap: var(--space-3); }
+.order-panel[hidden] { display: none; }
+.order-kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: var(--space-2); margin: 0; }
+.order-kpi-grid > div { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: #f8fafb; }
+.order-kpi-grid dt { color: var(--muted); font-size: var(--font-small); }
+.order-kpi-grid dd { margin: 2px 0 0; font-size: 1.15rem; font-weight: 700; }
+.order-kpi-grid small { color: var(--muted); }
+.link-button { padding: 0; border: 0; background: none; color: var(--primary); font: inherit; cursor: pointer; text-decoration: underline; }

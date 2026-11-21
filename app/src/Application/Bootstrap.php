@@ -75,7 +75,9 @@ final readonly class Bootstrap
         $projects = new ProjectRepository($this->pdo);
         $offers = new OfferRepository($this->pdo);
         $store = new OfferJsonStore($this->config->offersPath, new OfferValidator());
-        $view = new View($root . '/templates');
+        // Zentrale Modulregistrierung: Navigation/Templates (View), Routenprüfung (Application), Einstellungen.
+        $modules = new ModuleService($this->pdo);
+        $view = new View($root . '/templates', $modules);
         $priceCalculator=new PriceCalculator();
         $offerCalculator=new OfferCalculator($priceCalculator);
         $masterDataService=new MasterDataService(new MasterDataRepository($this->pdo),$priceCalculator,new NumberRangeRepository($this->pdo));
@@ -100,7 +102,8 @@ final readonly class Bootstrap
         $measurementRepository=new MeasurementRepository($this->pdo);
         $measurementService=new MeasurementService($this->pdo,$measurementRepository,new OrderRepository($this->pdo),$numberRanges);
         $workReportService=new WorkReportService($this->pdo,new WorkReportRepository($this->pdo),new OrderRepository($this->pdo),$numberRanges,$priceCalculator,$documentStore,$orderService);
-        $materialRequestService=new MaterialRequestService(new MaterialRequestRepository($this->pdo),new OrderRepository($this->pdo),$dailyReportRepository);
+        $purchaseOrderService=new PurchaseOrderService($this->pdo,new PurchaseOrderRepository($this->pdo),$numberRanges,$documentStore,new PurchaseOrderPdfService($documentSettingsRepository));
+        $materialRequestService=new MaterialRequestService(new MaterialRequestRepository($this->pdo),new OrderRepository($this->pdo),$dailyReportRepository,$modules);
 
         return new Application(
             new Router(),
@@ -112,10 +115,10 @@ final readonly class Bootstrap
             $masterData,
             $customerProjects,
             new OfferCalculationController(new OfferCalculationService($masterDataService,new OfferValidator(),$offerCalculator)),
-            new SettingsController($view,$settingsService,new OperationalSettingsService($this->pdo)),
+            new SettingsController($view,$settingsService,new OperationalSettingsService($this->pdo,$modules),$modules),
             $offerPdfService,
             new InternalCalculationPdfService($this->pdo,$documentSettingsRepository,new OfferValidator(),$offerCalculator),
-            new OrderController($view,$orderService,$dailyReportService,$materialRequestService,$measurementService,$workReportService),
+            new OrderController($view,$orderService,$dailyReportService,$materialRequestService,$measurementService,$workReportService,$purchaseOrderService,$modules),
             new DocumentLockController($documentLockService),
             $documentLockService,
             new UserAccessController(new UserAccessService($userRepository)),
@@ -124,11 +127,12 @@ final readonly class Bootstrap
             new MaterialRequestController($view,$materialRequestService),
             new MeasurementController($view,$measurementService,new MeasurementPdfService($measurementService,$measurementRepository,$documentSettingsRepository,$documentArchive)),
             new WorkReportController($view,$workReportService,new WorkReportPdfService($workReportService,$documentSettingsRepository,$documentArchive),$documentSettingsRepository),
-            new PurchaseOrderController($view,new PurchaseOrderService($this->pdo,new PurchaseOrderRepository($this->pdo),$numberRanges,$documentStore,new PurchaseOrderPdfService($documentSettingsRepository)),$masterDataService),
+            new PurchaseOrderController($view,$purchaseOrderService,$masterDataService),
             new DocumentController($view,new DocumentService($this->pdo,new AttachmentRepository($this->pdo),new DocumentRepository($this->pdo),$documentStore)),
             new TimeTrackingController($view,$timeTracking=new TimeTrackingService(new TimeTrackingRepository($this->pdo),$documentStore,new CostTargets($this->pdo)),
                 new TimeApprovalService(new TimeApprovalRepository($this->pdo),new TimeTrackingRepository($this->pdo),$timeTracking,new OperationalSettingsService($this->pdo),new DocumentSettingsRepository($this->pdo),$documentStore,null,$dailyReportService)),
             new CostCenterController($view,new CostCenterService($this->pdo,new CostCenterRepository($this->pdo),dirname(__DIR__,2).'/config/cost-center-template.json')),
+            $modules,
         );
     }
 }

@@ -29,7 +29,24 @@ final readonly class MaterialRequestService
         private MaterialRequestRepository $requests,
         private OrderRepository $orders,
         private DailyReportRepository $reports,
+        private ?ModuleService $modules = null,
     ) {
+    }
+
+    /**
+     * Materialbedarf gehört zur Beschaffung: Ohne aktives Modul entstehen keine neuen Anforderungen
+     * (auch nicht aus Tagesberichten) und bestehende werden nicht bearbeitet – sie bleiben lesbar.
+     */
+    public function enabled(): bool
+    {
+        return $this->modules === null || $this->modules->isEnabled('procurement');
+    }
+
+    private function assertEnabled(): void
+    {
+        if (!$this->enabled()) {
+            throw new DailyReportValidationException([ModuleService::disabledMessage('procurement')]);
+        }
     }
 
     /**
@@ -64,6 +81,7 @@ final readonly class MaterialRequestService
      */
     public function create(array $input, array $actor): array
     {
+        $this->assertEnabled();
         $orderId = trim((string) ($input['orderId'] ?? ''));
         $reportId = trim((string) ($input['dailyReportId'] ?? ''));
         $customerId = null;
@@ -126,6 +144,7 @@ final readonly class MaterialRequestService
     /** @param array<string,mixed> $input @param array<string,mixed> $actor @return array<string,mixed> */
     public function update(string $id, array $input, array $actor): array
     {
+        $this->assertEnabled();
         $current = $this->findAccessible($id, $actor);
         if (!$this->canEdit($current, $actor)) {
             throw new AccessDeniedException('reports.write.own');
@@ -143,6 +162,7 @@ final readonly class MaterialRequestService
     /** Erledigen bzw. wieder öffnen; nur mit materials.manage (Büro/Admin). */
     public function setStatus(string $id, array $input, array $actor): array
     {
+        $this->assertEnabled();
         if (!$this->canManage($actor)) {
             throw new AccessDeniedException('materials.manage');
         }
@@ -160,6 +180,7 @@ final readonly class MaterialRequestService
     /** @param array<string,mixed> $actor */
     public function delete(string $id, int $version, array $actor): void
     {
+        $this->assertEnabled();
         $current = $this->findAccessible($id, $actor);
         if (!$this->canEdit($current, $actor)) {
             throw new AccessDeniedException('reports.write.own');
@@ -278,8 +299,8 @@ final readonly class MaterialRequestService
             'createdAt' => $row['created_at'],
             'updatedAt' => $row['updated_at'],
             'version' => (int) $row['version'],
-            'canEdit' => $open && $this->canEdit($row, $actor),
-            'canManage' => $this->canManage($actor),
+            'canEdit' => $open && $this->enabled() && $this->canEdit($row, $actor),
+            'canManage' => $this->enabled() && $this->canManage($actor),
         ];
     }
 }

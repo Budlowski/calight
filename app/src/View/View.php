@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace App\View;
 
+use App\Application\ModuleService;
 use App\Http\Response;
 use App\Http\Session;
 use RuntimeException;
 
 final readonly class View
 {
-    public function __construct(private string $templateDirectory)
+    public function __construct(private string $templateDirectory, private ?ModuleService $modules = null)
     {
     }
 
@@ -26,6 +27,9 @@ final readonly class View
         $csrfToken = Session::csrfToken();
         $currentUser = Session::user();
         $flashMessages = Session::consumeFlash();
+        // Modulprüfung für Navigation und Oberfläche (ohne Registrierung: alles aktiv).
+        $modules = $this->modules;
+        $moduleEnabled = fn (string $module): bool => $this->modules === null || $this->modules->isEnabled($module);
         extract($data, EXTR_SKIP);
         ob_start();
         require $templateFile;

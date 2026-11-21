@@ -6,15 +6,17 @@ use App\Application\DailyReportService;
 use App\Application\MaterialRequestService;
 use App\Application\MeasurementService;
 use App\Application\WorkReportService;
+use App\Application\PurchaseOrderService;
+use App\Application\ModuleService;
 use App\Domain\Order\OrderValidationException;
 use App\View\View;
 use JsonException;
 final readonly class OrderController
 {
- public function __construct(private View $view,private OrderService $service,private ?DailyReportService $dailyReports=null,private ?MaterialRequestService $materialRequests=null,private ?MeasurementService $measurements=null,private ?WorkReportService $workReports=null){}
+ public function __construct(private View $view,private OrderService $service,private ?DailyReportService $dailyReports=null,private ?MaterialRequestService $materialRequests=null,private ?MeasurementService $measurements=null,private ?WorkReportService $workReports=null,private ?PurchaseOrderService $purchaseOrders=null,private ?ModuleService $modules=null){}
  public function register(Router $r):void{
   $r->add('GET','/orders',fn():Response=>$this->page(fn()=> $this->view->render('orders/index',$this->service->referenceData())));
-  $r->add('GET','/orders/{id}',fn(Request $q,array $p):Response=>$this->page(function()use($p){$order=$this->service->detail($p['id']);if(($this->technician())&&$order['status']==='open')throw new AccessDeniedException('orders.released.read');$actor=Session::user()??[];$reportPage=$this->dailyReports===null?['items'=>[],'total'=>0]:$this->dailyReports->page(['order'=>(string)$p['id'],'per_page'=>'10'],$actor);$reports=$reportPage['items'];$actual=$this->dailyReports===null?['hours'=>'0.000','costs'=>'0.00']:$this->dailyReports->orderTotals($p['id']);if(!Session::can('costs.read'))unset($actual['costs']);return$this->view->render('orders/show',['order'=>$order,'dailyReports'=>$reports,'dailyReportTotal'=>(int)$reportPage['total'],'materialRequests'=>$this->materialRequests?->openForOrder((string)$p['id'],$actor)??[],'workReports'=>$this->workReports!==null&&Session::can('workreports.read')?$this->workReports->forOrder((string)$p['id'],$actor):null,'measurementOverview'=>$this->measurements!==null&&Session::can('measurements.read')?$this->measurements->forOrder((string)$p['id'],$actor):null,'actualLabor'=>$actual]);}));
+  $r->add('GET','/orders/{id}',fn(Request $q,array $p):Response=>$this->page(fn()=>$this->show((string)$p['id'])));
   $r->add('GET','/api/orders',fn(Request $q):Response=>$this->api(fn()=>Response::json(['data'=>$this->service->page($q->query,$this->technician())])));
   $r->add('POST','/api/orders',fn(Request $q):Response=>$this->mutation($q,fn($d)=>$this->service->createRegie($d),201));
   $r->add('POST','/api/offers/{id}/order',fn(Request $q,array $p):Response=>$this->mutation($q,fn()=> $this->service->createFromOffer($p['id']),201));
@@ -22,6 +24,36 @@ final readonly class OrderController
   $r->add('POST','/api/change-orders/{id}/accept',fn(Request $q,array $p):Response=>$this->mutation($q,fn($d)=>$this->service->acceptChangeOrder($p['id'],(string)($d['expectedStatus']??''))));
   $r->add('PATCH','/api/orders/{id}',fn(Request $q,array $p):Response=>$this->mutation($q,fn($d)=>$this->service->updateDetails($p['id'],$d)));
   $r->add('PATCH','/api/orders/{id}/status',fn(Request $q,array $p):Response=>$this->mutation($q,fn($d)=>$this->service->changeStatus($p['id'],(string)($d['expectedStatus']??''),(string)($d['status']??''))));
+ }
+ /**
+  * Auftragsdetail als zentrale Arbeitsoberfläche. Bereiche abgeschalteter Module erscheinen nur,
+  * wenn bereits Daten vorhanden sind (lesend, ohne Anlegeaktionen). Alle Werte stammen aus den
+  * bestehenden Diensten; keine eigene Auftragsfachlogik.
+  */
+ private function show(string $id):Response
+ {
+  $order=$this->service->detail($id);
+  if($this->technician()&&$order['status']==='open')throw new AccessDeniedException('orders.released.read');
+  $actor=Session::user()??[];
+  $workTracking=$this->modules===null||$this->modules->isEnabled('work_tracking');
+  $procurement=$this->modules===null||$this->modules->isEnabled('procurement');
+  $reportPage=$this->dailyReports!==null&&Session::can('reports.read')?$this->dailyReports->page(['order'=>$id,'per_page'=>'10'],$actor):['items'=>[],'total'=>0];
+  $actual=$this->dailyReports?->orderTotals($id)??['hours'=>'0.000','costs'=>'0.00'];
+  if(!Session::can('costs.read'))unset($actual['costs']);
+  $purchasePage=$this->purchaseOrders!==null&&Session::can('purchases.read')?$this->purchaseOrders->page(['order'=>$id,'per_page'=>'25'],$actor):null;
+  $purchaseCosts=$purchasePage!==null&&Session::can('costs.read')?$this->purchaseOrders?->costsByOrder($id,$actor):null;
+  return$this->view->render('orders/show',[
+   'order'=>$order,
+   'modulesActive'=>['work_tracking'=>$workTracking,'procurement'=>$procurement],
+   'dailyReports'=>$reportPage['items'],'dailyReportTotal'=>(int)$reportPage['total'],
+   'materialRequests'=>$this->materialRequests?->openForOrder($id,$actor)??[],
+   'workReports'=>$this->workReports!==null&&Session::can('workreports.read')?$this->workReports->forOrder($id,$actor):null,
+   'measurementOverview'=>$this->measurements!==null&&Session::can('measurements.read')?$this->measurements->forOrder($id,$actor):null,
+   'actualLabor'=>$actual,
+   'orderHours'=>$this->dailyReports?->orderHours($id)??['hours'=>'0.000','approvedHours'=>'0.000'],
+   'purchaseOrders'=>$purchasePage,
+   'purchaseCosts'=>$purchaseCosts,
+  ]);
  }
  private function page(callable $h):Response{return Session::user()===null?Response::redirect('/login'):$h();}
  private function api(callable $h):Response{return Session::user()===null?Response::json(['error'=>'Anmeldung erforderlich.'],401):$h();}

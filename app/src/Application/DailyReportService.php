@@ -597,6 +597,19 @@ final readonly class DailyReportService
         $hours=BigDecimal::zero();$costs=BigDecimal::zero();foreach($this->reports->costRowsForOrder($orderId) as $row){$hours=$hours->plus($row['duration_hours']);$costs=$costs->plus($row['labor_cost']);}return['hours'=>(string)$hours->toScale(Decimal::TIME_SCALE,RoundingMode::HalfUp),'costs'=>Decimal::money($costs)];
     }
 
+    /**
+     * Erfasste Arbeitsstunden eines Auftrags (zentrale Basis, inkl. vorläufiger Entwurfsstunden)
+     * und davon festgeschriebene Stunden – für die Auftragsübersicht.
+     *
+     * @return array{hours:string,approvedHours:string}
+     */
+    public function orderHours(string $orderId): array
+    {
+        $minutes = $this->reports->orderMinutes($orderId);
+        $hours = static fn (int $value): string => (string) BigDecimal::of($value)->dividedBy(60, Decimal::TIME_SCALE, RoundingMode::HalfUp);
+        return ['hours' => $hours($minutes['total']), 'approvedHours' => $hours($minutes['approved'])];
+    }
+
     /** Leserecht für Auswertungen je Auftrag (Techniker: nur freigegebene Aufträge). @param array<string,mixed> $actor */
     public function assertOrderReadable(string $orderId,array $actor):void
     {
