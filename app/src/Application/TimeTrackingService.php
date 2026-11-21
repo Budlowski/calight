@@ -40,7 +40,6 @@ final readonly class TimeTrackingService
     public const ACTIVITIES = ['work' => 'Arbeit / Montage', 'preparation' => 'Vorbereitung / Werkstatt', 'internal' => 'Interne Tätigkeit', 'other' => 'Sonstiges', 'travel' => 'Fahrt (bisherige Erfassung)'];
     public const SELECTABLE_ACTIVITIES = ['work', 'preparation', 'internal', 'other'];
     public const ASSIGNMENTS = ['regular' => 'Erste Tätigkeitsstätte', 'external' => 'Auswärtstätigkeit / wechselnder Einsatzort'];
-    public const TRAVEL_DAYS = ['none' => 'Kein besonderer Reisetag', 'arrival' => 'Anreisetag', 'departure' => 'Abreisetag'];
     public const SOURCE_KINDS = ['work_report' => 'Rapport', 'daily_report' => 'Tagesbericht', 'manual' => 'Manuell'];
     public const RECEIPT_TYPES = DocumentService::ALLOWED_TYPES;
     private const LONG_DAY_MINUTES = 600;
@@ -65,7 +64,10 @@ final readonly class TimeTrackingService
             'activities' => array_intersect_key(self::ACTIVITIES, array_flip(self::SELECTABLE_ACTIVITIES)),
             'activityLabels' => self::ACTIVITIES,
             'assignments' => self::ASSIGNMENTS,
-            'travelDays' => self::TRAVEL_DAYS,
+            // Reisekosten: Kategorien und rechnerische Werte aus den Betriebseinstellungen.
+            'travelCategories' => TravelAllowance::labels($settings = $this->settings()),
+            'travelSettings' => ['mealAllowances' => (bool) $settings['travel.meal_allowances_enabled'], 'kmRate' => $settings['travel.km_rate'],
+                'thresholdHours' => $settings['travel.single_day_threshold_hours']],
             'sourceKinds' => self::SOURCE_KINDS,
             'timesOptional' => $this->times->timesOptional(),
             'ownEmployeeId' => $own['id'] ?? null,
@@ -101,6 +103,7 @@ final readonly class TimeTrackingService
             }
         }
         $details = $this->times->details((string) $employee['id'], $date);
+        $trips = $this->times->trips((string) $employee['id'], $date, $date);
         $expenses = $this->times->expenses((string) $employee['id'], $date, $date);
         // Eingereichte und festgeschriebene Tage sind für alle gesperrt (auch Büro/Admin).
         $lockStatus = $this->times->dayLocks((string) $employee['id'], $date, $date)[$date] ?? 'open';
@@ -114,6 +117,10 @@ final readonly class TimeTrackingService
             // Summen nach Kalendertag (über Mitternacht anteilig, siehe split()); nur zählende Buchungen.
             'totals' => $this->dayShares($withPrevious, $date, $date, $timesOptional)[$date],
             'details' => $details !== null ? $this->mapDetails($details) : null,
+            'trips' => array_map($this->mapTrip(...), $trips),
+            // Rechnerische Referenzwerte (Verpflegung, Kilometer) und Hinweise des Tages.
+            'travel' => $travel = $this->travelDay($details, $trips, $this->settings()),
+            'travelWarnings' => $this->travelWarnings($travel, $this->settings()),
             'expenses' => array_map(fn (array $expense): array => $this->mapExpense($expense), $expenses),
             'expenseTotal' => $this->sum(array_column($expenses, 'amount')),
             'warnings' => $this->warnings((string) $employee['id'], $date, $entries),
@@ -138,12 +145,19 @@ final readonly class TimeTrackingService
         $entries = $this->times->entries((string) $employee['id'], (new DateTimeImmutable($from))->modify('-1 day')->format('Y-m-d'), $to);
         $shares = $this->dayShares($entries, $from, $to, $timesOptional);
         $details = array_column($this->times->detailsRange((string) $employee['id'], $from, $to), null, 'work_date');
+        $trips = [];
+        foreach ($this->times->trips((string) $employee['id'], $from, $to) as $trip) {
+            $trips[$trip['work_date']][] = $trip;
+        }
+        $settings = $this->settings();
         $expenses = $this->times->expenses((string) $employee['id'], $from, $to);
         $locks = $this->times->dayLocks((string) $employee['id'], $from, $to);
         $days = [];
         $totals = ['netMinutes' => 0, 'travelMinutes' => 0, 'workMinutes' => 0, 'incompleteMinutes' => 0, 'untimedMinutes' => 0,
             'bySource' => ['work_report' => 0, 'daily_report' => 0, 'manual' => 0]];
+        $travelDays = [];
         foreach ($shares as $key => $share) {
+            $travel = $travelDays[] = $this->travelDay($details[$key] ?? null, $trips[$key] ?? [], $settings);
             $dayExpenses = array_filter($expenses, static fn (array $expense): bool => $expense['work_date'] === $key);
             foreach (['netMinutes', 'travelMinutes', 'workMinutes', 'incompleteMinutes', 'untimedMinutes'] as $field) {
                 $totals[$field] += $share[$field];
@@ -153,7 +167,8 @@ final readonly class TimeTrackingService
             }
             $days[] = $share + [
                 'date' => $key,
-                'privateKm' => $details[$key]['private_km'] ?? null,
+                'privateKm' => $travel['privateKm'] ?? null,
+                'mealAllowance' => $travel['allowance'] ?? null,
                 'expenseTotal' => $dayExpenses === [] ? null : $this->sum(array_column($dayExpenses, 'amount')),
                 'hasDetails' => isset($details[$key]),
                 'lockStatus' => $locks[$key] ?? 'open',
@@ -166,9 +181,8 @@ final readonly class TimeTrackingService
             'timesOptional' => $timesOptional,
             'days' => $days,
             'totals' => $totals + [
-                'privateKm' => $this->decimalSum(array_filter(array_column($details, 'private_km'), static fn (?string $value): bool => $value !== null), 1),
                 'expenseTotal' => $this->sum(array_column($expenses, 'amount')),
-            ],
+            ] + $this->travelTotals($travelDays, $settings),
         ];
     }
 
@@ -475,33 +489,84 @@ final readonly class TimeTrackingService
     // Einsatz, Kilometer und Auslagen
     // -------------------------------------------------------------------------
 
-    /** @param array<string,mixed> $input @param array<string,mixed> $actor @return array<string,mixed> */
+    /**
+     * Auswärtstätigkeit und Verpflegung eines Tages: Kategorie (nie aus der Arbeitszeit
+     * abgeleitet), Inland/Ausland, optionale Abwesenheitsdauer, Übernachtung, gestellte
+     * Mahlzeiten, Einsatzort und Bemerkung.
+     *
+     * @param array<string,mixed> $input
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
     public function saveDetails(array $input, array $actor): array
     {
         $employee = $this->employee(isset($input['employeeId']) ? (string) $input['employeeId'] : null, $actor);
         $this->assertEditable($employee, $actor);
         $date = $this->date((string) ($input['date'] ?? ''));
         $this->assertDaysOpen((string) $employee['id'], [$date]);
-        // Abwesenheit (optional, nur Dokumentation).
-        $absenceStart = trim((string) ($input['absenceStart'] ?? '')) !== '' ? $this->time((string) $input['absenceStart'], 'Beginn der Abwesenheit') : null;
-        $absenceEnd = trim((string) ($input['absenceEnd'] ?? '')) !== '' ? $this->time((string) $input['absenceEnd'], 'Ende der Abwesenheit') : null;
-        $travelDay = (string) ($input['travelDay'] ?? 'none');
-        if (!isset(self::TRAVEL_DAYS[$travelDay])) {
-            throw new DocumentValidationException(['Ungültiger Reisetag.']);
+        $category = (string) ($input['travelCategory'] ?? 'none');
+        if (!in_array($category, TravelAllowance::CATEGORIES, true)) {
+            throw new DocumentValidationException(['Bitte eine gültige Art der Auswärtstätigkeit wählen.']);
         }
-        $km = $this->decimal($input['privateKm'] ?? '', 1, 'Kilometer');
-        if ($km !== null && (BigDecimal::of($km)->isNegative() || BigDecimal::of($km)->isGreaterThan(5000))) {
-            throw new DocumentValidationException(['Bitte zwischen 0 und 5.000 Kilometer angeben.']);
-        }
-        $kmOrder = $this->optionalOrder($input['privateKmOrderId'] ?? '', $actor, null);
+        $absence = $this->absence($input['absence'] ?? '');
+        $flag = static fn (string $key): int => filter_var($input[$key] ?? false, FILTER_VALIDATE_BOOL) ? 1 : 0;
         $this->times->saveDetails([
-            'employee_id' => $employee['id'], 'work_date' => $date, 'absence_start' => $absenceStart, 'absence_end' => $absenceEnd,
-            'overnight' => filter_var($input['overnight'] ?? false, FILTER_VALIDATE_BOOL) ? 1 : 0, 'travel_day' => $travelDay,
+            'employee_id' => $employee['id'], 'work_date' => $date, 'travel_category' => $category, 'abroad' => $flag('abroad'), 'absence_minutes' => $absence,
+            'overnight' => $flag('overnight'), 'meal_breakfast' => $flag('mealBreakfast'), 'meal_lunch' => $flag('mealLunch'), 'meal_dinner' => $flag('mealDinner'),
             'location' => $this->text($input['location'] ?? '', 200, 'Einsatzort'), 'notes' => $this->text($input['notes'] ?? '', 1000, 'Bemerkung'),
-            'private_km' => $km, 'private_km_purpose' => $this->text($input['privateKmPurpose'] ?? '', 200, 'Fahrtzweck'), 'private_km_order_id' => $kmOrder,
             'updated_by_user_id' => (string) $actor['id'], 'updated_at' => Clock::now(),
         ]);
         return $this->day((string) $employee['id'], $date, $actor);
+    }
+
+    /**
+     * Dienstliche Privat-Pkw-Fahrt anlegen (ohne id) oder bearbeiten: Kilometer, Strecke,
+     * Zweck, optional Auftrag ODER Kostenstelle und Bemerkung. Keine Fahrtenbuchverwaltung.
+     *
+     * @param array<string,mixed> $input
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
+    public function saveTrip(array $input, array $actor): array
+    {
+        $existing = isset($input['id']) && $input['id'] !== '' ? ($this->times->trip((string) $input['id']) ?? throw new DocumentValidationException(['Die Fahrt wurde nicht gefunden.'])) : null;
+        $employee = $this->employee($existing !== null ? (string) $existing['employee_id'] : (isset($input['employeeId']) ? (string) $input['employeeId'] : null), $actor);
+        $this->assertEditable($employee, $actor);
+        $date = $this->date((string) ($input['date'] ?? $existing['work_date'] ?? ''));
+        $this->assertDaysOpen((string) $employee['id'], array_values(array_unique(array_filter([$date, $existing['work_date'] ?? null]))));
+        $km = $this->decimal($input['kilometers'] ?? '', 1, 'Kilometer');
+        if ($km === null || !BigDecimal::of($km)->isPositive() || BigDecimal::of($km)->isGreaterThan(5000)) {
+            throw new DocumentValidationException(['Bitte die gefahrenen Kilometer angeben (mehr als 0, höchstens 5.000).']);
+        }
+        $purpose = $this->text($input['purpose'] ?? '', 200, 'Fahrtzweck');
+        if ($purpose === '') {
+            throw new DocumentValidationException(['Bitte den Fahrtzweck angeben.']);
+        }
+        $order = $this->optionalOrder($input['orderId'] ?? '', $actor, $existing['order_id'] ?? null);
+        $values = [
+            'work_date' => $date, 'kilometers' => $km, 'route' => $this->text($input['route'] ?? '', 200, 'Strecke / Reiseziel'), 'purpose' => $purpose,
+            'order_id' => $order, 'cost_center_id' => $this->costCenter($input['costCenterId'] ?? '', $order, $existing['cost_center_id'] ?? null),
+            'notes' => $this->text($input['notes'] ?? '', 500, 'Bemerkung'), 'updated_by_user_id' => (string) $actor['id'], 'updated_at' => Clock::now(),
+        ];
+        if ($existing === null) {
+            $this->times->insertTrip($values + ['id' => Uuid::v4(), 'employee_id' => $employee['id'], 'created_by_user_id' => (string) $actor['id'], 'created_at' => $values['updated_at']]);
+        } elseif (!$this->times->updateTrip((string) $existing['id'], $this->version($input), $values)) {
+            throw new DocumentValidationException(['Die Fahrt wurde zwischenzeitlich geändert. Bitte neu laden.']);
+        }
+        return $this->day((string) $employee['id'], $date, $actor);
+    }
+
+    /** @param array<string,mixed> $input @param array<string,mixed> $actor @return array<string,mixed> */
+    public function deleteTrip(string $id, array $input, array $actor): array
+    {
+        $trip = $this->times->trip($id) ?? throw new DocumentValidationException(['Die Fahrt wurde nicht gefunden.']);
+        $employee = $this->employee((string) $trip['employee_id'], $actor);
+        $this->assertEditable($employee, $actor);
+        $this->assertDaysOpen((string) $employee['id'], [(string) $trip['work_date']]);
+        if (!$this->times->deleteTrip($id, $this->version($input))) {
+            throw new DocumentValidationException(['Die Fahrt wurde zwischenzeitlich geändert. Bitte neu laden.']);
+        }
+        return $this->day((string) $employee['id'], (string) $trip['work_date'], $actor);
     }
 
     /**
@@ -806,10 +871,18 @@ final readonly class TimeTrackingService
     private function mapDetails(array $details): array
     {
         return [
-            'overnight' => (bool) $details['overnight'], 'travelDay' => $details['travel_day'],
-            'absenceStart' => $details['absence_start'], 'absenceEnd' => $details['absence_end'],
-            'location' => $details['location'], 'notes' => $details['notes'], 'privateKm' => $details['private_km'],
-            'privateKmPurpose' => $details['private_km_purpose'], 'privateKmOrderId' => $details['private_km_order_id'], 'privateKmOrderNumber' => $details['km_order_number'],
+            'travelCategory' => $details['travel_category'], 'abroad' => (bool) $details['abroad'], 'absenceMinutes' => $details['absence_minutes'] !== null ? (int) $details['absence_minutes'] : null,
+            'overnight' => (bool) $details['overnight'], 'mealBreakfast' => (bool) $details['meal_breakfast'], 'mealLunch' => (bool) $details['meal_lunch'], 'mealDinner' => (bool) $details['meal_dinner'],
+            'location' => $details['location'], 'notes' => $details['notes'],
+        ];
+    }
+
+    /** @param array<string,mixed> $trip @return array<string,mixed> */
+    private function mapTrip(array $trip): array
+    {
+        return [
+            'id' => $trip['id'], 'version' => (int) $trip['version'], 'kilometers' => $trip['kilometers'], 'route' => $trip['route'], 'purpose' => $trip['purpose'], 'notes' => $trip['notes'],
+            'orderId' => $trip['order_id'], 'orderNumber' => $trip['order_number'], 'costCenterId' => $trip['cost_center_id'], 'costCenterNumber' => $trip['cost_center_number'],
         ];
     }
 
@@ -855,45 +928,123 @@ final readonly class TimeTrackingService
         return $this->employee($employeeId, $actor);
     }
 
-    /** Tagesangaben für Prüfung und Nachweis. @param array<string,mixed> $row @return array<string,mixed> */
-    public function detailsSnapshot(array $row): array
+    /** Aktuelle Betriebseinstellungen (mit Standardwerten). @return array<string,bool|string> */
+    public function settings(): array
     {
+        return OperationalSettingsService::resolve($this->times->rawSettings());
+    }
+
+    /**
+     * Reiseangaben eines Tages für Anzeige, Prüfung und Nachweis: Auswärtstätigkeit mit
+     * rechnerischer Verpflegungspauschale, Fahrten mit Kilometern und rechnerischem Betrag.
+     * null, wenn weder Tagesangaben noch Fahrten vorhanden sind.
+     *
+     * @param array<string,mixed>|null $details
+     * @param list<array<string,mixed>> $trips
+     * @param array<string,bool|string> $settings
+     * @return array<string,mixed>|null
+     */
+    public function travelDay(?array $details, array $trips, array $settings): ?array
+    {
+        if ($details === null && $trips === []) {
+            return null;
+        }
+        $labels = TravelAllowance::labels($settings);
+        $category = (string) ($details['travel_category'] ?? 'none');
+        $meals = ['breakfast' => (bool) ($details['meal_breakfast'] ?? false), 'lunch' => (bool) ($details['meal_lunch'] ?? false), 'dinner' => (bool) ($details['meal_dinner'] ?? false)];
+        $allowance = TravelAllowance::calculate($category, (bool) ($details['abroad'] ?? false), $meals, $settings);
+        $km = $trips === [] ? null : $this->decimalSum(array_column($trips, 'kilometers'), 1);
+        $mealNames = array_keys(array_filter(['Frühstück' => $meals['breakfast'], 'Mittagessen' => $meals['lunch'], 'Abendessen' => $meals['dinner']]));
+        $absence = isset($details['absence_minutes']) ? (int) $details['absence_minutes'] : null;
+        $tripTexts = array_map(fn (array $trip): string => str_replace('.', ',', (string) $trip['kilometers']) . ' km ' . trim(implode(' · ', array_filter([(string) $trip['route'], (string) $trip['purpose'],
+            (string) ($trip['order_number'] ?? $trip['cost_center_number'] ?? '')]))), $trips);
         return [
-            'overnight' => (bool) $row['overnight'], 'travelDay' => $row['travel_day'], 'travelDayLabel' => self::TRAVEL_DAYS[$row['travel_day']] ?? (string) $row['travel_day'],
-            'location' => (string) $row['location'], 'notes' => (string) $row['notes'], 'privateKm' => $row['private_km'], 'privateKmPurpose' => (string) $row['private_km_purpose'],
+            'category' => $category, 'categoryLabel' => $labels[$category] ?? $category, 'abroad' => (bool) ($details['abroad'] ?? false), 'absenceMinutes' => $absence,
+            'overnight' => (bool) ($details['overnight'] ?? false), 'meals' => $meals, 'location' => (string) ($details['location'] ?? ''), 'notes' => (string) ($details['notes'] ?? ''),
+            'allowance' => $category === 'none' ? null : $allowance['amount'], 'allowanceBase' => $allowance['base'], 'allowanceReduction' => $allowance['reduction'], 'allowanceNote' => $allowance['note'],
+            'trips' => array_map(static fn (array $trip): array => ['kilometers' => $trip['kilometers'], 'route' => $trip['route'], 'purpose' => $trip['purpose'],
+                'target' => $trip['order_number'] ?? $trip['cost_center_number'] ?? null, 'notes' => $trip['notes']], $trips),
+            'privateKm' => $km, 'kmAmount' => $km !== null ? TravelAllowance::kilometers($km, $settings) : null,
             'summary' => implode(' · ', array_filter([
-                $row['travel_day'] !== 'none' ? self::TRAVEL_DAYS[$row['travel_day']] ?? '' : '', (bool) $row['overnight'] ? 'Übernachtung' : '', (string) $row['location'],
-                (string) $row['private_km_purpose'], (string) $row['notes'],
+                $category !== 'none' ? $labels[$category] ?? $category : '', ($details['abroad'] ?? false) ? 'Ausland' : '', (string) ($details['location'] ?? ''),
+                $absence !== null ? 'Abwesenheit ' . self::hours($absence) : '', ($details['overnight'] ?? false) ? 'Übernachtung' : '',
+                $mealNames !== [] ? 'gestellt: ' . implode(', ', $mealNames) : '', $tripTexts !== [] ? 'Fahrten: ' . implode('; ', $tripTexts) : '', (string) ($details['notes'] ?? ''),
             ])),
         ];
     }
 
     /**
-     * Hinweise zu unvollständigen Reiseangaben eines Tages.
+     * Hinweise zu unvollständigen oder unplausiblen Reiseangaben (verhindern nichts).
      *
-     * @param array<string,mixed>|null $details
+     * @param array<string,mixed>|null $travel Ergebnis von travelDay()
      * @param array<string,bool|string> $settings
      * @return list<string>
      */
-    public function travelWarnings(?array $details, array $settings): array
+    public function travelWarnings(?array $travel, array $settings): array
     {
-        if ($details === null) {
+        if ($travel === null) {
             return [];
         }
         $warnings = [];
-        if (($details['overnight'] || $details['travelDay'] !== 'none') && trim((string) $details['location']) === '') {
-            $warnings[] = 'Reisetag oder Übernachtung ohne Einsatzort/Reiseziel.';
+        $threshold = (int) BigDecimal::of((string) $settings['travel.single_day_threshold_hours'])->multipliedBy(60)->toScale(0, \Brick\Math\RoundingMode::HalfUp)->toInt();
+        $category = $travel['category'];
+        if ($category !== 'none' && trim($travel['location']) === '') {
+            $warnings[] = 'Auswärtstätigkeit ohne Einsatzort/Reiseziel.';
         }
-        if ($details['privateKm'] !== null && trim((string) $details['privateKmPurpose']) === '') {
-            $warnings[] = 'Privat-Pkw-Kilometer ohne Fahrtzweck.';
+        if ($category === 'single_long' && $travel['absenceMinutes'] !== null && $travel['absenceMinutes'] <= $threshold) {
+            $warnings[] = sprintf('Abwesenheit %s – für eine Pauschale ist eine Abwesenheit von mehr als %s erforderlich.', self::hours($travel['absenceMinutes']), self::hours($threshold));
+        }
+        if ($category === 'single_short' && $travel['absenceMinutes'] !== null && $travel['absenceMinutes'] > $threshold) {
+            $warnings[] = sprintf('Abwesenheit %s – Kategorie „über %s“ prüfen.', self::hours($travel['absenceMinutes']), self::hours($threshold));
+        }
+        if ($category === 'full' && $travel['absenceMinutes'] !== null && $travel['absenceMinutes'] < 1440) {
+            $warnings[] = 'Voller Tag erfordert 24 Stunden Abwesenheit.';
+        }
+        if ($category === 'arrival' && !$travel['overnight']) {
+            $warnings[] = 'Anreisetag ohne auswärtige Übernachtung.';
+        }
+        if ($category !== 'none' && $travel['abroad']) {
+            $warnings[] = 'Auslandseinsatz: Verpflegungspauschale wird nicht automatisch berechnet – Prüfung durch das Büro.';
+        }
+        foreach ($travel['trips'] as $trip) {
+            if (trim((string) $trip['route']) === '') {
+                $warnings[] = 'Privat-Pkw-Fahrt ohne Strecke/Reiseziel.';
+                break;
+            }
         }
         return $warnings;
     }
 
-    /** Summen der Reiseangaben. @param list<array<string,mixed>|null> $details @return array<string,mixed> */
-    public function travelTotals(array $details): array
+    /**
+     * Summen der Reiseangaben: Kilometer, rechnerischer Kilometerbetrag und Verpflegung.
+     *
+     * @param list<array<string,mixed>|null> $days Ergebnisse von travelDay()
+     * @param array<string,bool|string> $settings
+     * @return array{privateKm:string,kmAmount:string,mealAllowance:?string}
+     */
+    public function travelTotals(array $days, array $settings): array
     {
-        return ['privateKm' => $this->decimalSum(array_map(static fn (?array $day): ?string => $day['privateKm'] ?? null, $details), 1)];
+        $km = $this->decimalSum(array_map(static fn (?array $day): ?string => $day['privateKm'] ?? null, $days), 1);
+        return [
+            'privateKm' => $km,
+            'kmAmount' => TravelAllowance::kilometers($km, $settings),
+            'mealAllowance' => (bool) $settings['travel.meal_allowances_enabled'] ? $this->sum(array_map(static fn (?array $day): ?string => $day['allowance'] ?? null, $days)) : null,
+        ];
+    }
+
+    /** Optionale Abwesenheitsdauer „9:30“ bzw. „9,5“ (Stunden) → Minuten. */
+    private function absence(mixed $value): ?int
+    {
+        $text = str_replace(',', '.', trim((string) (is_scalar($value) ? $value : '')));
+        if ($text === '') {
+            return null;
+        }
+        $minutes = preg_match('/^(\d{1,2}):([0-5]\d)$/', $text, $match) === 1 ? (int) $match[1] * 60 + (int) $match[2]
+            : (preg_match('/^\d{1,2}(\.\d{1,2})?$/', $text) === 1 ? (int) round((float) $text * 60) : -1);
+        if ($minutes < 0 || $minutes > 1440) {
+            throw new DocumentValidationException(['Abwesenheitsdauer: bitte z. B. 9:30 oder 9,5 Stunden angeben (höchstens 24 Stunden).']);
+        }
+        return $minutes;
     }
 
     private static function locked(string $status): bool

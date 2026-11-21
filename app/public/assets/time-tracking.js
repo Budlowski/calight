@@ -123,7 +123,17 @@
     ? `<ul class="time-statements">${statements.map((item) => `<li${item.current ? "" : ' class="is-superseded"'}><a href="${esc(item.url)}" target="_blank" rel="noopener" data-icon="file-down">${esc(item.type === "week" ? "Woche" : "Monat")} ${esc(item.label)} · Revision ${item.revision}</a> <small class="muted">${item.current ? "aktuell" : "ersetzt – nicht mehr aktuell"}</small></li>`).join("")}</ul>`
     : "");
 
-  globalThis.CalightTimeTracking = Object.freeze({ addDays, weekStart, monthRange, addMonths, hours, weekday, toMinutes, toTime, isoWeek, monthGrid, travelShort, netFromTimes, entryRow, lockFlag, lockBadge, issueList, statementList });
+  /** Kurzbeschreibung der Reiseangaben eines Tages (Kategorie, Ort, Dauer, Übernachtung, Mahlzeiten). */
+  const travelSummary = (travel, categories) => {
+    if (!travel || travel.category === "none") return travel?.notes || "";
+    const meals = [["breakfast", "Frühstück"], ["lunch", "Mittagessen"], ["dinner", "Abendessen"]].filter(([key]) => travel.meals[key]).map(([, label]) => label);
+    return [categories[travel.category] || travel.categoryLabel, travel.abroad ? "Ausland" : "", travel.location, travel.absenceMinutes !== null ? `Abwesenheit ${hours(travel.absenceMinutes)}` : "",
+      travel.overnight ? "Übernachtung" : "", meals.length ? `gestellt: ${meals.join(", ")}` : ""].filter(Boolean).join(" · ");
+  };
+  /** Fahrt als Zeile: Strecke · Zweck · Auftrag/Kostenstelle. */
+  const tripLabel = (trip) => [trip.route, trip.purpose, trip.orderNumber || trip.costCenterNumber].filter(Boolean).join(" · ");
+
+  globalThis.CalightTimeTracking = Object.freeze({ travelSummary, tripLabel, addDays, weekStart, monthRange, addMonths, hours, weekday, toMinutes, toTime, isoWeek, monthGrid, travelShort, netFromTimes, entryRow, lockFlag, lockBadge, issueList, statementList });
 
   const root = document.querySelector("#time-tracking-app");
   if (!root) return;
@@ -207,7 +217,7 @@
         <span class="time-cal-head"><span class="time-cal-weekday">${weekday(day.date)}</span><span class="time-cal-date">${Number(day.date.slice(8, 10))}.${showWeek || state.view === "week" ? `${Number(day.date.slice(5, 7))}.` : ""}</span>${week}</span>
         <strong class="time-cal-hours">${day.netMinutes ? hours(day.netMinutes).replace(" h", "") : "–"}</strong>
         <small class="time-cal-travel">${travelShort(day.travelMinutes)}</small>
-        <span class="time-cal-flags" aria-hidden="true">${lockFlag(day.lockStatus)}${day.untimedMinutes ? `<span class="time-cal-flag${day.incompleteMinutes ? " is-incomplete" : ""}" title="${hours(day.untimedMinutes)} ohne Uhrzeit">◷</span>` : ""}${day.privateKm || day.expenseTotal ? '<span class="time-cal-flag" title="Kilometer oder Auslagen erfasst">•</span>' : ""}</span>
+        <span class="time-cal-flags" aria-hidden="true">${lockFlag(day.lockStatus)}${day.untimedMinutes ? `<span class="time-cal-flag${day.incompleteMinutes ? " is-incomplete" : ""}" title="${hours(day.untimedMinutes)} ohne Uhrzeit">◷</span>` : ""}${day.privateKm || day.expenseTotal || (day.mealAllowance && Number(day.mealAllowance) > 0) ? '<span class="time-cal-flag" title="Reisekosten oder Auslagen erfasst">•</span>' : ""}</span>
       </button>`;
   };
 
@@ -234,7 +244,7 @@
     const body = week
       ? `<div class="time-cal-row">${data.days.map((day) => calendarCell(day)).join("")}</div>`
       : grid.map((days) => `<div class="time-cal-row">${days.map((date, index) => calendarCell(byDate[date] || { date, netMinutes: 0, travelMinutes: 0 }, { outside: !inMonth(date), showWeek: index === 0 })).join("")}</div>`).join("");
-    content.innerHTML = `${summaryTiles(totals, week ? "" : `<div><span>Privat-Pkw</span><strong>${km(totals.privateKm)}</strong></div><div><span>Auslagen</span><strong>${money(totals.expenseTotal)}</strong></div>`)}
+    content.innerHTML = `${summaryTiles(totals, week ? "" : `<div><span>Privat-Pkw</span><strong>${km(totals.privateKm)}</strong></div>${totals.mealAllowance !== null && totals.mealAllowance !== undefined ? `<div><span>Verpflegung</span><strong>${money(totals.mealAllowance)}</strong></div>` : ""}<div><span>Auslagen</span><strong>${money(totals.expenseTotal)}</strong></div>`)}
       <div class="time-calendar ${week ? "is-week" : "is-month"}" role="group" aria-label="${week ? "Wochenkalender" : "Monatskalender"}">${head}${body}</div>
       ${periodPanel(period)}`;
   }
@@ -368,14 +378,8 @@
     current = await api(`/api/time-tracking/day?date=${state.date}${employeeQuery()}`);
     const day = current;
     const editable = day.canEdit;
-    const details = day.details;
-    const detailText = details ? [
-      details.absenceStart || details.absenceEnd ? `Abwesenheit ${details.absenceStart || "?"}–${details.absenceEnd || "?"}` : "",
-      details.travelDay !== "none" ? reference.travelDays[details.travelDay] : "",
-      details.overnight ? "Übernachtung" : "",
-      details.location,
-      details.privateKm ? `Privat-Pkw ${km(details.privateKm)}` : "",
-    ].filter(Boolean).map(esc).join(" · ") : "";
+    const travel = day.travel;
+    const travelText = travel ? travelSummary(travel, reference.travelCategories) : "";
     content.innerHTML = `
       ${day.lockStatus && day.lockStatus !== "open" ? `<p class="time-lock-note">${lockBadge(day.lockStatus)} ${day.lockStatus === "reopened" ? "Nach der Korrektur bitte erneut einreichen." : "Bearbeitung gesperrt."}</p>` : ""}
       ${summaryTiles(day.totals)}
@@ -391,9 +395,12 @@
       </section>
       <section class="card form-stack">
         <div class="step-section-heading">
-          <div><h2>Einsatz und Auslagen</h2><small>${detailText || "Einsatzart, Reise, Übernachtung, Kilometer und Auslagen (optional)"}</small></div>
-          <div class="step-section-actions">${editable ? `<button class="button button-light button-small" type="button" data-details data-icon="square-pen">${details || day.expenses.length ? "Bearbeiten" : "Erfassen"}</button>` : ""}</div>
+          <div><h2>Reisekosten und Auslagen</h2><small>${esc(travelText) || "Auswärtstätigkeit, Verpflegung, Privat-Pkw-Fahrten und Auslagen (optional)"}</small></div>
+          <div class="step-section-actions">${editable ? `<button class="button button-light button-small" type="button" data-details data-icon="square-pen">${travel || day.expenses.length ? "Bearbeiten" : "Erfassen"}</button>` : ""}</div>
         </div>
+        ${travel && travel.category !== "none" ? `<p class="time-travel-amount">${travel.allowance !== null ? `Verpflegung (rechnerisch): <strong>${money(travel.allowance)}</strong>${travel.allowanceReduction && Number(travel.allowanceReduction) > 0 ? ` <small class="muted">nach Kürzung um ${money(travel.allowanceReduction)} für gestellte Mahlzeiten</small>` : ""}` : `<span class="muted">${esc(travel.allowanceNote)}</span>`}</p>` : ""}
+        ${day.trips.length ? `<ul class="time-expenses">${day.trips.map((trip) => `<li><span>${esc(tripLabel(trip))}</span><strong>${km(trip.kilometers)}</strong></li>`).join("")}</ul><p class="time-expense-total">Privat-Pkw gesamt: <strong>${km(travel.privateKm)}</strong> <small class="muted">rechnerisch ${money(travel.kmAmount)}</small></p>` : ""}
+        ${day.travelWarnings.map((warning) => `<p class="time-hint" role="note"><span aria-hidden="true">⚠</span> ${esc(warning)}</p>`).join("")}
         ${day.expenses.length ? `<ul class="time-expenses">${day.expenses.map((expense) => `<li><span>${esc(expense.purpose)}${expense.orderNumber || expense.costCenterNumber ? ` <small class="muted">· ${esc(expense.orderNumber || expense.costCenterNumber)}</small>` : ""}${expense.hasReceipt ? ` <a href="/api/time-tracking/expenses/${encodeURIComponent(expense.id)}/receipt" target="_blank" rel="noopener" data-icon="file-down">Beleg</a>` : ""}</span><strong>${money(expense.amount)}</strong></li>`).join("")}</ul><p class="time-expense-total">Auslagen gesamt: <strong>${money(day.expenseTotal)}</strong></p>` : ""}
       </section>`;
   }
@@ -401,10 +408,6 @@
   // ---------------------------------------------------------------------------
   // Dialoge
   // ---------------------------------------------------------------------------
-  const orderOptions = (selected = "") => '<option value="">Ohne Auftrag</option>' + reference.orders
-    .map((order) => `<option value="${esc(order.id)}"${order.id === selected ? " selected" : ""}>${esc(order.orderNumber)} · ${esc(order.title)}</option>`).join("")
-    + (selected && !reference.orders.some((order) => order.id === selected) ? `<option value="${esc(selected)}" selected>bisheriger Auftrag</option>` : "");
-
   /** Dauer als „7:30“ bzw. „7,5“ → Minuten (für Buchungen ohne Uhrzeiten). */
   const parseDuration = (value) => {
     const text = String(value || "").trim().replace(",", ".");
@@ -511,62 +514,141 @@
     });
   }
 
+  /**
+   * „Reisekosten und Auslagen“ eines Tages: 1. Auswärtstätigkeit und Verpflegung, 2. dienstliche
+   * Privat-Pkw-Fahrten, 3. Auslagen. Fahrten und Auslagen werden einzeln sofort gespeichert;
+   * Beträge berechnet ausschließlich der Server aus den Betriebseinstellungen.
+   */
   function detailsDialog() {
-    const details = current.details || { overnight: false, travelDay: "none", location: "", notes: "", absenceStart: null, absenceEnd: null, privateKm: null, privateKmPurpose: "", privateKmOrderId: null };
+    const details = current.details || { travelCategory: "none", abroad: false, absenceMinutes: null, overnight: false, mealBreakfast: false, mealLunch: false, mealDinner: false, location: "", notes: "" };
     const form = document.createElement("form");
     form.className = "form-stack";
     form.noValidate = true;
+    const absence = details.absenceMinutes === null || details.absenceMinutes === undefined ? "" : hours(details.absenceMinutes).replace(" h", "");
     form.innerHTML = `
-      <div class="dialog-form-grid">
-        <label><span class="field-label">Reisetag</span><select name="travelDay">${Object.entries(reference.travelDays).map(([key, label]) => `<option value="${key}"${details.travelDay === key ? " selected" : ""}>${esc(label)}</option>`).join("")}</select></label>
-        <label class="check-inline time-overnight"><input type="checkbox" name="overnight"${details.overnight ? " checked" : ""}> Übernachtung</label>
-        <label class="span-all"><span class="field-label">Einsatzort / Reiseziel</span><input name="location" maxlength="200" value="${esc(details.location)}"></label>
-        <label><span class="field-label">Beginn der Abwesenheit</span><input name="absenceStart" type="time" value="${esc(details.absenceStart || "")}"></label>
-        <label><span class="field-label">Ende der Abwesenheit</span><input name="absenceEnd" type="time" value="${esc(details.absenceEnd || "")}"></label>
-        <label><span class="field-label">Privat-Pkw (km)</span><input name="privateKm" inputmode="decimal" value="${esc(details.privateKm ? String(details.privateKm).replace(".", ",") : "")}" placeholder="0"></label>
-        <label><span class="field-label">Fahrt für Auftrag (optional)</span><select name="privateKmOrderId">${orderOptions(details.privateKmOrderId || "")}</select></label>
-        <label class="span-all"><span class="field-label">Fahrtzweck (optional)</span><input name="privateKmPurpose" maxlength="200" value="${esc(details.privateKmPurpose)}"></label>
-        <label class="span-all"><span class="field-label">Bemerkung</span><textarea name="notes" rows="2" maxlength="1000">${esc(details.notes)}</textarea></label>
-      </div>
-      <div class="time-expense-editor">
-        <div class="purchase-items-toolbar"><h3 class="purchase-subheading">Auslagen</h3><button class="button button-light button-small" type="button" data-add-expense data-icon="plus">Auslage</button></div>
+      <section class="time-travel-section"><h3 class="purchase-subheading">Auswärtstätigkeit und Verpflegung</h3>
+        <div class="dialog-form-grid">
+          <label class="span-all"><span class="field-label">Reisetag</span><select name="travelCategory">${Object.entries(reference.travelCategories).map(([key, label]) => `<option value="${key}"${details.travelCategory === key ? " selected" : ""}>${esc(label)}</option>`).join("")}</select></label>
+          <label class="span-all" data-travel-only><span class="field-label">Einsatzort / Reiseziel</span><input name="location" maxlength="200" value="${esc(details.location)}"></label>
+          <label data-travel-only><span class="field-label">Abwesenheitsdauer (optional)</span><input name="absence" inputmode="decimal" placeholder="z. B. 9:30" value="${esc(absence)}"></label>
+          <div class="time-travel-checks" data-travel-only>
+            <label class="check-inline"><input type="checkbox" name="abroad"${details.abroad ? " checked" : ""}> Ausland</label>
+            <label class="check-inline"><input type="checkbox" name="overnight"${details.overnight ? " checked" : ""}> Auswärtige Übernachtung</label>
+          </div>
+          <fieldset class="span-all time-travel-checks" data-travel-only><legend class="field-label">Gestellte Mahlzeiten</legend>
+            <label class="check-inline"><input type="checkbox" name="mealBreakfast"${details.mealBreakfast ? " checked" : ""}> Frühstück</label>
+            <label class="check-inline"><input type="checkbox" name="mealLunch"${details.mealLunch ? " checked" : ""}> Mittagessen</label>
+            <label class="check-inline"><input type="checkbox" name="mealDinner"${details.mealDinner ? " checked" : ""}> Abendessen</label>
+          </fieldset>
+          <label class="span-all"><span class="field-label">Bemerkung</span><textarea name="notes" rows="2" maxlength="1000">${esc(details.notes)}</textarea></label>
+        </div>
+        <p class="muted time-travel-note">Arbeitszeit und Abwesenheit sind verschiedene Größen; die Pauschale ergibt sich aus der gewählten Kategorie${reference.travelSettings.mealAllowances ? "" : " (Verpflegungspauschalen sind nicht aktiviert)"}. Calight zeigt einen rechnerischen Referenzbetrag, keine steuerliche Freigabe. Über Mitternacht ohne Übernachtung bitte nur einen Tag einstufen.</p>
+      </section>
+      <section class="time-travel-section"><h3 class="purchase-subheading">Dienstliche Privat-Pkw-Fahrten</h3>
+        <div data-trip-list></div>
+        <p class="muted time-travel-note">Nur dienstliche Fahrten – keine Fahrten zwischen Wohnung und erster Tätigkeitsstätte.</p>
+      </section>
+      <section class="time-travel-section"><h3 class="purchase-subheading">Auslagen</h3>
         <div data-expense-list></div>
-      </div>
+      </section>
       <p class="field-error" data-dialog-error hidden></p>`;
+    const toggle = () => form.querySelectorAll("[data-travel-only]").forEach((element) => (element.hidden = form.elements.travelCategory.value === "none"));
+    form.elements.travelCategory.addEventListener("change", toggle);
+    toggle();
+    const drawTrips = () => {
+      form.querySelector("[data-trip-list]").innerHTML = `${current.trips.length ? `<ul class="time-expenses">${current.trips.map((trip) => `<li><span>${esc(tripLabel(trip))}</span><strong>${km(trip.kilometers)}</strong>
+          <span class="time-row-actions"><button class="icon-button" type="button" data-edit-trip="${esc(trip.id)}" data-icon="square-pen" title="Fahrt bearbeiten" aria-label="Fahrt bearbeiten"></button><button class="icon-button icon-button-danger" type="button" data-remove-trip="${esc(trip.id)}" data-icon="trash" title="Fahrt entfernen" aria-label="Fahrt entfernen"></button></span></li>`).join("")}</ul>` : ""}
+        <button class="button button-light button-small" type="button" data-add-trip data-icon="plus">Fahrt</button>`;
+    };
     const drawExpenses = () => {
-      form.querySelector("[data-expense-list]").innerHTML = current.expenses.length
+      form.querySelector("[data-expense-list]").innerHTML = `${current.expenses.length
         ? `<ul class="time-expenses">${current.expenses.map((expense) => `<li><span>${esc(expense.purpose)}${expense.receiptName ? ` <small class="muted">· Beleg</small>` : ""}</span><strong>${money(expense.amount)}</strong>
             <button class="icon-button icon-button-danger" type="button" data-remove-expense="${esc(expense.id)}" data-icon="trash" title="Auslage entfernen" aria-label="Auslage entfernen"></button></li>`).join("")}</ul>`
-        : '<p class="muted">Keine Auslagen.</p>';
+        : ""}<button class="button button-light button-small" type="button" data-add-expense data-icon="plus">Auslage</button>`;
     };
+    drawTrips();
     drawExpenses();
     form.addEventListener("click", async (event) => {
-      if (event.target.closest("[data-add-expense]")) {
-        expenseDialog(drawExpenses);
-        return;
-      }
+      if (event.target.closest("[data-add-expense]")) return expenseDialog(drawExpenses);
+      if (event.target.closest("[data-add-trip]")) return tripDialog(null, drawTrips);
+      const edit = event.target.closest("[data-edit-trip]");
+      if (edit) return tripDialog(current.trips.find((trip) => trip.id === edit.dataset.editTrip), drawTrips);
+      const removeTrip = event.target.closest("[data-remove-trip]");
       const remove = event.target.closest("[data-remove-expense]");
-      if (!remove) return;
+      if (!removeTrip && !remove) return;
       try {
-        current = await api(`/api/time-tracking/expenses/${encodeURIComponent(remove.dataset.removeExpense)}`, { method: "DELETE", body: {} });
-        drawExpenses();
+        if (removeTrip) {
+          const trip = current.trips.find((item) => item.id === removeTrip.dataset.removeTrip);
+          current = await api(`/api/time-tracking/trips/${encodeURIComponent(trip.id)}`, { method: "DELETE", body: { version: trip.version } });
+          drawTrips();
+        } else {
+          current = await api(`/api/time-tracking/expenses/${encodeURIComponent(remove.dataset.removeExpense)}`, { method: "DELETE", body: {} });
+          drawExpenses();
+        }
+        renderDay();
       } catch (exception) {
         notify(message, exception.message);
       }
     });
     Calight.createDialog({
-      title: `Einsatz und Auslagen · ${format.date(state.date)}`,
+      title: `Reisekosten und Auslagen · ${format.date(state.date)}`,
       form,
       submitLabel: "Speichern",
       discardMessage: "Eingaben verwerfen?",
       submit: async () => {
+        const travelOn = form.elements.travelCategory.value !== "none";
         current = await api("/api/time-tracking/details", { method: "PUT", body: {
-          date: state.date, employeeId: state.employee, absenceStart: form.elements.absenceStart.value, absenceEnd: form.elements.absenceEnd.value, travelDay: form.elements.travelDay.value,
-          overnight: form.elements.overnight.checked, location: form.elements.location.value.trim(), notes: form.elements.notes.value.trim(),
-          privateKm: form.elements.privateKm.value.trim().replace(",", "."), privateKmPurpose: form.elements.privateKmPurpose.value.trim(), privateKmOrderId: form.elements.privateKmOrderId.value,
+          date: state.date, employeeId: state.employee, travelCategory: form.elements.travelCategory.value,
+          location: travelOn ? form.elements.location.value.trim() : "", absence: travelOn ? form.elements.absence.value.trim() : "",
+          abroad: travelOn && form.elements.abroad.checked, overnight: travelOn && form.elements.overnight.checked,
+          mealBreakfast: travelOn && form.elements.mealBreakfast.checked, mealLunch: travelOn && form.elements.mealLunch.checked, mealDinner: travelOn && form.elements.mealDinner.checked,
+          notes: form.elements.notes.value.trim(),
         } });
         await renderDay();
       },
+    });
+  }
+
+  /** Eine dienstliche Privat-Pkw-Fahrt erfassen oder bearbeiten (gemeinsames Feld Auftrag/Kostenstelle). */
+  function tripDialog(trip, onSaved) {
+    const form = document.createElement("form");
+    form.className = "form-stack";
+    form.noValidate = true;
+    form.innerHTML = `<div class="dialog-form-grid">
+        <label><span class="field-label">Kilometer <span aria-hidden="true">*</span></span><input name="kilometers" inputmode="decimal" required placeholder="0" value="${esc(trip ? String(trip.kilometers).replace(".", ",") : "")}"></label>
+        <label><span class="field-label">Fahrtzweck <span aria-hidden="true">*</span></span><input name="purpose" maxlength="200" required placeholder="z. B. Material abholen" value="${esc(trip?.purpose ?? "")}"></label>
+        <label class="span-all"><span class="field-label">Strecke / Reiseziel</span><input name="route" maxlength="200" placeholder="z. B. Werkstatt – Baustelle Leipzig" value="${esc(trip?.route ?? "")}"></label>
+        <label class="span-all"><span class="field-label">Auftrag / Kostenstelle (optional)</span><select name="costTarget"></select></label>
+        <label class="span-all"><span class="field-label">Bemerkung (optional)</span><input name="notes" maxlength="500" value="${esc(trip?.notes ?? "")}"></label>
+      </div><p class="field-error" data-trip-error hidden></p>`;
+    Calight.costTargetSelect(form.elements.costTarget, reference.costTargets, { orderId: trip?.orderId ?? "", costCenterId: trip?.costCenterId ?? "" });
+    const error = form.querySelector("[data-trip-error]");
+    CalightModal.openOver({
+      title: trip ? "Fahrt bearbeiten" : "Fahrt erfassen",
+      content: form,
+      initialFocus: '[name="kilometers"]',
+      actions: [
+        { label: "Abbrechen", value: null },
+        {
+          label: trip ? "Speichern" : "Hinzufügen", primary: true, validate: true,
+          onClick: async () => {
+            const body = { date: state.date, employeeId: state.employee, kilometers: form.elements.kilometers.value.trim().replace(",", "."), purpose: form.elements.purpose.value.trim(),
+              route: form.elements.route.value.trim(), notes: form.elements.notes.value.trim(), ...Calight.parseCostTarget(form.elements.costTarget.value), ...(trip ? { version: trip.version } : {}) };
+            try {
+              current = trip
+                ? await api(`/api/time-tracking/trips/${encodeURIComponent(trip.id)}`, { method: "PUT", body })
+                : await api("/api/time-tracking/trips", { method: "POST", body });
+            } catch (exception) {
+              error.textContent = exception.message;
+              error.hidden = false;
+              return false;
+            }
+            onSaved();
+            renderDay();
+            return true;
+          },
+        },
+      ],
     });
   }
 

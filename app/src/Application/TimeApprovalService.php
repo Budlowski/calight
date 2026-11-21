@@ -389,6 +389,10 @@ final readonly class TimeApprovalService
         $before = self::shift($from, -1);
         $entries = $this->times->entries($employeeId, $before, self::shift($to, 1));
         $details = array_column($this->times->detailsRange($employeeId, $from, $to), null, 'work_date');
+        $trips = [];
+        foreach ($this->times->trips($employeeId, $from, $to) as $trip) {
+            $trips[$trip['work_date']][] = $trip;
+        }
         $expenses = $this->times->expenses($employeeId, $from, $to);
         $locks = $this->approvals->locks($employeeId, $from, $to);
         $timesOptional = (bool) $settings['time_tracking.times_optional'];
@@ -421,8 +425,9 @@ final readonly class TimeApprovalService
                 $days[$entry['work_date']]['entries'][] = self::mapEntry($entry);
             }
         }
-        foreach ($details as $date => $row) {
-            $days[$date]['details'] = $this->tracking->detailsSnapshot($row);
+        foreach (array_keys($days) as $date) {
+            // Reisekosten: Auswärtstätigkeit, Verpflegung (rechnerisch) und Fahrten des Tages.
+            $days[$date]['details'] = $this->tracking->travelDay($details[$date] ?? null, $trips[$date] ?? [], $settings);
         }
         foreach ($expenses as $expense) {
             $days[$expense['work_date']]['expenses'][] = ['amount' => $expense['amount'], 'purpose' => $expense['purpose'],
@@ -570,7 +575,7 @@ final readonly class TimeApprovalService
             $totals['expenseTotal'] = (string) BigDecimal::of($totals['expenseTotal'])->plus($day['expenseTotal'])->toScale(Decimal::MONEY_SCALE);
         }
         $totals['workMinutes'] = $totals['netMinutes'] - $totals['travelMinutes'];
-        $totals += $this->tracking->travelTotals(array_column($days, 'details'));
+        $totals += $this->tracking->travelTotals(array_map(static fn (array $day): ?array => $day['details'], array_values($days)), $settings);
         return ['days' => $days, 'totals' => $totals, 'errors' => $errors, 'warnings' => $warnings];
     }
 

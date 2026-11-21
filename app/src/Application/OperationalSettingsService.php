@@ -67,6 +67,26 @@ final readonly class OperationalSettingsService
             'label' => 'Mindestdauer einzelner Ruhepausen', 'description' => 'Kürzere Unterbrechungen zählen nicht als Ruhepause (Standard 15 Minuten).'],
         'time_limits.min_rest_hours' => ['group' => 'limits', 'type' => 'number', 'default' => '11', 'scale' => 2, 'min' => '0', 'max' => '24', 'unit' => 'h',
             'label' => 'Tägliche Mindestruhezeit', 'description' => 'Zwischen Arbeitsende und Arbeitsbeginn des Folgetags (Standard 11 h, § 5 ArbZG).'],
+        'travel.meal_allowances_enabled' => ['group' => 'travel', 'type' => 'bool', 'default' => true,
+            'label' => 'Verpflegungspauschalen erfassen', 'description' => 'Zeigt je Tag eine rechnerische Verpflegungspauschale als Referenzbetrag (keine steuerliche Freigabe oder Erstattungszusage).'],
+        'travel.single_day_threshold_hours' => ['group' => 'travel', 'type' => 'number', 'default' => '8', 'scale' => 2, 'min' => '0', 'max' => '24', 'unit' => 'h',
+            'label' => 'Abwesenheitsgrenze eintägige Auswärtstätigkeit', 'description' => 'Pauschale bei mehr als dieser Abwesenheit (Standard: mehr als 8 h, § 9 Abs. 4a EStG).'],
+        'travel.allowance_single' => ['group' => 'travel', 'type' => 'number', 'default' => '14', 'scale' => 2, 'min' => '0', 'max' => '1000', 'unit' => '€',
+            'label' => 'Pauschale eintägige Auswärtstätigkeit', 'description' => 'Standard 14 €.'],
+        'travel.allowance_arrival' => ['group' => 'travel', 'type' => 'number', 'default' => '14', 'scale' => 2, 'min' => '0', 'max' => '1000', 'unit' => '€',
+            'label' => 'Pauschale Anreisetag', 'description' => 'Mit auswärtiger Übernachtung, ohne Mindestabwesenheit (Standard 14 €).'],
+        'travel.allowance_full' => ['group' => 'travel', 'type' => 'number', 'default' => '28', 'scale' => 2, 'min' => '0', 'max' => '1000', 'unit' => '€',
+            'label' => 'Pauschale voller Tag', 'description' => '24 Stunden Abwesenheit (Standard 28 €). Grundlage der Mahlzeitenkürzungen.'],
+        'travel.allowance_departure' => ['group' => 'travel', 'type' => 'number', 'default' => '14', 'scale' => 2, 'min' => '0', 'max' => '1000', 'unit' => '€',
+            'label' => 'Pauschale Abreisetag', 'description' => 'Nach auswärtiger Übernachtung, ohne Mindestabwesenheit (Standard 14 €).'],
+        'travel.reduction_breakfast_percent' => ['group' => 'travel', 'type' => 'number', 'default' => '20', 'scale' => 2, 'min' => '0', 'max' => '100', 'unit' => '%',
+            'label' => 'Kürzung gestelltes Frühstück', 'description' => 'Bezogen auf die Pauschale für einen vollen Tag (Standard 20 %).'],
+        'travel.reduction_lunch_percent' => ['group' => 'travel', 'type' => 'number', 'default' => '40', 'scale' => 2, 'min' => '0', 'max' => '100', 'unit' => '%',
+            'label' => 'Kürzung gestelltes Mittagessen', 'description' => 'Bezogen auf die Pauschale für einen vollen Tag (Standard 40 %).'],
+        'travel.reduction_dinner_percent' => ['group' => 'travel', 'type' => 'number', 'default' => '40', 'scale' => 2, 'min' => '0', 'max' => '100', 'unit' => '%',
+            'label' => 'Kürzung gestelltes Abendessen', 'description' => 'Bezogen auf die Pauschale für einen vollen Tag (Standard 40 %).'],
+        'travel.km_rate' => ['group' => 'travel', 'type' => 'number', 'default' => '0.30', 'scale' => 2, 'min' => '0', 'max' => '5', 'unit' => '€/km',
+            'label' => 'Privat-Pkw-Kilometersatz', 'description' => 'Rechnerischer Betrag je dienstlich gefahrenem Kilometer (Standard 0,30 €/km).'],
     ];
 
     public function __construct(private PDO $pdo)
@@ -103,7 +123,17 @@ final readonly class OperationalSettingsService
      */
     public function values(): array
     {
-        $stored = $this->pdo->query('SELECT setting_key, setting_value FROM operational_settings')->fetchAll(PDO::FETCH_KEY_PAIR);
+        return self::resolve($this->pdo->query('SELECT setting_key, setting_value FROM operational_settings')->fetchAll(PDO::FETCH_KEY_PAIR));
+    }
+
+    /**
+     * Gespeicherte Rohwerte (key => Text) mit Standardwerten zu typisierten Werten ergänzen.
+     *
+     * @param array<string,string> $stored
+     * @return array<string,bool|string>
+     */
+    public static function resolve(array $stored): array
+    {
         $values = [];
         foreach (self::DEFINITIONS as $key => $definition) {
             $raw = $stored[$key] ?? null;

@@ -114,14 +114,15 @@ final class TimeTrackingTest extends TestCase
     {
         $this->withEnvironment(function (array $env): void {
             ['service' => $service, 'tech' => $tech, 'order' => $order, 'tmp' => $tmp, 'files' => $files] = $env;
-            $day = $service->saveDetails(['date' => '2026-11-18', 'overnight' => true, 'travelDay' => 'arrival', 'location' => 'Leipzig', 'absenceStart' => '05:30', 'absenceEnd' => '19:00',
-                'privateKm' => '182,5', 'privateKmPurpose' => 'Anreise', 'privateKmOrderId' => $order], $tech);
-            $this->assertSame('05:30', $day['details']['absenceStart']);
+            $day = $service->saveDetails(['date' => '2026-11-18', 'travelCategory' => 'arrival', 'overnight' => true, 'location' => 'Leipzig', 'absence' => '13:30', 'mealBreakfast' => false], $tech);
+            $this->assertSame(['arrival', 810, '14.00'], [$day['details']['travelCategory'], $day['details']['absenceMinutes'], $day['travel']['allowance']]);
             $this->assertTrue(!array_key_exists('assignmentKind', $day['details']), 'Einsatzart nicht mehr je Tag.');
-            $this->assertThrows(DocumentValidationException::class, fn () => $service->saveDetails(['date' => '2026-11-18', 'absenceStart' => '25:00'], $tech));
-            $this->assertSame('182.5', $day['details']['privateKm']);
-            $this->assertThrows(DocumentValidationException::class, fn () => $service->saveDetails(['date' => '2026-11-18', 'travelDay' => 'holiday'], $tech));
-            $this->assertThrows(DocumentValidationException::class, fn () => $service->saveDetails(['date' => '2026-11-18', 'privateKm' => '-3'], $tech));
+            $this->assertThrows(DocumentValidationException::class, fn () => $service->saveDetails(['date' => '2026-11-18', 'absence' => '25:00'], $tech));
+            $this->assertThrows(DocumentValidationException::class, fn () => $service->saveDetails(['date' => '2026-11-18', 'travelCategory' => 'holiday'], $tech));
+            $day = $service->saveTrip(['date' => '2026-11-18', 'kilometers' => '182,5', 'route' => 'Werkstatt – Leipzig', 'purpose' => 'Anreise', 'orderId' => $order], $tech);
+            $this->assertSame(['182.5', '54.75'], [$day['travel']['privateKm'], $day['travel']['kmAmount']]);
+            $this->assertThrows(DocumentValidationException::class, fn () => $service->saveTrip(['date' => '2026-11-18', 'kilometers' => '-3', 'purpose' => 'X'], $tech));
+            $this->assertThrows(DocumentValidationException::class, fn () => $service->saveTrip(['date' => '2026-11-18', 'kilometers' => '3'], $tech), 'Fahrtzweck Pflicht.');
 
             $receipt = $tmp . '/hotel.pdf';
             file_put_contents($receipt, self::PDF);

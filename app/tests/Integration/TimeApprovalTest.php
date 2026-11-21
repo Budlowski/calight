@@ -283,6 +283,91 @@ final class TimeApprovalTest extends TestCase
         });
     }
 
+    public function testTravelExpensesTripsLocksAndStatement(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['service' => $service, 'approvals' => $approvals, 'tech' => $tech, 'office' => $office, 'admin' => $admin, 'employee' => $employee, 'order' => $order,
+                'settings' => $settings, 'pdo' => $pdo] = $env;
+            $service->createEntry(['date' => '2026-10-12', 'start' => '06:00', 'end' => '16:30', 'breakMinutes' => '45', 'activity' => 'work', 'orderId' => $order], $tech);
+            // Verpflegung nach Kategorie, nicht nach Arbeitszeit: 9:45 h Arbeit, aber eintägig bis 8 h gewählt → 0 €.
+            $day = $service->saveDetails(['date' => '2026-10-12', 'travelCategory' => 'single_short', 'location' => 'Leipzig'], $tech);
+            $this->assertSame('0.00', $day['travel']['allowance']);
+            $day = $service->saveDetails(['date' => '2026-10-12', 'travelCategory' => 'single_long', 'location' => 'Leipzig', 'absence' => '7:30'], $tech);
+            $this->assertSame(['14.00', 1], [$day['travel']['allowance'], count($day['travelWarnings'])], 'Kategorie bestimmt; zu kurze Abwesenheit nur als Hinweis.');
+            $day = $service->saveDetails(['date' => '2026-10-13', 'travelCategory' => 'arrival', 'location' => 'Hamburg', 'overnight' => true, 'mealDinner' => true], $tech);
+            $this->assertSame(['14.00', '11.20', '2.80'], [$day['travel']['allowanceBase'], $day['travel']['allowanceReduction'], $day['travel']['allowance']]);
+            $service->saveDetails(['date' => '2026-10-14', 'travelCategory' => 'full', 'location' => 'Hamburg', 'overnight' => true, 'mealBreakfast' => true], $tech);
+            $service->saveDetails(['date' => '2026-10-15', 'travelCategory' => 'departure', 'location' => 'Hamburg', 'mealBreakfast' => true], $tech);
+            $abroad = $service->saveDetails(['date' => '2026-10-16', 'travelCategory' => 'single_long', 'location' => 'Wien', 'abroad' => true], $tech);
+            $this->assertSame(null, $abroad['travel']['allowance'], 'Ausland ohne Inlandspauschale.');
+
+            // Mehrere Fahrten je Tag; Bearbeiten addiert nicht doppelt.
+            $service->saveTrip(['date' => '2026-10-12', 'kilometers' => '42', 'route' => 'Werkstatt – Leipzig', 'purpose' => 'Montage', 'orderId' => $order], $tech);
+            $day = $service->saveTrip(['date' => '2026-10-12', 'kilometers' => '12,5', 'route' => 'Leipzig – Großhandel', 'purpose' => 'Material'], $tech);
+            $this->assertSame(['54.5', '16.35', 2], [$day['travel']['privateKm'], $day['travel']['kmAmount'], count($day['trips'])]);
+            $trip = $day['trips'][1];
+            $day = $service->saveTrip(['id' => $trip['id'], 'version' => $trip['version'], 'date' => '2026-10-12', 'kilometers' => '15', 'route' => 'Leipzig – Großhandel', 'purpose' => 'Material'], $tech);
+            $this->assertSame(['57.0', 2], [$day['travel']['privateKm'], count($day['trips'])]);
+            $this->assertThrows(DocumentValidationException::class, fn () => $service->saveTrip(['id' => $trip['id'], 'version' => $trip['version'], 'date' => '2026-10-12', 'kilometers' => '1', 'purpose' => 'X'], $tech), 'Veraltete Version.');
+
+            $week = $service->range(null, '2026-10-12', '2026-10-18', $tech)['totals'];
+            // 14,00 + 2,80 + (28 − 5,60) + (14 − 5,60) + Ausland 0 = 47,60 €
+            $this->assertSame(['57.0', '17.10', '47.60'], [$week['privateKm'], $week['kmAmount'], $week['mealAllowance']]);
+
+            // Einstellungen sind global; festgeschriebene Nachweise behalten ihre Werte.
+            $approvals->submit(['type' => 'week', 'date' => '2026-10-12'], $tech);
+            $this->assertThrows(DocumentValidationException::class, fn () => $service->saveTrip(['date' => '2026-10-13', 'kilometers' => '5', 'purpose' => 'X'], $tech), 'Fahrten gesperrt.');
+            $this->assertThrows(DocumentValidationException::class, fn () => $service->deleteTrip($trip['id'], ['version' => $trip['version'] + 1], $office));
+            $this->assertThrows(PDOException::class, fn () => $pdo->exec("UPDATE time_private_trips SET kilometers = '1'"), 'Trigger für Fahrten.');
+            $this->assertThrows(DocumentValidationException::class, fn () => $service->saveDetails(['date' => '2026-10-13', 'travelCategory' => 'none'], $tech));
+            $item = $approvals->pending($office)['items'][0];
+            $this->assertTrue(in_array('travel_incomplete', array_column($item['warnings'], 'code'), true), 'Unplausible Reiseangaben als Hinweis.');
+            $approvals->approve($item['id'], ['version' => $item['version'], 'acknowledgeWarnings' => true], $office);
+            $snapshot = json_decode((string) $pdo->query('SELECT snapshot_json FROM time_statements')->fetchColumn(), true);
+            $this->assertSame(['57.0', '17.10', '47.60'], [$snapshot['totals']['privateKm'], $snapshot['totals']['kmAmount'], $snapshot['totals']['mealAllowance']]);
+            $this->assertSame(['arrival', true, '2.80'], [$snapshot['days'][1]['details']['category'], $snapshot['days'][1]['details']['meals']['dinner'], $snapshot['days'][1]['details']['allowance']]);
+            $settings->save(['travel.allowance_full' => '30', 'travel.km_rate' => '0.5'], $admin);
+            $this->assertSame('17.10', json_decode((string) $pdo->query('SELECT snapshot_json FROM time_statements')->fetchColumn(), true)['totals']['kmAmount'], 'Historische Werte bleiben.');
+            $pdf = $approvals->statementPdf((string) $pdo->query('SELECT id FROM time_statements')->fetchColumn(), $tech)['pdf'];
+            $this->assertTrue(str_contains($pdf, '(Reisekosten und Auslagen) Tj') && str_contains($pdf, '47,60'), 'Reisekosten im Nachweis.');
+            $service->saveTrip(['date' => '2026-11-02', 'kilometers' => '10', 'route' => 'Werkstatt – Kunde', 'purpose' => 'Aufmaß'], $tech);
+            $service->saveDetails(['date' => '2026-11-03', 'travelCategory' => 'full', 'location' => 'Hamburg', 'overnight' => true], $tech);
+            $open = $service->range(null, '2026-11-02', '2026-11-08', $tech)['totals'];
+            $this->assertSame(['5.00', '30.00'], [$open['kmAmount'], $open['mealAllowance']], 'Neue Werte gelten für offene Zeiträume.');
+        });
+    }
+
+    public function testTravelMigrationConvertsDetailsAndKilometers(): void
+    {
+        $tmp = sys_get_temp_dir() . '/calight-travel-migration-' . bin2hex(random_bytes(6));
+        mkdir($tmp . '/migrations', 0770, true);
+        try {
+            foreach (glob(dirname(__DIR__, 2) . '/migrations/*.sql') ?: [] as $file) {
+                if (strcmp(basename($file), '0043') < 0) {
+                    copy($file, $tmp . '/migrations/' . basename($file));
+                }
+            }
+            $pdo = ConnectionFactory::create($tmp . '/db.sqlite');
+            (new Migrator($pdo, $tmp . '/migrations'))->migrate();
+            $now = '2026-09-01T08:00:00Z';
+            $user = $this->user($pdo, 'office', $now);
+            $employee = $this->employee($pdo, $user['id'], 'Max', $now);
+            $pdo->prepare("INSERT INTO time_day_details (employee_id, work_date, overnight, travel_day, location, absence_start, absence_end, private_km, private_km_purpose, updated_by_user_id, updated_at)
+                VALUES (:employee, '2026-10-05', 1, 'arrival', 'Leipzig', '22:00', '06:30', '182.5', 'Anreise', :user, :now)")->execute(['employee' => $employee, 'user' => $user['id'], 'now' => $now]);
+            $pdo->prepare("INSERT INTO time_day_details (employee_id, work_date, travel_day, updated_by_user_id, updated_at) VALUES (:employee, '2026-10-06', 'none', :user, :now)")
+                ->execute(['employee' => $employee, 'user' => $user['id'], 'now' => $now]);
+            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate();
+            $this->assertSame([['2026-10-05', 'arrival', 510, 1, 'Leipzig'], ['2026-10-06', 'none', null, 0, '']],
+                $pdo->query('SELECT work_date, travel_category, absence_minutes, overnight, location FROM time_day_details ORDER BY work_date')->fetchAll(PDO::FETCH_NUM));
+            $this->assertSame([['2026-10-05', '182.5', 'Leipzig', 'Anreise']], $pdo->query('SELECT work_date, kilometers, route, purpose FROM time_private_trips')->fetchAll(PDO::FETCH_NUM));
+            $this->assertSame([], array_intersect(['private_km', 'absence_start', 'travel_day', 'assignment_kind'], array_column($pdo->query('PRAGMA table_info(time_day_details)')->fetchAll(), 'name')));
+            $this->assertSame(12, (int) $pdo->query("SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE '%lock%'")->fetchColumn(), 'Sperre auch für Fahrten.');
+            $this->assertSame([], $pdo->query('PRAGMA foreign_key_check')->fetchAll());
+        } finally {
+            $this->remove($tmp);
+        }
+    }
+
     public function testMigrationSchemaAndIntegrity(): void
     {
         $this->withEnvironment(function (array $env): void {
@@ -290,7 +375,7 @@ final class TimeApprovalTest extends TestCase
             $tables = $pdo->query("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('time_submissions', 'time_day_locks', 'time_lock_events', 'time_statements') ORDER BY name")->fetchAll(PDO::FETCH_COLUMN);
             $this->assertSame(['time_day_locks', 'time_lock_events', 'time_statements', 'time_submissions'], $tables);
             $triggers = $pdo->query("SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE '%lock%'")->fetchColumn();
-            $this->assertSame(9, (int) $triggers, 'Sperr-Trigger für Buchungen, Tagesangaben und Auslagen.');
+            $this->assertSame(12, (int) $triggers, 'Sperr-Trigger für Buchungen, Tagesangaben, Fahrten und Auslagen.');
             $this->assertThrows(PDOException::class, fn () => $pdo->exec("INSERT INTO time_day_locks (employee_id, work_date, status, updated_by_user_id, updated_at) VALUES ('x', '2026-01-01', 'approved', 'y', 't')"), 'Festgeschrieben nur mit Einreichung.');
             $this->assertSame([], $pdo->query('PRAGMA foreign_key_check')->fetchAll());
         });

@@ -1474,6 +1474,15 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 .time-statements li.is-superseded a { color: var(--muted); text-decoration: line-through; }
 .time-approval-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .time-approval-item h2 { overflow-wrap: anywhere; }
+/* Reisekosten und Auslagen */
+.time-travel-section { display: grid; gap: var(--space-2); min-width: 0; }
+.time-travel-section > h3 { margin: 0; }
+.time-travel-section + .time-travel-section { padding-top: var(--space-3); border-top: 1px solid var(--line, #d5dbe1); }
+.time-travel-checks { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); align-items: center; margin: 0; padding: 0; border: 0; min-width: 0; }
+.time-travel-checks > legend { width: 100%; padding: 0; margin-bottom: 4px; }
+.time-travel-note { margin: 0; font-size: var(--font-small); }
+.time-travel-amount { margin: 0; font-size: var(--font-small); }
+.time-row-actions { display: inline-flex; gap: 2px; }
 .time-cal-day.is-selected { border-color: var(--primary); background: #eaf3f9; }
 .time-assignment { padding: 1px 7px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); font-size: var(--font-small); }
 .time-travel { color: #8a5a00; }

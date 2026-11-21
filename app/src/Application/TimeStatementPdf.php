@@ -80,7 +80,7 @@ final readonly class TimeStatementPdf
             ['Davon Reisezeit', self::hours((int) $totals['travelMinutes'])],
             ['Übrige Arbeitszeit', self::hours((int) $totals['workMinutes'])],
             (int) $totals['untimedMinutes'] > 0 ? ['Davon ohne Uhrzeit', self::hours((int) $totals['untimedMinutes'])] : null,
-            isset($totals['mealAllowance']) && $totals['mealAllowance'] !== null ? ['Verpflegung (rechnerisch)', $numbers->money((string) $totals['mealAllowance'])] : null,
+            ($totals['mealAllowance'] ?? null) !== null && $totals['mealAllowance'] !== '0.00' ? ['Verpflegung (rechnerisch)', $numbers->money((string) $totals['mealAllowance'])] : null,
             ($totals['privateKm'] ?? '0.0') !== '0.0' ? ['Privat-Pkw', $numbers->quantity((string) $totals['privateKm']) . ' km' . (isset($totals['kmAmount']) ? ' · ' . $numbers->money((string) $totals['kmAmount']) . ' (rechnerisch)' : '')] : null,
             ['Auslagen', $numbers->money((string) $totals['expenseTotal'])],
         ])));

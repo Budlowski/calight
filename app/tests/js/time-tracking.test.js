@@ -78,4 +78,13 @@ assert(issueList([], [{ message: "a" }]).includes("1 Hinweis") && issueList([], 
 const statements = statementList([{ type: "month", label: "November 2026", revision: 1, current: false, url: "/a" }, { type: "month", label: "November 2026", revision: 2, current: true, url: "/b" }]);
 assert(statements.includes("Revision 1") && statements.includes("ersetzt – nicht mehr aktuell") && statements.includes("Revision 2") && statements.includes("aktuell</small>"), "Revisionen");
 assert(statementList([]) === "", "keine Nachweise");
+// Reisekosten: Kurzbeschreibung und Fahrten.
+const { travelSummary, tripLabel } = globalThis.CalightTimeTracking;
+const categories = { none: "Keine Auswärtstätigkeit", arrival: "Anreisetag mit auswärtiger Übernachtung" };
+const travel = { category: "arrival", categoryLabel: "x", abroad: false, location: "Leipzig", absenceMinutes: 810, overnight: true, meals: { breakfast: false, lunch: true, dinner: true }, notes: "" };
+assert(travelSummary(travel, categories) === "Anreisetag mit auswärtiger Übernachtung · Leipzig · Abwesenheit 13:30 h · Übernachtung · gestellt: Mittagessen, Abendessen", travelSummary(travel, categories));
+assert(travelSummary({ ...travel, category: "none", notes: "Nur Fahrten" }, categories) === "Nur Fahrten" && travelSummary(null, categories) === "", "ohne Auswärtstätigkeit nur Bemerkung");
+assert(travelSummary({ ...travel, abroad: true, absenceMinutes: null, meals: { breakfast: false, lunch: false, dinner: false } }, categories).includes("Ausland · Leipzig · Übernachtung"), "Ausland");
+assert(tripLabel({ route: "Werkstatt – Leipzig", purpose: "Anreise", orderNumber: "AU1", costCenterNumber: null }) === "Werkstatt – Leipzig · Anreise · AU1", "Fahrt mit Auftrag");
+assert(tripLabel({ route: "", purpose: "Material", orderNumber: null, costCenterNumber: "K120" }) === "Material · K120", "Fahrt mit Kostenstelle");
 console.log("time-tracking.test.js ok");

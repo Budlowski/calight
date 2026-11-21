@@ -83,11 +83,16 @@ final readonly class TimeTrackingRepository
         return $statement->fetchAll(PDO::FETCH_KEY_PAIR);
     }
 
+    /** Gespeicherte Betriebseinstellungen (Rohwerte; Standardwerte ergänzt OperationalSettingsService::resolve). @return array<string,string> */
+    public function rawSettings(): array
+    {
+        return $this->pdo->query('SELECT setting_key, setting_value FROM operational_settings')->fetchAll(PDO::FETCH_KEY_PAIR);
+    }
+
     /** @return array<string,mixed>|null */
     public function details(string $employeeId, string $date): ?array
     {
-        $statement = $this->pdo->prepare('SELECT d.*, o.order_number AS km_order_number FROM time_day_details d LEFT JOIN orders o ON o.id = d.private_km_order_id
-            WHERE d.employee_id = :employee AND d.work_date = :date');
+        $statement = $this->pdo->prepare('SELECT d.* FROM time_day_details d WHERE d.employee_id = :employee AND d.work_date = :date');
         $statement->execute(['employee' => $employeeId, 'date' => $date]);
         return $statement->fetch() ?: null;
     }
@@ -95,13 +100,11 @@ final readonly class TimeTrackingRepository
     /** @param array<string,mixed> $data */
     public function saveDetails(array $data): void
     {
-        // Die Einsatzart je Tag (bis 0033) bleibt als historischer Wert unverändert erhalten.
-        $this->pdo->prepare('INSERT INTO time_day_details (employee_id, work_date, overnight, travel_day, location, notes, absence_start, absence_end, private_km, private_km_purpose, private_km_order_id, updated_by_user_id, updated_at)
-            VALUES (:employee_id, :work_date, :overnight, :travel_day, :location, :notes, :absence_start, :absence_end, :private_km, :private_km_purpose, :private_km_order_id, :updated_by_user_id, :updated_at)
-            ON CONFLICT(employee_id, work_date) DO UPDATE SET overnight = excluded.overnight, travel_day = excluded.travel_day,
-            absence_start = excluded.absence_start, absence_end = excluded.absence_end,
-            location = excluded.location, notes = excluded.notes, private_km = excluded.private_km, private_km_purpose = excluded.private_km_purpose,
-            private_km_order_id = excluded.private_km_order_id, updated_by_user_id = excluded.updated_by_user_id, updated_at = excluded.updated_at')->execute($data);
+        $this->pdo->prepare('INSERT INTO time_day_details (employee_id, work_date, travel_category, abroad, absence_minutes, overnight, meal_breakfast, meal_lunch, meal_dinner, location, notes, updated_by_user_id, updated_at)
+            VALUES (:employee_id, :work_date, :travel_category, :abroad, :absence_minutes, :overnight, :meal_breakfast, :meal_lunch, :meal_dinner, :location, :notes, :updated_by_user_id, :updated_at)
+            ON CONFLICT(employee_id, work_date) DO UPDATE SET travel_category = excluded.travel_category, abroad = excluded.abroad, absence_minutes = excluded.absence_minutes,
+            overnight = excluded.overnight, meal_breakfast = excluded.meal_breakfast, meal_lunch = excluded.meal_lunch, meal_dinner = excluded.meal_dinner,
+            location = excluded.location, notes = excluded.notes, updated_by_user_id = excluded.updated_by_user_id, updated_at = excluded.updated_at')->execute($data);
     }
 
     /** @return list<array<string,mixed>> */
@@ -110,6 +113,47 @@ final readonly class TimeTrackingRepository
         $statement = $this->pdo->prepare('SELECT * FROM time_day_details WHERE employee_id = :employee AND work_date BETWEEN :from AND :to');
         $statement->execute(['employee' => $employeeId, 'from' => $from, 'to' => $to]);
         return $statement->fetchAll();
+    }
+
+    /** Dienstliche Privat-Pkw-Fahrten. @return list<array<string,mixed>> */
+    public function trips(string $employeeId, string $from, string $to): array
+    {
+        $statement = $this->pdo->prepare('SELECT p.*, o.order_number, o.title AS order_title, cc.number AS cost_center_number, cc.name AS cost_center_name
+            FROM time_private_trips p LEFT JOIN orders o ON o.id = p.order_id LEFT JOIN cost_centers cc ON cc.id = p.cost_center_id
+            WHERE p.employee_id = :employee AND p.work_date BETWEEN :from AND :to ORDER BY p.work_date, p.created_at, p.rowid');
+        $statement->execute(['employee' => $employeeId, 'from' => $from, 'to' => $to]);
+        return $statement->fetchAll();
+    }
+
+    /** @return array<string,mixed>|null */
+    public function trip(string $id): ?array
+    {
+        $statement = $this->pdo->prepare('SELECT * FROM time_private_trips WHERE id = :id');
+        $statement->execute(['id' => $id]);
+        return $statement->fetch() ?: null;
+    }
+
+    /** @param array<string,mixed> $data */
+    public function insertTrip(array $data): void
+    {
+        $columns = array_keys($data);
+        $this->pdo->prepare('INSERT INTO time_private_trips (' . implode(', ', $columns) . ') VALUES (:' . implode(', :', $columns) . ')')->execute($data);
+    }
+
+    /** @param array<string,mixed> $fields */
+    public function updateTrip(string $id, int $version, array $fields): bool
+    {
+        $assignments = implode(', ', array_map(static fn (string $column): string => $column . ' = :' . $column, array_keys($fields)));
+        $statement = $this->pdo->prepare('UPDATE time_private_trips SET ' . $assignments . ', version = version + 1 WHERE id = :id AND version = :version');
+        $statement->execute([...$fields, 'id' => $id, 'version' => $version]);
+        return $statement->rowCount() === 1;
+    }
+
+    public function deleteTrip(string $id, int $version): bool
+    {
+        $statement = $this->pdo->prepare('DELETE FROM time_private_trips WHERE id = :id AND version = :version');
+        $statement->execute(['id' => $id, 'version' => $version]);
+        return $statement->rowCount() === 1;
     }
 
     /** @return list<array<string,mixed>> */
