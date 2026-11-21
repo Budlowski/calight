@@ -129,8 +129,6 @@ final readonly class DailyReportPdfService
         return ['pdf' => $pdf->output(), 'fileName' => $fileName];
     }
 
-    }
-
     /** @param array<string,mixed> $actor */
     private function contents(string $reportId, string $attachmentId, array $actor): ?string
     {
