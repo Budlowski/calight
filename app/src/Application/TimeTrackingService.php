@@ -48,8 +48,6 @@ final readonly class TimeTrackingService
     public const ASSIGNMENTS = ['regular' => 'Erste Tätigkeitsstätte', 'external' => 'Auswärtstätigkeit / wechselnder Einsatzort'];
     public const SOURCE_KINDS = ['work_report' => 'Rapport', 'daily_report' => 'Tagesbericht', 'manual' => 'Manuell'];
     public const RECEIPT_TYPES = DocumentService::ALLOWED_TYPES;
-    private const LONG_DAY_MINUTES = 600;
-    private const MIN_REST_MINUTES = 660;
     private const MAX_RANGE_DAYS = 92;
 
     public function __construct(private TimeTrackingRepository $times, private AttachmentStore $store, private ?CostTargets $targets = null)
@@ -130,7 +128,6 @@ final readonly class TimeTrackingService
             'travelWarnings' => $this->travelWarnings($travel, $this->settings()),
             'expenses' => array_map(fn (array $expense): array => $this->mapExpense($expense), $expenses),
             'expenseTotal' => $this->sum(array_column($expenses, 'amount')),
-            'warnings' => $this->warnings((string) $employee['id'], $date, $entries),
             'canEdit' => $canEdit,
             'lockStatus' => $lockStatus,
             'lockLabel' => TimeApprovalService::DAY_STATUS[$lockStatus] ?? $lockStatus,
@@ -901,40 +898,6 @@ final readonly class TimeTrackingService
                     (new DateTimeImmutable((string) $other['work_date']))->format('d.m.Y'), self::SOURCE_KINDS[$other['source_kind']] ?? '')]);
             }
         }
-    }
-
-    /**
-     * Einfache Hinweise (keine arbeitsrechtliche Prüfung): langer Tag, kurze Ruhezeit. Ohne
-     * Uhrzeiten wird nur die Tagessumme geprüft; Buchungen werden nie verändert.
-     *
-     * @param list<array<string,mixed>> $entries
-     * @return list<string>
-     */
-    private function warnings(string $employeeId, string $date, array $entries): array
-    {
-        $warnings = [];
-        $total = array_sum(array_map('intval', array_column($entries, 'net_minutes')));
-        if ($total > self::LONG_DAY_MINUTES) {
-            // Plausibilitätshinweis (Grenzwert unverändert); verändert keine Buchung.
-            $warnings[] = sprintf('%s erfasst. Bitte prüfen, ob alle Buchungen korrekt sind.', self::hours($total));
-        }
-        $timed = array_filter($entries, static fn (array $entry): bool => $entry['start_time'] !== null);
-        if ($timed !== []) {
-            $day = (new DateTimeImmutable($date))->modify('-1 day')->format('Y-m-d');
-            $lastEnd = null;
-            foreach ($this->times->entries($employeeId, $day, $day) as $entry) {
-                if ($entry['start_time'] === null) {
-                    continue;
-                }
-                $end = self::minutes((string) $entry['start_time']) + (int) $entry['net_minutes'] + (int) $entry['break_minutes'] - 1440;
-                $lastEnd = $lastEnd === null ? $end : max($lastEnd, $end);
-            }
-            $firstStart = min(array_map(static fn (array $entry): int => self::minutes((string) $entry['start_time']), $timed));
-            if ($lastEnd !== null && $firstStart - $lastEnd < self::MIN_REST_MINUTES) {
-                $warnings[] = 'Weniger als 11 Stunden Ruhezeit seit dem Vortag – bitte prüfen.';
-            }
-        }
-        return $warnings;
     }
 
     /**

@@ -1003,7 +1003,7 @@ th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: l
 }
 @media (max-width: 800px) {
     .employee-toolbar,.employee-form-grid,.report-toolbar,.report-head-grid,.report-time-row,.order-report-row { grid-template-columns:1fr; }
-    .report-toolbar > input[type="search"],.report-time-row .report-target,.report-time-row .report-description,.report-time-row > [data-remove-entry] { grid-column:1; }
+    .report-toolbar > input[type="search"],.report-time-row .report-description,.report-time-row > [data-remove-entry] { grid-column:1; }
     .report-time-row > [data-remove-entry] { grid-row:auto; justify-self:end; }
 }
 
@@ -1416,15 +1416,7 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 .time-block-actions .icon-button { width: 40px; height: 40px; }
 /* Tätigkeitsarten gut unterscheidbar (Text plus Farbe). */
 .time-activity { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: var(--font-small); font-weight: 650; background: var(--status-neutral-bg); color: var(--status-neutral-fg); }
-.time-activity-work { background: var(--status-info-bg); color: var(--status-info-fg); }
-.time-activity-travel { background: var(--status-warning-bg); color: var(--status-warning-fg); }
-.time-activity-preparation { background: var(--status-success-bg); color: var(--status-success-fg); }
-.time-activity-internal { background: var(--status-special-bg, #efe9f8); color: var(--status-special-fg, #4b2f7a); }
 .time-entry-grid { display: grid; grid-template-columns: 1fr 1fr 110px; gap: var(--space-2); }
-.time-activity-choice { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; border: 0; }
-.time-activity-choice > label { cursor: pointer; padding: 6px 10px; border: 1px solid transparent; }
-.time-activity-choice > label:has(input:checked) { border-color: currentColor; box-shadow: 0 0 0 1px currentColor; }
-.time-activity-choice input { width: auto; min-height: 0; margin: 0 4px 0 0; }
 .time-choice { display: grid; gap: 4px; margin: 0; padding: 0; border: 0; }
 .time-overnight { align-self: end; min-height: var(--control-height); }
 .time-expenses li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px var(--space-2); padding: 6px 0; border-bottom: 1px solid #e5eaed; }

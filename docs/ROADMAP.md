@@ -18,10 +18,10 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 | 2.4 | Angebotsabgabe, Validierung, Snapshot, archivierte PDF, Status | Implementiert; Integrationstests teilweise ausstehend |
 | 2.5 | Angebotsrevisionen und Nachträge | Implementiert (Revisionen `0017`, Nachträge `0019`) |
 | 3.1 | Auftragsverwaltung, projektfreie Angebote, direkte Regieaufträge | Implementiert (`0018`), Rollen und Bearbeitungssperren (`0020`) |
-| 3.2 | Bautagesberichte und interne Ist-Erfassung | Implementiert: Mitarbeiter, Bautagesberichte und berichtsbezogene Ist-Zeiten (`0021`); übergreifende Zeiterfassung seit Phase 3.4.3; Berichte ohne Auftrag (`0035`) |
-| 3.2.2 | Materialanforderungen, Fotos und Anhänge zu Bautagesberichten | Implementiert (`0023`); PDF-Ausgabe mit Phase 3.2.3 |
+| 3.2 | Tagesberichte und interne Ist-Erfassung | Implementiert: Mitarbeiter, Tagesberichte und berichtsbezogene Ist-Zeiten (`0021`); übergreifende Zeiterfassung seit Phase 3.4.3; Berichte ohne Auftrag (`0035`) |
+| 3.2.2 | Materialanforderungen, Fotos und Anhänge zu Tagesberichten | Implementiert (`0023`); PDF-Ausgabe mit Phase 3.2.3 |
 | 3.2.1.x | Einheitliche Übersichts- und Detailseiten; serverseitige Pagination, Sortierung und URL-basierter Listenstatus | Implementiert (`0022`) |
-| 3.2.3 | Gemeinsamer Briefbogen, PDFs für Rapporte, Aufmaße und Bautagesberichte, digitale Kundenunterschrift, Rücklauf und Dokumentarchiv | Implementiert (`0027`); externe Ablage (NAS/SMB), E-Mail-Versand und Kundenportal geplant |
+| 3.2.3 | Gemeinsamer Briefbogen, PDFs für Rapporte, Aufmaße und Tagesberichte, digitale Kundenunterschrift, Rücklauf und Dokumentarchiv | Implementiert (`0027`); externe Ablage (NAS/SMB), E-Mail-Versand und Kundenportal geplant |
 | 3.3 | Aufmaße für vereinbarte Angebotsleistungen | Implementiert (`0024`), PDF seit Phase 3.2.3 |
 | 3.4 | Rapporte für Regieleistungen; Entwurf ohne Auftrag, Auftrag spätestens beim Einreichen | Implementiert (`0025`, `0026`), PDF und Kundenbestätigung seit Phase 3.2.3, Einsatzort / Objekt (`0028`), Auftragspflicht beim Einreichen (ohne Migration), Leistungsdatum je Stundenposition und Einreichungsdatum (`0036`) |
 | 3.4.1 | Bestellungen mit PDF-Ausgabe (schlanke Materialbeschaffung) | Implementiert (`0029`); Versand per E-Mail und Bestellungen am Auftragsdetail geplant |
@@ -51,7 +51,7 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 
 - **Auftrag:** Eigenständiger Vorgang zur Ausführung. Entsteht aus einem angenommenen Angebot **oder direkt ohne Angebot** als Regieauftrag.
 
-- **Bautagesbericht:** Interne Dokumentation tatsächlicher Arbeiten und Termine; kein Abrechnungsnachweis. Auftrag, Kostenstelle und Kunde sind optional; Auftrag und Kostenstelle schließen sich aus (seit `0041` „Tagesbericht“).
+- **Tagesbericht:** Interne Dokumentation tatsächlicher Arbeiten und Termine; kein Abrechnungsnachweis. Auftrag, Kostenstelle und Kunde sind optional; Auftrag und Kostenstelle schließen sich aus (seit `0041` „Tagesbericht“).
 
 - **Aufmaß:** Nachweis ausgeführter Mengen zu vereinbarten Angebotspositionen.
 
@@ -81,7 +81,7 @@ flowchart TD
 
     AU["Auftrag"]
 
-    BT["Bautagesbericht"]
+    BT["Tagesbericht"]
 
     AM["Aufmaß"]
 
@@ -141,7 +141,7 @@ flowchart TD
 
 ```
 
-Aufmaße, Rapporte und Bautagesberichte sind **unabhängig** voneinander. Bestellungen und Lieferscheine sind davon ebenfalls fachlich getrennt; sie verwenden jedoch dieselben zentralen Auftrags- und Stammdaten. Innerhalb eines Auftrags können Aufmaße und Rapporte nebeneinander vorkommen. Die Nachkalkulation kann bereits während der Ausführung erfolgen, nicht erst nach der Schlussrechnung.
+Aufmaße, Rapporte und Tagesberichte sind **unabhängig** voneinander. Bestellungen und Lieferscheine sind davon ebenfalls fachlich getrennt; sie verwenden jedoch dieselben zentralen Auftrags- und Stammdaten. Innerhalb eines Auftrags können Aufmaße und Rapporte nebeneinander vorkommen. Die Nachkalkulation kann bereits während der Ausführung erfolgen, nicht erst nach der Schlussrechnung.
 
 ## Phase 2.5 – Angebotsrevisionen und Nachträge
 
@@ -215,9 +215,9 @@ Umgesetzt: Für neue Angebote ist nur noch ein Kunde erforderlich, das Projekt i
 
 - Übersicht, Suche, Filter und zentrale auftragsbezogene Detailansicht.
 
-## Phase 3.2 – Bautagesberichte und Ist-Erfassung
+## Phase 3.2 – Tagesberichte und Ist-Erfassung
 
-Bautagesberichte dokumentieren die tatsächliche Ausführung und sind **keine** Aufmaße oder Rapporte.
+Tagesberichte dokumentieren die tatsächliche Ausführung und sind **keine** Aufmaße oder Rapporte.
 
 - Je Auftrag beliebig viele Berichte mit Datum, Tätigkeiten und Bemerkungen. **(implementiert)**
 
@@ -239,13 +239,13 @@ Bautagesberichte dokumentieren die tatsächliche Ausführung und sind **keine** 
 
 - Eine übergreifende Zeitauswertung kann dieselben Daten nutzen; keine doppelte Zeiterfassung.
 
-- Bautagesberichte sind optional. Aufmaß oder Rapport dürfen nicht davon abhängen.
+- Tagesberichte sind optional. Aufmaß oder Rapport dürfen nicht davon abhängen.
 
 ## Phase 3.2.3 – Dokumentausgabe und Kundenbestätigung
 
 **Umgesetzt (Migration `0027`):**
 
-- **Gemeinsame PDF-Grundlage:** projekteigene Engine `SimplePdf` (jetzt mit beliebig vielen JPEG-Bildern und optionalem Wasserzeichen) und ein gemeinsamer Briefbogen (`LetterheadPdf`) für Rapporte, Aufmaße und Bautagesberichte: Logo, Firmenangaben, Kopf-/Fußbereich, Empfänger, Metadaten, Tabellen mit wiederholtem Kopf, automatische Seitenumbrüche und Seitenzahlen. Alle Firmendaten stammen aus den Dokumenteinstellungen. Der Angebots-Generator bleibt bewusst eigenständig (kein Risiko für abgabefähige Angebote); er verwendet dieselbe Engine und Einstellungen.
+- **Gemeinsame PDF-Grundlage:** projekteigene Engine `SimplePdf` (jetzt mit beliebig vielen JPEG-Bildern und optionalem Wasserzeichen) und ein gemeinsamer Briefbogen (`LetterheadPdf`) für Rapporte, Aufmaße und Tagesberichte: Logo, Firmenangaben, Kopf-/Fußbereich, Empfänger, Metadaten, Tabellen mit wiederholtem Kopf, automatische Seitenumbrüche und Seitenzahlen. Alle Firmendaten stammen aus den Dokumenteinstellungen. Der Angebots-Generator bleibt bewusst eigenständig (kein Risiko für abgabefähige Angebote); er verwendet dieselbe Engine und Einstellungen.
 
 - **Wasserzeichen:** „ENTWURF“ nur noch auf Entwürfen. Bereits archivierte PDFs abgegebener Angebote bleiben unverändert (sie wurden mit dem früheren Verhalten erzeugt und werden nie neu erzeugt).
 
@@ -263,7 +263,7 @@ Bautagesberichte dokumentieren die tatsächliche Ausführung und sind **keine** 
 
   - Jede Bestätigung ist per Datenbank-CHECK an die Prüfsumme des eingereichten Stands gebunden und einmalig; Korrekturrapporte erhalten eigene Bestätigungen.
 
-- **Aufmaß- und Bautagesbericht-PDF:** siehe Phasen 3.2 und 3.3.
+- **Aufmaß- und Tagesbericht-PDF:** siehe Phasen 3.2 und 3.3.
 
 - **Dokumentarchiv:** Verbindliche PDFs (Rapporte ab Einreichung, abgeschlossene Aufmaße) werden je fachlichem Stand einmal erzeugt und unter `APP_DOCUMENTS_PATH` abgelegt (`generated_documents`); spätere Abrufe liefern genau diese Datei. Ein neuer Stand (z. B. nach Kundenbestätigung) erhält eine eigene Datei, ältere bleiben erhalten.
 
@@ -275,7 +275,7 @@ Ziel ist, **aus einer gemeinsamen Datenbasis einheitlich gestaltete PDF-Dokument
 
 - Zentrale, wiederverwendbare Einstellungen für Logo, Firmenanschrift, Kontaktdaten, Briefpapier, Kopf-/Fußbereich und Seitennummerierung.
 
-- Einheitliche Grundgestaltung für Angebote, Bestellungen, Lieferscheine, Aufmaße, Rapporte und Bautagesberichte; fachlich unterschiedliche Inhalte und Tabellen bleiben erlaubt.
+- Einheitliche Grundgestaltung für Angebote, Bestellungen, Lieferscheine, Aufmaße, Rapporte und Tagesberichte; fachlich unterschiedliche Inhalte und Tabellen bleiben erlaubt.
 
 - Kundendaten, Ansprechpartner, Lieferanten, Projekt- und Auftragsdaten aus bestehenden Stammdaten beziehungsweise verbindlichen Dokumentständen übernehmen, statt sie mehrfach zu pflegen.
 
@@ -337,11 +337,11 @@ Rapporte dokumentieren **abrechenbare Regieleistungen** und entsprechen in ihrer
 
 - **Rechte:** `workreports.read`/`workreports.write` (Büro, Monteur – Monteure sehen eigene Rapporte immer, fremde nur an freigegebenen Aufträgen und fremde eigenständige Rapporte nie; sie bearbeiten nur eigene Entwürfe, Bestätigungen und Korrekturen), `workreports.process` (Büro/Admin) für Abrechnungspositionen, Stammübernahme, Abschluss, Wiederöffnen und nachträgliche Auftragszuordnung. Preise und Beträge liefert auch die API nur mit diesem Recht aus.
 
-- Rapportstunden sind abrechenbare Angaben und werden nicht mit den Ist-Zeiten der Bautagesberichte verrechnet; Rapportbeträge verändern keine Ist-Kosten.
+- Rapportstunden mit Mitarbeiter sind tatsächliche Arbeitszeit und zählen genau einmal in der zentralen Stundenbasis (`time_entries`); Rapportarbeiten gehören nicht zusätzlich in einen Tagesbericht. Rapportbeträge (Verkaufspreise) verändern keine Ist-Kosten.
 
 **PDF und Kundenbestätigung (Phase 3.2.3):** Rapport-PDF des eingereichten Leistungsnachweises ohne Preise, mit Unterschriftsbereich; digitale Unterschrift vor Ort, Rücklauf unterschriebener Dokumente und manuelle Dokumentation als getrennte Nachweisarten (siehe Phase 3.2.3).
 
-**Offen:** E-Mail-Versand und ein öffentliches Bestätigungsportal; optionale Übernahme aus Bautagesberichten.
+**Offen:** E-Mail-Versand und ein öffentliches Bestätigungsportal; optionale Übernahme aus Tagesberichten.
 
 ## Phase 3.4.1 / 3.4.1.1 – Bestellungen und Beschaffung (abgeschlossen, Migrationen `0029`, `0030`)
 
@@ -401,7 +401,7 @@ Bestellungen sind **an Lieferanten gerichtete Beschaffungsdokumente**, keine Rec
 **Grundsatz:** Calight ist **kein Dokumentenmanagementsystem** und kein allgemeiner Datei- oder Projektdateimanager. Es gibt keine Ordner, Tags, Volltextsuche, Versionierung, Freigabe-Workflows, öffentliche Links oder DMS-Anbindung.
 
 **Architektur:**
-- Vorhandene Fachdokumente bleiben unverändert in ihren Modulen und Ablagen (Angebots-PDFs, Bestell-PDFs und Lieferantenbelege, Rapport-PDFs und Bestätigungsnachweise, Aufmaß-PDFs, Bautagesbericht-PDFs und -Anhänge). Die Übersicht ist eine **Leseprojektion** (`DocumentService`, `DocumentRepository`) und verlinkt auf die bestehenden, rechtegeprüften Download-Routen. Keine Kopien, keine Verschiebung, keine zweite Archivierung.
+- Vorhandene Fachdokumente bleiben unverändert in ihren Modulen und Ablagen (Angebots-PDFs, Bestell-PDFs und Lieferantenbelege, Rapport-PDFs und Bestätigungsnachweise, Aufmaß-PDFs, Tagesbericht-PDFs und -Anhänge). Die Übersicht ist eine **Leseprojektion** (`DocumentService`, `DocumentRepository`) und verlinkt auf die bestehenden, rechtegeprüften Download-Routen. Keine Kopien, keine Verschiebung, keine zweite Archivierung.
 - Neu sind nur **allgemeine Anhänge** (`attachments`) mit Zuordnungen (`attachment_links`) zu Kunde, Ansprechpartner, Projekt, Angebot und Auftrag. Eine Datei wird einmal gespeichert (`APP_DOCUMENTS_PATH/attachments/JJJJ/MM/<uuid>.<ext>`), Typ am Inhalt geprüft (PDF, Bilder), höchstens 15 MB.
 - Kontext: Dokumente erscheinen direkt beim zugeordneten Objekt und indirekt bei dessen Kunde/Projekt/Auftrag (z. B. Rapport-PDF beim Auftrag), je Liste nur einmal.
 
@@ -419,20 +419,20 @@ Bestellungen sind **an Lieferanten gerichtete Beschaffungsdokumente**, keine Rec
 
 ## Zentrale Stundenbasis (Migration `0037`, Abschluss vor Phase 3.4.4)
 
-**Grundsätze:** Rapporte und Bautagesberichte sind eigenständige Quellen tatsächlicher Mitarbeiterstunden. Die Zeiterfassung führt alle Stunden zusammen und ergänzt allgemeine Tätigkeiten sowie Uhrzeiten. Ein Korrekturrapport ersetzt seinen Vorgänger vollständig; ausschließlich die jeweils gültige Fassung ist maßgeblich. Die Stundenmenge eines Berichts kann nicht durch die Zeiterfassung verändert werden. Die Nachkalkulation verwendet nur die zentrale Ist-Stundenbasis.
+**Grundsätze:** Rapporte und Tagesberichte sind eigenständige Quellen tatsächlicher Mitarbeiterstunden. Die Zeiterfassung führt alle Stunden zusammen und ergänzt allgemeine Tätigkeiten sowie Uhrzeiten. Ein Korrekturrapport ersetzt seinen Vorgänger vollständig; ausschließlich die jeweils gültige Fassung ist maßgeblich. Die Stundenmenge eines Berichts kann nicht durch die Zeiterfassung verändert werden. Die Nachkalkulation verwendet nur die zentrale Ist-Stundenbasis.
 
-- **Eine Basis:** `time_entries` mit Herkunft Rapport, Bautagesbericht oder manuell; je Berichtsstundenposition genau eine Buchung (eindeutige Referenz, Löschung per Kaskade). Gleiche Mitarbeiter, Tage oder Aufträge werden nie automatisch zusammengeführt.
+- **Eine Basis:** `time_entries` mit Herkunft Rapport, Tagesbericht oder manuell; je Berichtsstundenposition genau eine Buchung (eindeutige Referenz, Löschung per Kaskade). Gleiche Mitarbeiter, Tage oder Aufträge werden nie automatisch zusammengeführt.
 - **Rapport:** Stunden erscheinen sofort am Leistungsdatum (Entwurf als „Entwurf“ gekennzeichnet); das Einreichen erzeugt keine zweite Buchung. Korrekturentwürfe wirken nicht; beim Einreichen ersetzt die Korrektur atomar die Buchungen der Vorgängerfassung. Ergänzte Uhrzeiten werden nur bei eindeutig gleicher Position (Mitarbeiter, Datum, Dauer) übernommen. Ersetzte Fassungen bleiben vollständig erhalten.
-- **Bautagesbericht:** Stunden erscheinen automatisch; Stundenkorrekturen am Bericht wirken sofort (ohne Differenzbuchung, mit Benutzer). Die Auftragszuordnung kann vom Büro gesetzt, geändert oder entfernt werden – die Stunden folgen (protokolliert). Die frühere separate „Stundenübernahme“ entfällt.
+- **Tagesbericht:** Stunden erscheinen automatisch; Stundenkorrekturen am Bericht wirken sofort (ohne Differenzbuchung, mit Benutzer). Die Auftragszuordnung kann vom Büro gesetzt, geändert oder entfernt werden – die Stunden folgen (protokolliert). Die frühere separate „Stundenübernahme“ entfällt.
 - **Zeiterfassung:** Tag/Woche/Monat zeigen alle Herkünfte mit Kennzeichnung und Link zum Bericht. Für Berichtsbuchungen werden nur Beginn, Ende, Pause, Reisezeit und Einsatzart ergänzt; Ende − Beginn − Pause muss exakt der Berichtsdauer entsprechen (sonst eigener Zeitblock oder Berichtskorrektur). Manuelle Zeitblöcke wie bisher, ohne Uhrzeiten nur mit Dauer, wenn die Betriebseinstellung es erlaubt. Überschneidungsprüfung über alle Buchungen mit Uhrzeiten.
 - **Einstellungen → Betrieb** (nur Administratoren): „Stundenerfassung ohne Uhrzeiten erlauben“ (Standard: an). Aus: Stunden ohne Uhrzeiten zählen voll, sind aber „Uhrzeiten fehlen“; Auswertungen weisen sie gesondert aus.
-- **Bereinigung (Migration `0038`):** Die für die Überführung eingeführte Altfallverwaltung und die frühere Quellenwahl (`time_source_choices`) wurden entfernt. **Rapporte, Bautagesberichte und manuelle Zeiterfassung erzeugen gemeinsam genau eine zentrale Ist-Stundenbasis**; es gibt keine konkurrierenden Stundenquellen. Vorhandene Testbuchungen bleiben erhalten und zählen regulär.
+- **Bereinigung (Migration `0038`):** Die für die Überführung eingeführte Altfallverwaltung und die frühere Quellenwahl (`time_source_choices`) wurden entfernt. **Rapporte, Tagesberichte und manuelle Zeiterfassung erzeugen gemeinsam genau eine zentrale Ist-Stundenbasis**; es gibt keine konkurrierenden Stundenquellen. Vorhandene Testbuchungen bleiben erhalten und zählen regulär.
 
 ## Phase 3.4.3 – Zeiterfassung (abgeschlossen, Migrationen `0032`, `0033`, `0034`; seit `0037` zentrale Stundenbasis)
 
 **Grundsatz:** tatsächliche Arbeits- und Reisezeiten je Mitarbeiter und Tag – keine Lohn-, Reisekosten- oder Personalverwaltung, keine Stempeluhr, kein GPS, keine automatischen Pauschalen oder steuerlichen Einstufungen.
 
-- **Zeitblöcke:** Datum, Beginn, Ende (Ende ≤ Beginn = Folgetag), Pause, Tätigkeit (Arbeit/Montage, Vorbereitung/Werkstatt, Interne Tätigkeit, Sonstiges), optional **Einsatzart** (erste Tätigkeitsstätte / Auswärtstätigkeit; Vorschlag aus dem vorigen Block), **davon Reisezeit**, Auftrag und Bemerkung. Keine Überschneidungen, auch über Mitternacht. Hinweise bei mehr als 10 Stunden und weniger als 11 Stunden Ruhezeit.
+- **Zeitblöcke:** Datum, Beginn, Ende (Ende ≤ Beginn = Folgetag), Pause, Reisezeitanteil, Einsatzart, Auftrag/Kostenstelle und Bemerkung; ohne Uhrzeiten nur die Dauer (Betriebseinstellung). Tätigkeitsarten gibt es seit Migration `0044` nicht mehr; der Erfassungsdialog bietet „Arbeitszeit“ oder „Abwesenheit“.
 - **Begriffe und Rechnung überall gleich:** Nettozeit = Ende − Beginn − Pause; Reisezeit ist Teil der Nettozeit (≤ Nettozeit, ein reiner Fahrtblock hat Reisezeit = Nettozeit); übrige Arbeitszeit = Nettozeit − Reisezeit. Reisezeit gehört zum Auftrag des Blocks.
 - **Über Mitternacht:** Die Bruttozeit wird nach Uhrzeit auf die Kalendertage verteilt; Pause und Reisezeit (ohne eigene Uhrzeit erfasst) im Verhältnis der Bruttozeit, auf Minuten gerundet. Tag, Woche, Monat, Büroauswertung und Ist-Stunden je Auftrag verwenden dieselben Kalendertag-Anteile (`split`); die Tagesansicht zeigt die Fortsetzung vom Vortag, die Auswertung zeigt bei Blöcken an der Zeitraumgrenze Anteil und Gesamtblock. Die Auftragssumme ohne Zeitraum ist unabhängig von der Aufteilung.
 - **Reisekosten und Auslagen (Dialog je Tag, seit Migration `0043`):** 1. Auswärtstätigkeit und Verpflegung (Kategorie, Einsatzort, Inland/Ausland, optionale Abwesenheitsdauer, Übernachtung, gestellte Mahlzeiten, Bemerkung) mit rechnerischer Verpflegungspauschale; 2. mehrere dienstliche Privat-Pkw-Fahrten (Kilometer, Strecke, Zweck, optional Auftrag/Kostenstelle) mit rechnerischem Kilometerbetrag; 3. Auslagen mit Betrag, Zweck, Auftrag/Kostenstelle und Beleg. Pauschalen, Kürzungen, Abwesenheitsgrenze und Kilometersatz sind globale Betriebseinstellungen. Referenzwerte, keine steuerliche Freigabe, Auszahlung oder Lohnbuchung; Auslandspauschalen, Dreimonatsfrist, erste Tätigkeitsstätte und Eigenzahlungen prüft das Büro.
@@ -450,7 +450,7 @@ Bestellungen sind **an Lieferanten gerichtete Beschaffungsdokumente**, keine Rec
 Neben Kundenaufträgen gibt es frei verwaltbare interne Kostenstellen (Stammdaten → Kostenstellen, z. B. K100 Verwaltung & Büro). Überall, wo Arbeitszeiten oder Kosten zugeordnet werden, gibt es **ein** Suchfeld „Auftrag / Kostenstelle“ für Auftrags- und Kostenstellennummern und -bezeichnungen – ohne Typauswahl. Calight bleibt ausdrücklich keine Buchhaltungssoftware.
 
 - **Zeiterfassung:** Manuelle Zeitblöcke und Auslagen auf Auftrag oder Kostenstelle. Rapportstunden folgen ausschließlich dem Auftrag ihres Rapports.
-- **Bautagesberichte (Migration `0040`):** Kostenziel über dasselbe Feld – Kundenauftrag, allgemeine Kostenstelle (z. B. Angebotsbesichtigung beim Kunden auf K110) oder keines; der Kunde ist seit `0041` optional. Die Zeitbuchungen übernehmen das Ziel; das Büro kann es nachträglich in alle Richtungen wechseln (protokolliert, keine neuen Buchungen). PDF zeigt die Kostenstelle statt einer Auftragsnummer. Rapporte bleiben ausschließlich auftragsbezogen. Gesamtstunden bleiben unverändert; Auftrags-Ist-Stunden enthalten keine Kostenstellenstunden. Die Auswertung gruppiert nach Auftrag / Kostenstelle.
+- **Tagesberichte (Migration `0040`):** Kostenziel über dasselbe Feld – Kundenauftrag, allgemeine Kostenstelle (z. B. Angebotsbesichtigung beim Kunden auf K110) oder keines; der Kunde ist seit `0041` optional. Die Zeitbuchungen übernehmen das Ziel; das Büro kann es nachträglich in alle Richtungen wechseln (protokolliert, keine neuen Buchungen). PDF zeigt die Kostenstelle statt einer Auftragsnummer. Rapporte bleiben ausschließlich auftragsbezogen. Gesamtstunden bleiben unverändert; Auftrags-Ist-Stunden enthalten keine Kostenstellenstunden. Die Auswertung gruppiert nach Auftrag / Kostenstelle.
 - **Tagesberichte (Migration `0041`):** sichtbare Umbenennung „Bautagesbericht“ → „Tagesbericht“ (technische Namen unverändert). Kunde optional (`daily_reports.customer_id` und `material_requests.customer_id` nullable, Neuaufbau von sieben Tabellen mit Datenerhalt); Materialanforderungen übernehmen die Kostenstelle des Berichts (`material_requests.cost_center_id`). Anlegen: Auftrag/Kostenstelle → Berichtsdatum → Bezeichnung → Kunde → Projekt. Rapporte unverändert auftragsbezogen.
 - **Einreichung und Festschreibung (Migration `0042`):** Mitarbeiter reichen Woche oder Monat ein (Betriebseinstellung „Einreichungsrhythmus“), das Büro prüft unter „Zeiterfassung → Freigaben“, bestätigt Hinweise, schreibt fest, gibt mit Begründung zurück oder öffnet einzelne Tage wieder. Sperre je Mitarbeiter und Tag, zentral per Trigger für alle Module (manuell, Tagesberichte, Rapporte inkl. Korrekturen, Tagesangaben, Auslagen). Global einstellbare Prüfgrenzwerte (Standard nach ArbZG). Archivierte, revisionierte PDF-Stundennachweise je Woche/Monat mit festem Datenstand; keine Kostensätze. Feiertage nur bundesweit.
 - **Abwesenheiten und Kalenderhinweise (Migration `0044`):** Abwesenheiten (Urlaub, Feiertag, Krankheit, Zeitausgleich, Arbeitsfrei, Sonstige; ganztägig oder stundenweise) getrennt von der Ist-Arbeitszeit, in Kalender, Auswertung und Nachweisen; Erfassungsdialog „Arbeitszeit / Abwesenheit“ ohne Tätigkeitsarten; Sperrfehler (rot ✕) und Warnungen (orange ⚠) direkt am Kalendertag; Einreichung ab dem letzten Tag des Zeitraums mit Vollständigkeitsbestätigung. Bewusst nicht: Urlaubsanspruch, Anträge, Sollzeiten, Zeitkonten, automatische Feiertage.
@@ -461,13 +461,13 @@ Neben Kundenaufträgen gibt es frei verwaltbare interne Kostenstellen (Stammdate
 
 ## Phase 3.4.4 – Monteurs-Interface (geplant)
 
-Mobile, auf das Wesentliche reduzierte Oberfläche für Monteure: Zeiterfassung als Einstieg, dazu Bautagesberichte, Rapporte, Aufmaße und Materialanforderungen der freigegebenen Aufträge. Nutzt die vorhandenen Fachmodule und Rechte; keine eigene Datenhaltung.
+Mobile, auf das Wesentliche reduzierte Oberfläche für Monteure: Zeiterfassung als Einstieg, dazu Tagesberichte, Rapporte, Aufmaße und Materialanforderungen der freigegebenen Aufträge. Nutzt die vorhandenen Fachmodule und Rechte; keine eigene Datenhaltung.
 
 ## Phase 3.5 – Nachkalkulation
 
 - **Soll bei Angebotsaufträgen:** Angenommene Angebotsrevision sowie angenommene Nachträge.
 
-- **Ist:** Lohnstunden aus `TimeTrackingService::actualHoursForOrder` (Zeiterfassung vor Bautagesbericht je Mitarbeiter, Tag und Auftrag – keine Doppelzählung), bewertet mit den gespeicherten Kostensatz-Snapshots; Material, Fremdleistung und sonstige Kosten aus Bestellungen. Auslagen und Privatkilometer der Zeiterfassung nur nach ausdrücklicher Entscheidung einbeziehen.
+- **Ist:** Lohnstunden aus `TimeTrackingService::actualHoursForOrder` – ausschließlich die zentrale Stundenbasis (Rapport, Tagesbericht, manuell; jede Buchung genau einmal, keine Prioritätsregeln), bewertet mit den gespeicherten Kostensatz-Snapshots; Material, Fremdleistung und sonstige Kosten aus Bestellungen. Auslagen und Privat-Pkw-Beträge der Zeiterfassung nur nach ausdrücklicher Entscheidung einbeziehen; Abwesenheiten nie.
 
 - Tatsächliche Bestellgesamtkosten können in die Ist-Kosten einfließen; Doppelzählung gegenüber bereits erfasstem Materialverbrauch vermeiden.
 
@@ -495,7 +495,7 @@ Calight ersetzt **keine** Faktura oder Buchhaltung.
 
 ## Phase 3.7 – Lieferscheine und Liefernachweise (geplant)
 
-Lieferscheine dokumentieren **an Kunden oder Baustellen tatsächlich übergebene Materialien beziehungsweise Gegenstände**. Sie sind unabhängig von Bestellungen, Bautagesberichten, Aufmaßen und Rapporten.
+Lieferscheine dokumentieren **an Kunden oder Baustellen tatsächlich übergebene Materialien beziehungsweise Gegenstände**. Sie sind unabhängig von Bestellungen, Tagesberichten, Aufmaßen und Rapporten.
 
 - Lieferschein in der Regel zu einem Auftrag erstellen; ein unabhängiger Lieferschein kann bei echtem Bedarf später ergänzt werden.
 
@@ -640,18 +640,18 @@ Umgesetzt: einheitliche Aktionen, Menüs, Statusfarben, Formulare und Suchkompon
 
 Aktuell umgesetzt:
 - **Allgemein:** Übersicht, Kunden, Projekte, Angebote, Aufträge
-- **Ausführung:** Bautagesberichte, Rapporte, Aufmaße, Materialanforderungen
+- **Ausführung:** Tagesberichte, Rapporte, Aufmaße, Materialanforderungen
 - **Verwaltung:** Stammdaten, Einstellungen
 
 Gruppen ohne sichtbaren Eintrag (fehlende Rechte) werden nicht angezeigt. Es gibt keine deaktivierten Platzhalter. Zielbild:
 
 - **Allgemein:** Übersicht · Kunden · Projekte · Angebote · Aufträge
-- **Ausführung:** Zeiterfassung · Bautagesberichte · Rapporte · Aufmaße · Materialanforderungen
+- **Ausführung:** Zeiterfassung · Tagesberichte · Rapporte · Aufmaße · Materialanforderungen
 - **Kaufmännisch:** Bestellungen · Lieferscheine · Nachkalkulation · Abrechnung
 - **Planung:** Kalender / Einsatzplanung (erst mit Phase 5)
 - **Verwaltung:** Kontakte · Stammdaten · Einstellungen
 
-Auftragsdetails bündeln zugehörige Leistungen, Bautagesberichte, Aufmaße/Rapporte, Materialanforderungen, Bestellungen, Lieferscheine, Nachkalkulation und Abrechnung. Übergreifende Übersichten sind möglich, ohne für jede Datenart einen Hauptmenüpunkt einzuführen. Neue Menüpunkte erst aktivieren, wenn die Funktion existiert. Bestehende Funktionen und Zugriffsrechte nicht ersatzlos entfernen. Die Menügliederung ist ein Zielbild und wird bei der UX-Überarbeitung anhand der tatsächlichen Nutzung geprüft.
+Auftragsdetails bündeln zugehörige Leistungen, Tagesberichte, Aufmaße/Rapporte, Materialanforderungen, Bestellungen, Lieferscheine, Nachkalkulation und Abrechnung. Übergreifende Übersichten sind möglich, ohne für jede Datenart einen Hauptmenüpunkt einzuführen. Neue Menüpunkte erst aktivieren, wenn die Funktion existiert. Bestehende Funktionen und Zugriffsrechte nicht ersatzlos entfernen. Die Menügliederung ist ein Zielbild und wird bei der UX-Überarbeitung anhand der tatsächlichen Nutzung geprüft.
 
 ## Technische Leitlinien
 
@@ -683,7 +683,7 @@ Auftragsdetails bündeln zugehörige Leistungen, Bautagesberichte, Aufmaße/Rapp
 
 4\. Korrektur, Unterschrift und Archivierung von Rapporten.
 
-5\. Ist-Kostenerfassung ohne Bautagesbericht.
+5\. Ist-Kostenerfassung ohne Tagesbericht.
 
 6\. Behandlung von Abschlags-/Schlussrechnungen ohne Doppelzählung.
 

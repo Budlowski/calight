@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration;
 
+use App\Application\CostTargets;
 use App\Application\DailyReportPdfService;
 use App\Application\DailyReportService;
 use App\Application\DocumentService;
@@ -569,6 +570,79 @@ final class TimeApprovalTest extends TestCase
             $this->assertThrows(AccessDeniedException::class, fn () => $approvals->statementPdf($evaStatement, $tech), 'Fremder Stundennachweis.');
             $this->assertSame(4, (int) $pdo->query('SELECT COUNT(*) FROM time_statements')->fetchColumn());
             $this->assertTrue(count($documents->page(['type' => 'time_statement'], $admin)['items']) === 4);
+        });
+    }
+
+    public function testOneHourBasisAcrossReportsManualTimesCostCentersAndLocks(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['approvals' => $approvals, 'reports' => $reports, 'workReports' => $workReports, 'tech' => $tech, 'office' => $office, 'employee' => $max,
+                'colleagueEmployee' => $eva, 'order' => $order, 'customer' => $customer, 'pdo' => $pdo, 'files' => $files] = $env;
+            $time = new TimeTrackingService(new TimeTrackingRepository($pdo), new AttachmentStore($files), new CostTargets($pdo));
+            $pdo->exec("INSERT INTO cost_centers (id, number, name, active, version, created_at, updated_at) VALUES ('cc-k120', 'K120', 'Lager', 1, 1, 't', 't')");
+            $approveAll = function () use ($approvals, $office): void {
+                foreach ($approvals->pending($office)['items'] as $item) {
+                    $approvals->approve($item['id'], ['version' => $item['version'], 'acknowledgeWarnings' => true], $office);
+                }
+            };
+            // Tagesbericht (zwei Mitarbeiter), Rapport, manueller Block über Mitternacht auf Kostenstelle, Abwesenheit.
+            $daily = $reports->create(['orderId' => $order, 'reportDate' => '2026-10-05', 'activities' => 'Montage', 'entries' => [
+                ['employeeId' => $max, 'durationHours' => '2'], ['employeeId' => $eva, 'durationHours' => '1']]], $office);
+            $work = $workReports->create(['customerId' => $customer, 'orderId' => $order, 'workDate' => '2026-10-05'], $office);
+            $work = $workReports->update($work['id'], ['version' => $work['version'], 'description' => 'Regie', 'labor' => [['workDate' => '2026-10-05', 'employeeId' => $max, 'hours' => '3']], 'materials' => []], $office);
+            $work = $workReports->submit($work['id'], ['version' => $work['version']], $office);
+            $time->createEntry(['date' => '2026-10-05', 'start' => '22:00', 'end' => '02:00', 'costCenterId' => 'cc-k120', 'notes' => 'Inventur'], $tech);
+            $time->saveAbsence(['date' => '2026-10-07', 'absenceType' => 'vacation', 'fullDay' => true], $tech);
+
+            // Eine Basis: Tag, Woche, Auswertung, Auftrag und Kostenstelle stimmen überein (jede Stunde genau einmal).
+            $this->assertSame([420, 120], [$time->day($max, '2026-10-05', $tech)['totals']['netMinutes'], $time->day($max, '2026-10-06', $tech)['totals']['netMinutes']]);
+            $this->assertSame(540, $time->range($max, '2026-10-05', '2026-10-11', $tech)['totals']['netMinutes'], 'Abwesenheit zählt nicht.');
+            $this->assertSame(540, $time->report('2026-10-01', '2026-10-31', $max, null, $office)['totals']['netMinutes']);
+            $this->assertSame(360, $time->actualHoursForOrder($order, $office)['totals']['netMinutes'], 'Auftrag: Tagesbericht Max + Eva + Rapport.');
+            $this->assertSame(240, (int) $pdo->query("SELECT SUM(net_minutes) FROM time_entries WHERE cost_center_id = 'cc-k120'")->fetchColumn());
+            $this->assertSame(540, $approvals->period(null, 'week', '2026-10-05', $tech)['totals']['netMinutes'], 'Prüfung nutzt dieselbe Basis.');
+            $this->assertSame([[$max, 3], [$eva, 1]], array_map(static fn (array $row): array => [$row[0], (int) $row[1]],
+                $pdo->query("SELECT employee_id, COUNT(*) FROM time_entries WHERE work_date = '2026-10-05' GROUP BY employee_id ORDER BY COUNT(*) DESC")->fetchAll(PDO::FETCH_NUM)), 'Max: Bericht, Rapport, manueller Block – je genau eine Buchung.');
+
+            // Offener Tagesbericht blockiert beide Mitarbeiter; nach Einreichung Freigabe Eva, dann Max.
+            $this->assertTrue(in_array('daily_report_draft', array_column($approvals->period($eva, 'week', '2026-10-05', $office)['errors'], 'code'), true));
+            $daily = $reports->submit($daily['id'], ['version' => $daily['version']], $office);
+            $approvals->submit(['confirmComplete' => true, 'type' => 'week', 'date' => '2026-10-05', 'employeeId' => $eva], $office);
+            $approveAll();
+            $this->assertSame('submitted', $reports->detail($daily['id'], $office)['status'], 'Max noch offen: keine Festschreibung.');
+            // Mitarbeiterwechsel nach Wiederöffnen des Berichts: alter (gesperrter) Mitarbeiter-Tag verhindert die Änderung.
+            $daily = $reports->returnReport($daily['id'], ['version' => $daily['version'], 'reason' => 'Mitarbeiter prüfen'], $office);
+            $evaRow = array_values(array_filter($daily['entries'], static fn (array $row): bool => $row['employee_id'] === $eva))[0];
+            $maxRow = array_values(array_filter($daily['entries'], static fn (array $row): bool => $row['employee_id'] === $max))[0];
+            $this->assertThrows(PDOException::class, fn () => $reports->update($daily['id'], ['version' => $daily['version'], 'reportDate' => '2026-10-05', 'activities' => 'Montage', 'entries' => [
+                ['id' => $maxRow['id'], 'employeeId' => $max, 'durationHours' => '2'], ['id' => $evaRow['id'], 'employeeId' => $max, 'durationHours' => '1']]], $office));
+            $daily = $reports->submit($daily['id'], ['version' => $daily['version']], $office);
+            $approvals->submit(['confirmComplete' => true, 'type' => 'week', 'date' => '2026-10-05'], $tech);
+            $approveAll();
+            $this->assertSame('approved', $reports->detail($daily['id'], $office)['status'], 'Unterschiedliche Einreichungszeitpunkte: Festschreibung mit dem letzten Mitarbeiter.');
+
+            // Korrekturrapport: neue Fassung auf einem gesperrten Tag wird verhindert; gültige Fassung bleibt maßgeblich.
+            $approvals->submit(['confirmComplete' => true, 'type' => 'week', 'date' => '2026-10-12'], $tech);
+            $correction = $workReports->create(['correctionOf' => $work['id']], $office);
+            $correction = $workReports->update($correction['id'], ['version' => $correction['version'], 'description' => 'Regie', 'labor' => [['workDate' => '2026-10-13', 'employeeId' => $max, 'hours' => '3']], 'materials' => []], $office);
+            $this->assertThrows(PDOException::class, fn () => $workReports->submit($correction['id'], ['version' => $correction['version']], $office));
+            $this->assertSame(180, (int) $pdo->query("SELECT SUM(net_minutes) FROM time_entries WHERE source_kind = 'work_report'")->fetchColumn());
+            $this->assertSame(360, $time->actualHoursForOrder($order, $office)['totals']['netMinutes'], 'Korrekturentwurf ohne zusätzliche Ist-Stunden.');
+            $this->assertSame([], $pdo->query('PRAGMA foreign_key_check')->fetchAll());
+        });
+    }
+
+    public function testHolidaysAreEnteredManuallyAndSuppressMissingTimeOnlyWhenDocumented(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['service' => $service, 'approvals' => $approvals, 'tech' => $tech, 'order' => $order] = $env;
+            $warnings = fn (): array => array_values(array_filter($approvals->period(null, 'week', '2025-12-22', $tech)['warnings'], static fn (array $item): bool => $item['date'] === '2025-12-25'));
+            $this->assertSame(['empty_day'], array_column($warnings(), 'code'), 'Kein automatischer Feiertagskalender.');
+            $this->assertTrue(str_contains($warnings()[0]['message'], 'Feiertag'), 'Hinweis auf das Eintragen des Feiertags.');
+            $service->saveAbsence(['date' => '2025-12-25', 'absenceType' => 'holiday', 'fullDay' => true], $tech);
+            $this->assertSame([], $warnings());
+            $service->createEntry(['date' => '2025-12-25', 'start' => '08:00', 'end' => '10:00', 'orderId' => $order], $tech);
+            $this->assertSame(['sunday'], array_column($warnings(), 'code'), 'Feiertagsarbeit zulässig, nur Hinweis; kein Abwesenheitskonflikt.');
         });
     }
 

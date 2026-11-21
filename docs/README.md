@@ -43,7 +43,7 @@ Dabei werden zwei grundlegende Abläufe unterstützt:
 - **Angebotsarbeiten:** Angebot → Auftrag → Aufmaß → Abrechnung
 - **Regiearbeiten:** Direkter Auftrag → Rapport → Abrechnung
 
-Bautagesberichte dienen der internen Dokumentation und Ist-Kostenerfassung. Die Nachkalkulation stellt kalkulierte beziehungsweise abrechenbare Leistungen den tatsächlich entstandenen Kosten gegenüber.
+Tagesberichte dienen der internen Dokumentation und Ist-Kostenerfassung. Die Nachkalkulation stellt kalkulierte beziehungsweise abrechenbare Leistungen den tatsächlich entstandenen Kosten gegenüber.
 
 ### Geplanter Geschäftsprozess
 
@@ -53,7 +53,7 @@ flowchart TD
     P["Projekt (optional)"]
     A["Angebot"]
     AU["Auftrag"]
-    BT["Bautagesbericht"]
+    BT["Tagesbericht"]
     AM["Aufmaß"]
     RP["Rapport"]
     RE["Rechnung (extern)"]
@@ -92,7 +92,7 @@ flowchart TD
 
 Projekte sind dabei eine optionale organisatorische Zusammenfassung mehrerer Angebote und Aufträge. Einfache Angebote und Regieaufträge sollen auch ohne Projekt möglich sein.
 
-Aufmaße und Rapporte sind eigenständige Leistungsnachweise. Bautagesberichte sind davon unabhängig und dokumentieren die tatsächliche Ausführung.
+Aufmaße und Rapporte sind eigenständige Leistungsnachweise. Tagesberichte sind davon unabhängig und dokumentieren die tatsächliche Ausführung.
 
 ## Roadmap
 
@@ -106,10 +106,10 @@ Die folgenden Funktionen sind geplant und teilweise noch nicht implementiert.
 | 2.4 | Angebotsabgabe, Prüfung, Archivierung und Statusverwaltung | Implementiert, weitere Tests ausstehend |
 | 2.5 | Angebotsrevisionen und Nachträge | Implementiert |
 | 3.1 | Auftragsverwaltung, optionale Projekte, direkte Regieaufträge, Rollen und Bearbeitungssperren | Implementiert |
-| 3.2 | Bautagesberichte mit Zeiterfassung, Materialanforderungen, Fotos und Anhängen; einheitliche Listen mit Pagination und URL-Status | Implementiert |
+| 3.2 | Tagesberichte mit Zeiterfassung, Materialanforderungen, Fotos und Anhängen; einheitliche Listen mit Pagination und URL-Status | Implementiert |
 | 3.3 | Aufmaße für Angebotsarbeiten (Teilaufmaße, Fortschritt, Korrekturen) | Implementiert |
 | 3.4 | Rapporte für Regiearbeiten (Leistungsnachweis, kaufmännische Bearbeitung, vorbereitete Kundenbestätigung) | Implementiert |
-| 3.2.3 | PDF-Ausgabe für Rapporte, Aufmaße und Bautagesberichte, digitale Kundenunterschrift, Rücklauf und Dokumentenarchiv | Implementiert; externe Ablage und E-Mail-Versand geplant |
+| 3.2.3 | PDF-Ausgabe für Rapporte, Aufmaße und Tagesberichte, digitale Kundenunterschrift, Rücklauf und Dokumentenarchiv | Implementiert; externe Ablage und E-Mail-Versand geplant |
 | 3.4.1 | Bestellungen: interne Bestellungen mit Bestell-PDF, extern erfasste Bestellungen, Liefer- und Zahlungsstatus, Lieferantenrechnungen, Ist-Kosten und Kostenverteilung auf Aufträge | Implementiert; E-Mail-Versand geplant |
 | 3.4.1.1 | Bestellungen als Vorgang: Auftragsbestätigungen, Lieferungen/Rücksendungen, Rechnungen/Gutschriften/Stornos, Zahlungen, Lieferantenanschrift | Implementiert |
 | 3.5 | Nachkalkulation und Soll-Ist-Vergleich | Geplant |
@@ -152,7 +152,7 @@ Die Anwendung ist für den eigenständigen Betrieb auf einem Server oder NAS kon
 
 - Docker mit Docker Compose oder PHP 8.4 mit Apache
 - PHP-Erweiterungen `fileinfo`, `iconv`, `json`, `mbstring`, `PDO` und `pdo_sqlite`
-- Für Fotos und Anhänge zu Bautagesberichten `upload_max_filesize` mindestens 16M und `post_max_size` mindestens 20M (im Docker-Image voreingestellt)
+- Für Fotos und Anhänge zu Tagesberichten `upload_max_filesize` mindestens 16M und `post_max_size` mindestens 20M (im Docker-Image voreingestellt)
 - Composer 2 für eine Installation ohne Docker
 - Schreibbarer, dauerhaft gesicherter Datenpfad für SQLite, Angebots-JSON, Dokumente und Vorlagen
 

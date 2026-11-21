@@ -522,12 +522,15 @@ final readonly class TimeApprovalService
             } elseif ($legal && $day['netMinutes'] > $regular) {
                 $warn($date, 'regular_daily', sprintf('%s Arbeitszeit – mehr als die reguläre tägliche Arbeitszeit von %s.', self::hours($day['netMinutes']), self::hours($regular)));
             }
-            if ($legal && $day['netMinutes'] > 0 && ($weekday === 7 || $day['holiday'] !== null)) {
-                $warn($date, 'sunday', $weekday === 7 ? 'Sonntagsarbeit.' : 'Arbeit am Feiertag (' . $day['holiday'] . ').');
+            // Feiertag: vom Mitarbeiter eingetragen (maßgeblich) oder bundesweiter Feiertag als Hinweisquelle.
+            $holiday = in_array('holiday', array_column($day['absences'], 'type'), true) ? 'eingetragen' : $day['holiday'];
+            if ($legal && $day['netMinutes'] > 0 && ($weekday === 7 || $holiday !== null)) {
+                $warn($date, 'sunday', $weekday === 7 ? 'Sonntagsarbeit.' : 'Arbeit am Feiertag (' . $holiday . ').');
             }
             // Fehlende Arbeitszeit nur für vergangene/heutige Werktage ohne dokumentierte Abwesenheit.
-            if ($day['netMinutes'] === 0 && $weekday <= 5 && $day['holiday'] === null && $own === [] && $day['absences'] === [] && $date <= $this->today()) {
-                $warn($date, 'empty_day', 'Keine Arbeitszeit erfasst (Werktag).');
+            // Keine automatische Feiertagsverwaltung: auch an bundesweiten Feiertagen ist der Feiertag einzutragen.
+            if ($day['netMinutes'] === 0 && $weekday <= 5 && $own === [] && $day['absences'] === [] && $date <= $this->today()) {
+                $warn($date, 'empty_day', $day['holiday'] !== null ? 'Keine Arbeitszeit erfasst (' . $day['holiday'] . ' – bitte als Abwesenheit „Feiertag“ eintragen).' : 'Keine Arbeitszeit erfasst (Werktag).');
             }
             foreach ($day['absences'] as $absence) {
                 if ($absence['fullDay'] && in_array($absence['type'], ['vacation', 'sick'], true) && $day['netMinutes'] > 0) {
