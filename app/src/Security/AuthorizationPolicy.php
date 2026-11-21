@@ -36,6 +36,8 @@ final class AuthorizationPolicy
         if (str_starts_with($path, '/work-reports') || str_starts_with($path, '/api/work-reports')) return [$write ? 'workreports.write' : 'workreports.read'];
         // Aufmaße: Entwürfe erfassen (measurements.write), verbindlich abschließen nur mit measurements.complete.
         if (preg_match('#^/api/measurements/[^/]+/complete$#', $path) === 1) return ['measurements.read', 'measurements.complete'];
+        // Aufmaß-PDF enthält Einzelpreise und Summen (Kundendokument): nur mit commercial.read.
+        if (preg_match('#^/api/measurements/[^/]+/pdf$#', $path) === 1) return ['measurements.read', 'commercial.read'];
         if (str_starts_with($path, '/measurements') || str_starts_with($path, '/api/measurements')) return [$write ? 'measurements.write' : 'measurements.read'];
         // Materialanforderungen: Erfassen wie Berichte, Erledigen/Wiedereröffnen nur durch Büro/Admin.
         if (preg_match('#^/api/material-requests/[^/]+/status$#', $path) === 1) return ['reports.read', 'materials.manage'];

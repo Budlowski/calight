@@ -43,7 +43,7 @@
         <span>${esc(measurement.orderNumber)} · ${esc(measurement.customerName)}</span>
         <span>${format.date(measurement.measurementDate)}</span>
         <span>${measurement.itemCount} Positionen</span>
-        <span>${total(measurement)} netto</span>
+        ${measurement.netTotal === null ? "" : `<span>${total(measurement)} netto</span>`}
         ${measurement.correctedNumber ? `<span>Korrektur zu ${esc(measurement.correctedNumber)}</span>` : ""}
       </div>
     </article>`;

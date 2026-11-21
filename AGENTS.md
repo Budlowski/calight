@@ -322,7 +322,7 @@ Keine zweite Nummernlogik in einem Controller oder Frontend anlegen.
 - Die Oberfläche ist keine Sicherheitsgrenze: neue mobile Routen in `AuthorizationPolicy` mit den bestehenden Rechten einordnen; Datensatz- und Modulregeln bleiben in den Fachdiensten bzw. `ModuleService` (z. B. `/mobile/times` gehört zu `work_tracking`). Auftragsfreigabe für Techniker zentral über `OrderService::readableDetail`.
 - Einstieg: `Application\UserInterface` (Monteure immer mobil; Büro/Administratoren nach `users.preferred_interface`, Standard Büro; Wechsel nur mit `interface.switch`; optional `APP_MOBILE_HOST`). Keine Weiterleitung nach Bildschirmgröße.
 - PWA: Manifest und Service Worker unter `/mobile/` (öffentlich, ohne Daten). Der Service Worker speichert nichts; mobile Seiten senden `Cache-Control: no-store`. Spätere Offline-Entwürfe (IndexedDB) erfordern eine eigene Entscheidung zu Benutzerwechsel, Abmeldung und Löschung; nie Zugangsdaten oder dauerhafte Tokens lokal ablegen.
-- Mobile Erfassungsformulare existieren in Phase 1 noch nicht; Einstiege verweisen auf die vorhandenen responsiven Seiten (`create_for`, Auftragsreiter).
+- Persönliche Zeiterfassung mobil (Phase 2, `/mobile/times`, `assets/mobile-times.js`): reiner Client der API `/api/time-tracking/*` ohne eigene Rechen-, Prüf- oder Sperrlogik; nur der über `employees.user_id` zugeordnete Mitarbeiter (`TimeTrackingService::ownEmployee`), keine Mitarbeiterauswahl, keine Zuordnung über Namen, keine Bürofreigaben. Mobile Formulare für Tagesberichte, Rapporte, Material und Aufmaß folgen; bis dahin verweisen Einstiege auf die vorhandenen responsiven Seiten (`create_for`, Auftragsreiter).
 
 ### 4.18 Fachliche Abgrenzung späterer Module
 
@@ -346,7 +346,7 @@ Folgende Punkte sind Zielbild, soweit nicht durch aktuelle Migrationen/Code impl
 
 - `admin`: alle Rechte (`*`);
 - `office`: Kunden, Projekte, Angebote, Aufträge, Stammdaten, Kosten, Einstellungen, Mitarbeiter und Berichte gemäß Matrix;
-- `technician`: Dashboard, freigegebene Aufträge und Berichte; keine vertraulichen Kosten.
+- `technician`: Dashboard, freigegebene Aufträge und Berichte; keine vertraulichen Kosten und keine verkaufsseitigen Werte (`commercial.read`).
 
 Die historische Rolle `employee` wird nur für bereits bestehende PHP-Sessions als Vollzugriff toleriert; Datenbankrollen sind `admin`, `office`, `technician`. Migration `0020` hat bestehende Benutzer zu Administratoren übernommen, um Rechteverlust zu verhindern.
 
@@ -357,6 +357,7 @@ Verbindliche Regeln:
 - UI-Ausblendung ist Komfort, niemals Sicherheitsgrenze.
 - Fehlende Rechte liefern für APIs HTTP 403 mit „Keine Berechtigung“.
 - `ConfidentialDataFilter` und gezielte Response-Filter schützen Kosten, Deckungsbeiträge und Kalkulationsdetails. Neue Listen-/Export-APIs müssen auf Datenlecks geprüft werden.
+- Verkaufsseitige Werte (Einzelpreise, Auftrags-/Nachtragssummen, Aufmaßbeträge, Auftragsgrundlage) nur mit `commercial.read` (Büro, Administratoren). Ohne dieses Recht filtern Controller die Antworten mit `ConfidentialDataFilter::salesValues` (Werte null, Summentabellen leer); PDFs mit Preisen erfordern das Recht in `AuthorizationPolicy`. Monteure sehen Leistungsbeschreibungen, Mengen, Einsatzorte und notwendige Kontaktdaten, nie Preise, Summen, Kostensätze oder Kalkulationsdaten.
 - Keine parallele improvisierte Rollenmatrix in Controller oder JavaScript anlegen.
 
 ### Authentifizierung und Konten

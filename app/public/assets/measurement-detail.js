@@ -33,6 +33,8 @@
   // Darstellung
   // ---------------------------------------------------------------------------
   const editable = () => measurement?.status === "draft" && measurement.canEdit;
+  // Ohne commercial.read liefert der Server keine Beträge (Monteure erfassen nur Mengen).
+  const commercial = () => measurement?.commercial !== false;
 
   function positionState(position) {
     const entered = quantities[position.key] ?? "";
@@ -62,13 +64,13 @@
       <tr class="measurement-row${state.overrun ? " is-overrun" : ""}${state.current !== 0n ? " has-quantity" : ""}" data-row="${esc(position.key)}">
         <td class="m-number" data-label="Pos.">${esc(position.number)}</td>
         <td class="m-text" data-label="Leistung"><span class="m-short" title="${esc(position.shortText)}">${esc(position.shortText)}</span>${typeBadge}</td>
-        <td class="m-num" data-label="EP">${format.money(position.unitPrice)}</td>
+        ${commercial() ? `<td class="m-num" data-label="EP">${format.money(position.unitPrice)}</td>` : ""}
         <td class="m-num" data-label="Vereinbart">${quantityText(toUnits(position.agreedQuantity, 3))} ${esc(position.unit)}</td>
         <td class="m-num" data-label="Bisher">${quantityText(toUnits(position.previousQuantity, 3))}</td>
         <td class="m-input" data-label="Dieses Aufmaß">${input}</td>
         <td class="m-num" data-label="Gesamt" data-cell="total">${quantityText(state.total)}</td>
         <td class="m-num" data-label="Offen" data-cell="open">${openText(state, position)}</td>
-        <td class="m-num" data-label="Betrag" data-cell="value">${moneyText(lineCents(state.current, position.unitPrice))}</td>
+        ${commercial() ? `<td class="m-num" data-label="Betrag" data-cell="value">${moneyText(lineCents(state.current, position.unitPrice))}</td>` : ""}
       </tr>`;
   }
 
@@ -88,7 +90,7 @@
         const children = renderNodes(node.children, depth + 1);
         if (!children) continue;
         const typeBadge = TYPE_LABELS[node.effectiveType] ? ` <span class="status-badge measurement-type-badge">${TYPE_LABELS[node.effectiveType]}</span>` : "";
-        html += `<tr class="measurement-title-row depth-${Math.min(depth, 4)}"><th colspan="9" scope="rowgroup">${esc(node.number)} ${esc(node.name)}${typeBadge}</th></tr>${children}`;
+        html += `<tr class="measurement-title-row depth-${Math.min(depth, 4)}"><th colspan="${commercial() ? 9 : 7}" scope="rowgroup">${esc(node.number)} ${esc(node.name)}${typeBadge}</th></tr>${children}`;
       } else if (matches(node)) {
         html += positionRow(node);
       }
@@ -103,14 +105,14 @@
         <section class="measurement-source">
           <h3>${esc(source.label)}</h3>
           ${rows ? `<div class="measurement-table-wrap"><table class="measurement-table">
-            <thead><tr><th>Pos.</th><th>Leistung</th><th class="m-num">EP</th><th class="m-num">Vereinbart</th><th class="m-num">Bisher</th>
-              <th class="m-input">Dieses Aufmaß</th><th class="m-num">Gesamt</th><th class="m-num">Offen</th><th class="m-num">Betrag</th></tr></thead>
+            <thead><tr><th>Pos.</th><th>Leistung</th>${commercial() ? '<th class="m-num">EP</th>' : ""}<th class="m-num">Vereinbart</th><th class="m-num">Bisher</th>
+              <th class="m-input">Dieses Aufmaß</th><th class="m-num">Gesamt</th><th class="m-num">Offen</th>${commercial() ? '<th class="m-num">Betrag</th>' : ""}</tr></thead>
             <tbody>${rows}</tbody></table></div>` : '<p class="empty-state">Keine Positionen entsprechen dem Filter.</p>'}
         </section>`;
     });
     if (measurement.orphanItems.length) {
       blocks.push(`<section class="measurement-source"><h3>Nicht mehr in der Auftragsgrundlage</h3><ul>${measurement.orphanItems
-        .map((item) => `<li>${esc(item.number)} ${esc(item.shortText)}: ${quantityText(toUnits(item.quantity, 3))} ${esc(item.unit)} · ${format.money(item.lineTotal)}</li>`).join("")}</ul></section>`);
+        .map((item) => `<li>${esc(item.number)} ${esc(item.shortText)}: ${quantityText(toUnits(item.quantity, 3))} ${esc(item.unit)}${commercial() ? ` · ${format.money(item.lineTotal)}` : ""}</li>`).join("")}</ul></section>`);
     }
     sourcesBox.innerHTML = blocks.join("") || '<p class="empty-state">Keine verbindlichen Positionen vorhanden.</p>';
     updateSummary();
@@ -128,6 +130,11 @@
   }
 
   function renderTotals() {
+    const card = root.querySelector("[data-totals-card]");
+    const netField = root.querySelector("[data-net-total]")?.closest("div");
+    if (card) card.hidden = !commercial();
+    if (netField) netField.hidden = !commercial();
+    if (!commercial()) return;
     const rows = measurement.totals.map((total) => `
       <tr><th scope="row">${esc(total.label)}</th><td class="m-num">${format.money(total.itemsTotal)}</td>
         <td class="m-num">${Number(total.adjustmentAmount) !== 0 ? format.money(total.adjustmentAmount) : "–"}</td><td class="m-num"><strong>${format.money(total.netTotal)}</strong></td></tr>`).join("");
@@ -162,7 +169,7 @@
     if (editable()) actions.push('<button class="button button-light" type="button" data-save data-shortcut-save data-icon="save" title="Entwurf speichern, weiter bearbeitbar (Strg+S)">Entwurf speichern</button>');
     if (measurement.canComplete) actions.push('<button class="button" type="button" data-complete data-icon="clipboard-check" title="Aufmaß verbindlich abschließen">Abschließen …</button>');
     // PDF: abgeschlossene Aufmaße archiviert, Entwürfe nur als Vorschau mit Wasserzeichen.
-    actions.push(`<a class="button button-light" href="/api/measurements/${encodeURIComponent(measurement.id)}/pdf" data-icon="file-down">${measurement.status === "completed" ? "PDF" : "PDF-Vorschau"}</a>`);
+    if (commercial()) actions.push(`<a class="button button-light" href="/api/measurements/${encodeURIComponent(measurement.id)}/pdf" data-icon="file-down">${measurement.status === "completed" ? "PDF" : "PDF-Vorschau"}</a>`);
     // Seltene und destruktive Aktionen wie beim Rapport unter „Weitere Aktionen“.
     if (measurement.canCorrect) more.push('<button type="button" data-correct data-icon="copy">Korrekturaufmaß anlegen</button>');
     if (measurement.canEdit) more.push('<button type="button" data-delete data-icon="trash">Entwurf löschen</button>');
@@ -217,7 +224,8 @@
     row.classList.toggle("has-quantity", state.current !== 0n);
     row.querySelector('[data-cell="total"]').textContent = quantityText(state.total);
     row.querySelector('[data-cell="open"]').innerHTML = openText(state, position);
-    row.querySelector('[data-cell="value"]').textContent = moneyText(lineCents(state.current, position.unitPrice));
+    const valueCell = row.querySelector('[data-cell="value"]');
+    if (valueCell) valueCell.textContent = moneyText(lineCents(state.current, position.unitPrice));
     updateSummary();
     renderTotals();
   });

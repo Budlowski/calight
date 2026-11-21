@@ -10,6 +10,7 @@ use App\Application\ModuleService;
 use App\Application\OfferPdfService;
 use App\Application\OfferService;
 use App\Application\OrderService;
+use App\Application\TimeTrackingService;
 use App\Application\UserInterface;
 use App\Domain\Calculation\PriceCalculator;
 use App\Domain\Offer\OfferCalculator;
@@ -18,6 +19,7 @@ use App\Http\AccessDeniedException;
 use App\Http\Request;
 use App\Infrastructure\Database\ConnectionFactory;
 use App\Infrastructure\Database\Migrator;
+use App\Infrastructure\Persistence\AttachmentStore;
 use App\Infrastructure\Persistence\DocumentSettingsRepository;
 use App\Infrastructure\Persistence\MeasurementRepository;
 use App\Infrastructure\Persistence\NumberRangeRepository;
@@ -25,6 +27,7 @@ use App\Infrastructure\Persistence\OfferJsonStore;
 use App\Infrastructure\Persistence\OfferRepository;
 use App\Infrastructure\Persistence\OrderRepository;
 use App\Infrastructure\Persistence\ProjectRepository;
+use App\Infrastructure\Persistence\TimeTrackingRepository;
 use App\Infrastructure\Persistence\UserRepository;
 use App\Security\AuthorizationPolicy;
 use App\Security\RolePermissions;
@@ -147,13 +150,17 @@ final class MobileFrontendTest extends TestCase
             $technician = $workspace->features($env['technician']);
             $this->assertTrue($technician['orders'] && $technician['times'] && $technician['measurements']);
             $this->assertTrue(!$technician['documents'] && !$technician['switchInterface'], 'Monteure: keine Dokumentenübersicht, kein Oberflächenwechsel.');
-            $this->assertSame(['Arbeitszeit', 'Tagesbericht', 'Rapport', 'Materialbedarf', 'Aufmaß', 'Reisekosten'], $labels($workspace->quickActions($env['technician'])),
-                'Schnellzugriffe nur mit Schreibrecht und aktivem Modul.');
+            $this->assertSame(['Arbeitszeit', 'Tagesbericht', 'Rapport', 'Materialbedarf', 'Aufmaß', 'Abwesenheit', 'Reisekosten'], $labels($workspace->quickActions($env['technician'])),
+                'Schnellzugriffe nur mit Schreibrecht und aktivem Modul; persönliche Zeiten mit zugeordnetem Mitarbeiter.');
+            $this->assertSame('/mobile/times?form=entry', $workspace->quickActions($env['technician'])[0]['url'], 'Zeiterfassung mobil, ohne Büroansicht.');
+            $office = $workspace->features($env['office']);
+            $this->assertTrue($office['times'] && !$office['timeEntry'], 'Ohne zugeordneten Mitarbeiter keine persönlichen Erfassungsaktionen.');
+            $this->assertTrue(!in_array('Arbeitszeit', $labels($workspace->quickActions($env['office'])), true));
 
             $modules = $env['modules'];
             $modules->setEnabled('work_tracking', false, true, $env['admin']);
             $this->assertTrue(!$workspace->features($env['technician'])['times']);
-            $this->assertSame(['Materialbedarf', 'Aufmaß'], $labels($workspace->quickActions($env['technician'])), 'Ohne Arbeitserfassung entfallen Zeiten, Berichte und Reisekosten.');
+            $this->assertSame(['Materialbedarf', 'Aufmaß'], $labels($workspace->quickActions($env['technician'])), 'Ohne Arbeitserfassung entfallen Zeiten, Berichte, Abwesenheiten und Reisekosten.');
             $modules->setEnabled('procurement', false, true, $env['admin']);
             $this->assertTrue(!in_array('Materialbedarf', $labels($workspace->quickActions($env['office'])), true));
             $this->assertTrue(!$workspace->features($env['office'])['materialRequests']);
@@ -184,6 +191,8 @@ final class MobileFrontendTest extends TestCase
             $admin = $this->user($pdo, 'admin', $now);
             $office = $this->user($pdo, 'office', $now);
             $technician = $this->user($pdo, 'technician', $now);
+            $pdo->prepare("INSERT INTO employees (id, user_id, display_name, hourly_cost_rate, active, created_at, updated_at) VALUES (:id, :user, 'Max Monteur', '42.0000', 1, :now, :now)")
+                ->execute(['id' => Uuid::v4(), 'user' => $technician['id'], 'now' => $now]);
 
             $offers = new OfferRepository($pdo);
             $validator = new OfferValidator();
@@ -214,7 +223,7 @@ final class MobileFrontendTest extends TestCase
                 'orders' => $orders,
                 'order' => $order,
                 'modules' => $modules,
-                'workspace' => new MobileWorkspace($modules, $orders, $measurements),
+                'workspace' => new MobileWorkspace($modules, $orders, $measurements, timeTracking: new TimeTrackingService(new TimeTrackingRepository($pdo), new AttachmentStore($tmp . '/documents'))),
                 'admin' => $admin,
                 'office' => $office,
                 'technician' => $technician,

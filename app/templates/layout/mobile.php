@@ -87,5 +87,8 @@ $pageReadOnly = $pageModule !== null && !$moduleEnabled($pageModule);
         <?php endforeach; ?>
     </nav>
 <script src="<?= $escape($asset('ui.js')) ?>" defer></script>
+<?php foreach (array_filter($pageScripts ?? [], static fn (mixed $file): bool => is_string($file) && preg_match('/^mobile-[a-z-]+\.js$/', $file) === 1) as $script): ?>
+<script src="<?= $escape($asset($script)) ?>" defer></script>
+<?php endforeach; ?>
 </body>
 </html>

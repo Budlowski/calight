@@ -54,11 +54,18 @@ final readonly class MobileController
             }
             return $this->render('mobile/order', ['title' => $detail['order']['number'], 'navigation' => 'orders', 'detail' => $detail]);
         }));
+        // Persönliche Zeiterfassung: Seite als Rahmen, Daten und Änderungen ausschließlich über die
+        // bestehende API /api/time-tracking/* (eigener Mitarbeiter, ohne Mitarbeiterauswahl).
         $router->add('GET', '/mobile/times', fn (Request $request): Response => $this->page(fn (array $actor): Response => $this->render('mobile/times', [
             'title' => 'Zeiten',
             'navigation' => 'times',
-            'times' => $this->workspace->times($actor, $this->date((string) ($request->query['date'] ?? ''))),
             'today' => $this->today(),
+            'initial' => [
+                'date' => $this->date((string) ($request->query['date'] ?? '')),
+                'view' => in_array($request->query['view'] ?? '', ['day', 'week', 'month'], true) ? (string) $request->query['view'] : 'day',
+                'form' => in_array($request->query['form'] ?? '', ['entry', 'absence', 'travel', 'trip', 'expense'], true) ? (string) $request->query['form'] : '',
+                'order' => preg_match('/^[A-Za-z0-9-]{1,64}$/', (string) ($request->query['order'] ?? '')) === 1 ? (string) $request->query['order'] : '',
+            ],
         ])));
         $router->add('GET', '/mobile/more', fn (): Response => $this->page(fn (array $actor): Response => $this->render('mobile/more', [
             'title' => 'Mehr',

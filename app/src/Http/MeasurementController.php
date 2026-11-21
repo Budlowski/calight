@@ -7,6 +7,7 @@ namespace App\Http;
 use App\Application\MeasurementPdfService;
 use App\Application\MeasurementService;
 use App\Domain\Order\OrderValidationException;
+use App\Security\ConfidentialDataFilter;
 use App\View\View;
 use JsonException;
 
@@ -26,8 +27,8 @@ final readonly class MeasurementController
         $router->add('GET', '/measurements/{id}', fn (Request $request, array $parameters): Response => $this->view->render('measurements/show', [
             'measurementId' => $parameters['id'],
         ]));
-        $router->add('GET', '/api/measurements', fn (Request $request): Response => Response::json(['data' => $this->service->page($request->query, $this->actor())]));
-        $router->add('GET', '/api/measurements/{id}', fn (Request $request, array $parameters): Response => Response::json(['data' => $this->service->detail($parameters['id'], $this->actor())]));
+        $router->add('GET', '/api/measurements', fn (Request $request): Response => Response::json(['data' => $this->visible($this->service->page($this->listQuery($request->query), $this->actor()))]));
+        $router->add('GET', '/api/measurements/{id}', fn (Request $request, array $parameters): Response => Response::json(['data' => $this->visible($this->service->detail($parameters['id'], $this->actor()))]));
         $router->add('POST', '/api/measurements', fn (Request $request): Response => $this->mutate($request, fn (array $data) => $this->service->create($data, $this->actor()), 201));
         $router->add('PUT', '/api/measurements/{id}', fn (Request $request, array $parameters): Response => $this->mutate($request, fn (array $data) => $this->service->update($parameters['id'], $data, $this->actor())));
         $router->add('DELETE', '/api/measurements/{id}', fn (Request $request, array $parameters): Response => $this->mutate($request, function (array $data) use ($parameters): array {
@@ -41,6 +42,27 @@ final readonly class MeasurementController
         $router->add('POST', '/api/measurements/{id}/complete', fn (Request $request, array $parameters): Response => $this->complete($request, $parameters['id']));
     }
 
+    /**
+     * Aufmaßbeträge (Einzelpreise, Zeilen- und Nettosummen) nur mit commercial.read; Monteure
+     * erfassen und sehen Mengen.
+     *
+     * @param array<string,mixed> $data
+     * @return array<string,mixed>
+     */
+    private function visible(array $data): array
+    {
+        return Session::can('commercial.read') ? $data : ConfidentialDataFilter::salesValues($data);
+    }
+
+    /** Sortierung nach Betrag nur mit commercial.read. @param array<string,mixed> $query @return array<string,mixed> */
+    private function listQuery(array $query): array
+    {
+        if (!Session::can('commercial.read') && ($query['sort'] ?? '') === 'total') {
+            unset($query['sort'], $query['dir']);
+        }
+        return $query;
+    }
+
     /** @return array<string,mixed> */
     private function actor(): array
     {
@@ -52,12 +74,12 @@ final readonly class MeasurementController
     {
         $data = $this->body($request);
         $result = $this->service->complete($id, $data, $this->actor());
-        return Response::json(['data' => $result], $result['completed'] ? 200 : 409);
+        return Response::json(['data' => $this->visible($result)], $result['completed'] ? 200 : 409);
     }
 
     private function mutate(Request $request, callable $operation, int $status = 200): Response
     {
-        return Response::json(['data' => $operation($this->body($request))], $status);
+        return Response::json(['data' => $this->visible($operation($this->body($request)))], $status);
     }
 
     /** @return array<string,mixed> */

@@ -27,6 +27,8 @@ final class RolePermissions
             'timesheet.own', 'timesheet.manage',
             // Wechsel zwischen Büro- und mobiler Oberfläche (Benutzermenü); ändert keine weiteren Rechte.
             'interface.switch',
+            // Verkaufsseitige Werte (Preise, Auftragssummen, Aufmaßbeträge); Monteure haben es nicht.
+            'commercial.read',
         ],
         'technician' => ['dashboard.read', 'orders.read', 'reports.read', 'reports.write', 'measurements.read', 'measurements.write', 'workreports.read', 'workreports.write', 'timesheet.own'],
     ];

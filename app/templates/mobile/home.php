@@ -50,8 +50,8 @@ $firstName = trim(explode(' ', trim((string) ($currentUser['displayName'] ?? '')
                 <li class="mobile-hint mobile-hint-<?= $escape($hint['level']) ?>"><span aria-hidden="true"><?= $hint['level'] === 'error' ? '✕' : '⚠' ?></span><span><span class="visually-hidden"><?= $hint['level'] === 'error' ? 'Sperrfehler: ' : 'Hinweis: ' ?></span><?= $escape($hint['message']) ?></span></li>
             <?php endforeach; ?>
         </ul>
-        <?php if (count($home['hints']) > 5): ?><p class="mobile-card-text muted">Weitere <?= $escape((string) (count($home['hints']) - 5)) ?> Hinweise in der Zeiterfassung.</p><?php endif; ?>
-        <a class="mobile-card-link" href="/time-tracking">In der Zeiterfassung prüfen</a>
+        <?php if (count($home['hints']) > 5): ?><p class="mobile-card-text muted">Weitere <?= $escape((string) (count($home['hints']) - 5)) ?> Hinweise in der Wochenansicht.</p><?php endif; ?>
+        <a class="mobile-card-link" href="/mobile/times?view=week">Woche prüfen</a>
     </section>
     <?php endif; ?>
 

@@ -86,6 +86,22 @@ final readonly class TimeTrackingService
         ];
     }
 
+    /**
+     * Dem Benutzerkonto zugeordneter Mitarbeiter (nur über employees.user_id, nie anhand des
+     * Namens) oder null. Für Oberflächen, die persönliche Erfassungsaktionen ein- oder ausblenden.
+     *
+     * @param array<string,mixed> $actor
+     * @return array{id:string,name:string,active:bool}|null
+     */
+    public function ownEmployee(array $actor): ?array
+    {
+        if (!$this->can($actor, 'timesheet.own')) {
+            return null;
+        }
+        $employee = $this->times->employeeForUser((string) ($actor['id'] ?? ''));
+        return $employee === null ? null : ['id' => (string) $employee['id'], 'name' => (string) $employee['display_name'], 'active' => (bool) $employee['active']];
+    }
+
     /** Tagesansicht mit allen Buchungen (alle Herkünfte), Summen, Einsatz/Auslagen. @param array<string,mixed> $actor @return array<string,mixed> */
     public function day(?string $employeeId, string $date, array $actor): array
     {

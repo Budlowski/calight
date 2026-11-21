@@ -63,6 +63,8 @@ final readonly class MobileWorkspace
         return [
             'orders' => $this->can($actor, 'orders.read'),
             'times' => $work && $this->can($actor, 'timesheet.own'),
+            // Persönliche Erfassung nur mit zugeordnetem, aktivem Mitarbeiter (employees.user_id).
+            'timeEntry' => $work && $this->hasActiveEmployee($actor),
             'dailyReports' => $work && $this->can($actor, 'reports.read'),
             'workReports' => $work && $this->can($actor, 'workreports.read'),
             'materialRequests' => $procurement && $this->can($actor, 'reports.read'),
@@ -89,12 +91,14 @@ final readonly class MobileWorkspace
                 $actions[] = ['label' => $label, 'icon' => $icon, 'url' => $url, 'hint' => $hint];
             }
         };
-        $add($work && $this->can($actor, 'timesheet.own'), 'Arbeitszeit', 'clock-3', '/mobile/times', 'Heutige Zeiten');
+        $timeEntry = $work && $this->hasActiveEmployee($actor);
+        $add($timeEntry, 'Arbeitszeit', 'clock-3', '/mobile/times?form=entry', 'Zeit erfassen');
         $add($work && $this->can($actor, 'reports.write'), 'Tagesbericht', 'calendar-days', '/daily-reports', 'Berichte erfassen');
         $add($work && $this->can($actor, 'workreports.write'), 'Rapport', 'clipboard-check', '/work-reports', 'Regieleistungen');
         $add($procurement && $this->can($actor, 'reports.write'), 'Materialbedarf', 'package', '/material-requests', 'Material anfordern');
         $add($this->can($actor, 'measurements.write'), 'Aufmaß', 'ruler', '/measurements', 'Mengen erfassen');
-        $add($work && $this->can($actor, 'timesheet.own'), 'Reisekosten', 'badge-euro', '/time-tracking?view=day', 'Tagesangaben und Auslagen');
+        $add($timeEntry, 'Abwesenheit', 'calendar-days', '/mobile/times?form=absence', 'Urlaub, Krankheit …');
+        $add($timeEntry, 'Reisekosten', 'badge-euro', '/mobile/times?form=travel', 'Auswärtstätigkeit, Fahrten, Auslagen');
         return $actions;
     }
 
@@ -385,6 +389,9 @@ final readonly class MobileWorkspace
         $procurement = $this->modules->isEnabled('procurement');
         $encoded = rawurlencode($id);
         $actions = [];
+        if ($work && $this->hasActiveEmployee($actor)) {
+            $actions[] = ['label' => 'Arbeitszeit erfassen', 'icon' => 'clock-3', 'url' => '/mobile/times?form=entry&order=' . $encoded];
+        }
         if ($work && $this->can($actor, 'reports.write')) {
             $actions[] = ['label' => 'Tagesbericht anlegen', 'icon' => 'calendar-days', 'url' => '/daily-reports?create_for=' . $encoded];
         }
@@ -506,55 +513,15 @@ final readonly class MobileWorkspace
     }
 
     // -------------------------------------------------------------------------
-    // Zeiten
-    // -------------------------------------------------------------------------
-
-    /**
-     * Tagesansicht der eigenen Zeiten (nur lesend; erfasst wird in Phase 1 in der Zeiterfassung).
-     *
-     * @param array<string,mixed> $actor
-     * @return array<string,mixed>
-     */
-    public function times(array $actor, string $date): array
-    {
-        $this->require($actor, 'timesheet.own');
-        if ($this->timeTracking === null) {
-            return ['available' => false, 'message' => 'Die Zeiterfassung ist nicht verfügbar.', 'date' => $date];
-        }
-        try {
-            $day = $this->timeTracking->day(null, $date, $actor);
-        } catch (DocumentValidationException $exception) {
-            return ['available' => false, 'message' => implode(' ', $exception->errors), 'date' => $date];
-        }
-        return [
-            'available' => true,
-            'date' => $day['date'],
-            'employeeName' => $day['employee']['name'],
-            'netMinutes' => (int) ($day['totals']['netMinutes'] ?? 0),
-            'travelMinutes' => (int) ($day['totals']['travelMinutes'] ?? 0),
-            'lockLabel' => $day['lockLabel'],
-            'lockStatus' => $day['lockStatus'],
-            'canEdit' => (bool) $day['canEdit'],
-            'entries' => array_map(static fn (array $entry): array => [
-                'time' => $entry['hasTimes'] ? $entry['start'] . '–' . $entry['end'] . ($entry['endsNextDay'] ? ' (+1)' : '') : 'Ohne Uhrzeit',
-                'netMinutes' => (int) $entry['netMinutes'],
-                'travelMinutes' => (int) $entry['travelMinutes'],
-                'source' => (string) ($entry['sourceLabel'] ?? ''),
-                'target' => $entry['orderId'] !== null
-                    ? self::join([$entry['orderNumber'], $entry['orderTitle']])
-                    : ($entry['costCenterId'] !== null ? self::join([$entry['costCenterNumber'], $entry['costCenterName']]) . ' (Kostenstelle)' : 'Ohne Zuordnung'),
-                'notes' => (string) ($entry['notes'] ?? ''),
-            ], $day['entries']),
-            'absences' => array_map(static fn (array $absence): array => [
-                'label' => (string) $absence['label'],
-                'minutes' => $absence['fullDay'] ? null : (int) $absence['minutes'],
-            ], $day['absences']),
-        ];
-    }
-
-    // -------------------------------------------------------------------------
     // Hilfen
     // -------------------------------------------------------------------------
+
+    /** @param array<string,mixed> $actor */
+    private function hasActiveEmployee(array $actor): bool
+    {
+        $employee = $this->timeTracking?->ownEmployee($actor);
+        return $employee !== null && $employee['active'];
+    }
 
     /** @param array<string,mixed> $actor */
     private function can(array $actor, string $permission): bool

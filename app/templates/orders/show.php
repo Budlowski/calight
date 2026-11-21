@@ -69,11 +69,13 @@ $openMaterial=count($materialRequests??[]);
     </nav>
 
     <div class="tab-panel order-panel" id="order-panel-overview" role="tabpanel" data-order-panel="overview">
+    <?php if($commercial??true): ?>
     <section class="order-value-summary" aria-label="Auftragssummen">
         <div><span>Ursprüngliche Auftragssumme netto</span><strong><?= $escape($order['originalNetTotal']===null?'Keine vereinbarte Summe':$money($order['originalNetTotal'])) ?></strong></div>
         <div><span>Angenommene Nachträge netto</span><strong><?= $escape($money($order['acceptedAddendaNetTotal'])) ?></strong></div>
         <div class="total"><span>Aktuelle Gesamtauftragssumme netto</span><strong><?= $escape($order['currentContractNetTotal']===null?'Keine vereinbarte Summe':$money($order['currentContractNetTotal'])) ?></strong></div>
     </section>
+    <?php endif; ?>
     <section class="card order-kpis" aria-label="Kennzahlen">
         <div class="section-heading"><div><h2>Kennzahlen</h2><span class="muted">Aus vorhandenen Daten; nicht ermittelbare Werte werden nicht angezeigt.</span></div></div>
         <dl class="order-kpi-grid">
@@ -178,7 +180,7 @@ $openMaterial=count($materialRequests??[]);
     <?php if (($measurementOverview ?? null) !== null): $mo = $measurementOverview; $measurementLabels = ['draft' => 'Entwurf', 'completed' => 'Abgeschlossen']; ?>
     <section class="card order-measurements">
         <div class="section-heading">
-            <div><h2>Aufmaße</h2><span class="muted"><?php if ($mo['measurable']): ?><?= $escape((string) $mo['progress']['started']) ?> von <?= $escape((string) $mo['progress']['positions']) ?> Positionen begonnen · <?= $escape((string) $mo['progress']['complete']) ?> vollständig<?= $mo['progress']['overrun'] > 0 ? ' · ' . $escape((string) $mo['progress']['overrun']) . ' über der vereinbarten Menge' : '' ?> · <?= $escape($money($mo['completedNetTotal'])) ?> netto abgeschlossen<?php else: ?>Keine verbindlichen Leistungspositionen (direkter Regieauftrag ohne angenommenen Nachtrag)<?php endif; ?></span></div>
+            <div><h2>Aufmaße</h2><span class="muted"><?php if ($mo['measurable']): ?><?= $escape((string) $mo['progress']['started']) ?> von <?= $escape((string) $mo['progress']['positions']) ?> Positionen begonnen · <?= $escape((string) $mo['progress']['complete']) ?> vollständig<?= $mo['progress']['overrun'] > 0 ? ' · ' . $escape((string) $mo['progress']['overrun']) . ' über der vereinbarten Menge' : '' ?><?= ($commercial??true) ? ' · ' . $escape($money($mo['completedNetTotal'])) . ' netto abgeschlossen' : '' ?><?php else: ?>Keine verbindlichen Leistungspositionen (direkter Regieauftrag ohne angenommenen Nachtrag)<?php endif; ?></span></div>
             <?php if ($mo['measurable'] && \App\Http\Session::can('measurements.write')): ?><button class="button" type="button" data-create-measurement="<?= $escape($order['id']) ?>" data-icon="plus">Aufmaß anlegen</button><?php endif; ?>
         </div>
         <div class="notice" data-measurement-message role="status" hidden></div>
