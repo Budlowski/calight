@@ -184,11 +184,7 @@ a.mobile-list-item:active { background: #f5f9fc; }
 /* Zeiterfassung: Ansichten */
 .mobile-times [data-content] { display: grid; gap: var(--space-5); }
 .mobile-times [data-content] > .mobile-hint-list { margin: 0; padding: var(--space-4); }
-.mobile-segmented { display: grid; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; padding: 3px; border: 1px solid var(--border); border-radius: 8px; background: #e9eef2; }
-.mobile-segmented > button, .mobile-segmented > label { display: flex; min-height: 40px; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: var(--text); cursor: pointer; font: inherit; font-weight: 600; }
-.mobile-segmented > button[aria-pressed="true"], .mobile-segmented > label:has(input:checked) { background: white; box-shadow: 0 1px 3px rgb(16 36 54 / 18%); color: var(--primary); }
-.mobile-segmented > label input { position: absolute; opacity: 0; pointer-events: none; }
-.mobile-segmented > label:has(input:focus-visible) { outline: 2px solid var(--focus-ring); }
+/* .mobile-segmented: gemeinsame Umschalter-Komponente .segmented in app.css. */
 .mobile-segmented-small > label { min-height: var(--mobile-touch); }
 .mobile-day-nav > button { width: var(--mobile-touch); min-height: var(--mobile-touch); font-size: 22px; line-height: 1; }
 .mobile-times .link-button { min-height: var(--mobile-touch); font-weight: 600; }

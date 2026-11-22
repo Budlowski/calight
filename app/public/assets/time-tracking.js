@@ -493,9 +493,9 @@
     form.className = "form-stack";
     form.noValidate = true;
     form.innerHTML = `
-      ${chooseKind ? `<div class="view-switch time-kind-switch" role="radiogroup" aria-label="Art">
-        <label class="check-inline"><input type="radio" name="kind" value="work"${kind === "work" ? " checked" : ""}> Arbeitszeit</label>
-        <label class="check-inline"><input type="radio" name="kind" value="absence"${kind === "absence" ? " checked" : ""}> Abwesenheit</label></div>` : ""}
+      ${chooseKind ? `<div class="segmented time-kind-switch" role="radiogroup" aria-label="Art">
+        <label><input type="radio" name="kind" value="work"${kind === "work" ? " checked" : ""}><span>Arbeitszeit</span></label>
+        <label><input type="radio" name="kind" value="absence"${kind === "absence" ? " checked" : ""}><span>Abwesenheit</span></label></div>` : ""}
       <div class="form-stack" data-kind="work">
       ${entry?.changedByOther ? `<p class="time-dialog-meta">Zuletzt geändert von ${esc(entry.updatedByName)} am ${format.dateTime(entry.updatedAt)}</p>` : ""}
       ${fixed !== null ? `<p class="notice">${esc(entry.reportLabel)}: <strong>${hours(fixed)}</strong> laut Bericht. Die Dauer wird im Bericht geändert; hier werden nur Uhrzeiten, Pause, Reisezeit und Einsatzart ergänzt. Ende − Beginn − Pause muss genau ${hours(fixed)} ergeben.</p>` : ""}
@@ -513,9 +513,9 @@
       </div>
       ${entry ? "" : `<div class="form-stack" data-kind="absence">
         <label><span class="field-label">Abwesenheitsart <span aria-hidden="true">*</span></span><select name="absenceType" required>${Object.entries(reference.absenceTypes).map(([key, label]) => `<option value="${key}"${key === (absence?.type ?? "vacation") ? " selected" : ""}>${esc(label)}</option>`).join("")}</select></label>
-        <div class="time-travel-checks">
-          <label class="check-inline"><input type="radio" name="absenceScope" value="full"${absence && !absence.fullDay ? "" : " checked"}> Ganztägig</label>
-          <label class="check-inline"><input type="radio" name="absenceScope" value="hours"${absence && !absence.fullDay ? " checked" : ""}> Stunden</label>
+        <div class="segmented" role="radiogroup" aria-label="Umfang">
+          <label><input type="radio" name="absenceScope" value="full"${absence && !absence.fullDay ? "" : " checked"}><span>Ganztägig</span></label>
+          <label><input type="radio" name="absenceScope" value="hours"${absence && !absence.fullDay ? " checked" : ""}><span>Stunden</span></label>
         </div>
         <label data-absence-hours><span class="field-label">Dauer (Stunden) <span aria-hidden="true">*</span></span><input name="absenceHours" inputmode="decimal" placeholder="z. B. 4 oder 4:30" value="${esc(absence?.minutes ? hours(absence.minutes).replace(" h", "") : "")}"></label>
         <label><span class="field-label">Bemerkung (optional, keine medizinischen Angaben)</span><input name="absenceNotes" maxlength="500" value="${esc(absence?.notes ?? "")}"></label>

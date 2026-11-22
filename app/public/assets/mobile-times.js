@@ -535,14 +535,19 @@
       title: absence ? "Abwesenheit bearbeiten" : "Abwesenheit erfassen",
       body: `${field("Datum", `<input type="date" name="date" value="${esc(absence?.date || state.date)}" required>`)}
         ${field("Art", `<select name="absenceType" required>${options(state.reference.absenceTypes, absence?.type || "", "Bitte wählen …")}</select>`)}
-        ${checkbox("fullDay", "Ganztägig", fullDay)}
+        <div class="mobile-segmented mobile-segmented-small" role="radiogroup" aria-label="Umfang">
+          <label><input type="radio" name="absenceScope" value="full"${fullDay ? " checked" : ""}><span>Ganztägig</span></label>
+          <label><input type="radio" name="absenceScope" value="hours"${fullDay ? "" : " checked"}><span>Stunden</span></label>
+        </div>
         <div data-hours-field${fullDay ? " hidden" : ""}>${field("Dauer", `<input type="text" name="hours" inputmode="decimal" placeholder="z. B. 4 oder 4:30" value="${esc(absence && !absence.fullDay ? durationText(absence.minutes) : "")}">`, "Stunden oder Stunden:Minuten")}</div>
         ${field("Bemerkung", `<textarea name="notes" rows="2" maxlength="500">${esc(absence?.notes || "")}</textarea>`, "Keine Diagnosen oder medizinischen Angaben eintragen.")}`,
       remove: absence ? () => api(`/api/time-tracking/absences/${encodeURIComponent(absence.id)}`, { method: "DELETE", body: { version: absence.version } }) : null,
-      init: () => sheetForm.elements.fullDay.addEventListener("change", () => { sheetForm.querySelector("[data-hours-field]").hidden = sheetForm.elements.fullDay.checked; }),
+      init: () => sheetForm.querySelectorAll('[name="absenceScope"]').forEach((input) => input.addEventListener("change", () => {
+        sheetForm.querySelector("[data-hours-field]").hidden = sheetForm.elements.absenceScope.value === "full";
+      })),
       submit: () => {
         const form = values();
-        const payload = { date: form.date, absenceType: form.absenceType, fullDay: sheetForm.elements.fullDay.checked, hours: form.hours || "", notes: form.notes || "" };
+        const payload = { date: form.date, absenceType: form.absenceType, fullDay: sheetForm.elements.absenceScope.value === "full", hours: form.hours || "", notes: form.notes || "" };
         return absence
           ? api(`/api/time-tracking/absences/${encodeURIComponent(absence.id)}`, { method: "PUT", body: { ...payload, version: absence.version } })
           : api("/api/time-tracking/absences", { method: "POST", body: payload });
