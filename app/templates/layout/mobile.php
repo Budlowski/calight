@@ -6,7 +6,7 @@ $features = $mobileFeatures ?? [];
 $navigationItems = array_filter([
     ['key' => 'home', 'href' => '/mobile/', 'icon' => 'layout-dashboard', 'label' => 'Start', 'visible' => true],
     ['key' => 'orders', 'href' => '/mobile/orders', 'icon' => 'clipboard-list', 'label' => 'Aufträge', 'visible' => $features['orders'] ?? false],
-    ['key' => 'times', 'href' => '/mobile/times', 'icon' => 'clock-3', 'label' => 'Zeiten', 'visible' => $features['times'] ?? false],
+    ['key' => 'times', 'href' => '/mobile/times', 'icon' => 'clock-3', 'label' => 'Zeiterfassung', 'visible' => $features['times'] ?? false],
     ['key' => 'more', 'href' => '/mobile/more', 'icon' => 'menu', 'label' => 'Mehr', 'visible' => true],
 ], static fn (array $item): bool => $item['visible']);
 $roleLabels = ['admin' => 'Administrator', 'office' => 'Büro', 'technician' => 'Monteur'];

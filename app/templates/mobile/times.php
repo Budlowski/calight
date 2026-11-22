@@ -10,7 +10,7 @@ $pageScripts = ['mobile-times.js'];
      data-view="<?= $escape($initial['view']) ?>"
      data-form="<?= $escape($initial['form']) ?>"
      data-order="<?= $escape($initial['order']) ?>">
-    <h1 class="mobile-title">Zeiten</h1>
+    <h1 class="mobile-title">Zeiterfassung</h1>
 
     <nav class="mobile-segmented" aria-label="Ansicht">
         <button type="button" data-view-switch="day">Tag</button>

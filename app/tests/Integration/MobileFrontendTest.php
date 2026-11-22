@@ -150,12 +150,12 @@ final class MobileFrontendTest extends TestCase
             $technician = $workspace->features($env['technician']);
             $this->assertTrue($technician['orders'] && $technician['times'] && $technician['measurements']);
             $this->assertTrue(!$technician['documents'] && !$technician['switchInterface'], 'Monteure: keine Dokumentenübersicht, kein Oberflächenwechsel.');
-            $this->assertSame(['Arbeitszeit', 'Tagesbericht', 'Rapport', 'Materialbedarf', 'Aufmaß', 'Abwesenheit', 'Reisekosten'], $labels($workspace->quickActions($env['technician'])),
+            $this->assertSame(['Zeiterfassung', 'Tagesbericht', 'Rapport', 'Materialbedarf', 'Aufmaß'], $labels($workspace->quickActions($env['technician'])),
                 'Schnellzugriffe nur mit Schreibrecht und aktivem Modul; persönliche Zeiten mit zugeordnetem Mitarbeiter.');
             $this->assertSame('/mobile/times?form=entry', $workspace->quickActions($env['technician'])[0]['url'], 'Zeiterfassung mobil, ohne Büroansicht.');
             $office = $workspace->features($env['office']);
             $this->assertTrue($office['times'] && !$office['timeEntry'], 'Ohne zugeordneten Mitarbeiter keine persönlichen Erfassungsaktionen.');
-            $this->assertTrue(!in_array('Arbeitszeit', $labels($workspace->quickActions($env['office'])), true));
+            $this->assertTrue(!in_array('Zeiterfassung', $labels($workspace->quickActions($env['office'])), true));
 
             $modules = $env['modules'];
             $modules->setEnabled('work_tracking', false, true, $env['admin']);

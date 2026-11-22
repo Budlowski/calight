@@ -92,13 +92,12 @@ final readonly class MobileWorkspace
             }
         };
         $timeEntry = $work && $this->hasActiveEmployee($actor);
-        $add($timeEntry, 'Arbeitszeit', 'clock-3', '/mobile/times?form=entry', 'Zeit erfassen');
+        $add($timeEntry, 'Zeiterfassung', 'clock-3', '/mobile/times?form=entry', 'Arbeitszeit buchen');
         $add($work && $this->can($actor, 'reports.write'), 'Tagesbericht', 'calendar-days', '/mobile/daily-reports', 'Berichte erfassen');
         $add($work && $this->can($actor, 'workreports.write'), 'Rapport', 'clipboard-check', '/mobile/rapports', 'Regieleistungen');
         $add($procurement && $this->can($actor, 'reports.write'), 'Materialbedarf', 'package', '/mobile/material-requests', 'Material anfordern');
         $add($this->can($actor, 'measurements.write'), 'Aufmaß', 'ruler', '/mobile/measurements', 'Mengen erfassen');
-        $add($timeEntry, 'Abwesenheit', 'calendar-days', '/mobile/times?form=absence', 'Urlaub, Krankheit …');
-        $add($timeEntry, 'Reisekosten', 'badge-euro', '/mobile/times?form=travel', 'Auswärtstätigkeit, Fahrten, Auslagen');
+        // Abwesenheiten und Reisekosten bewusst nur über die Zeiterfassung (kein eigener Schnellzugriff).
         return $actions;
     }
 
@@ -390,7 +389,7 @@ final readonly class MobileWorkspace
         $encoded = rawurlencode($id);
         $actions = [];
         if ($work && $this->hasActiveEmployee($actor)) {
-            $actions[] = ['label' => 'Arbeitszeit erfassen', 'icon' => 'clock-3', 'url' => '/mobile/times?form=entry&order=' . $encoded];
+            $actions[] = ['label' => 'Zeiterfassung', 'icon' => 'clock-3', 'url' => '/mobile/times?form=entry&order=' . $encoded];
         }
         if ($work && $this->can($actor, 'reports.write')) {
             $actions[] = ['label' => 'Tagesbericht anlegen', 'icon' => 'calendar-days', 'url' => '/mobile/daily-reports?create_for=' . $encoded];

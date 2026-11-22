@@ -6,7 +6,7 @@ $links = array_values(array_filter([
     ['visible' => $features['workReports'], 'href' => '/mobile/rapports', 'icon' => 'clipboard-check', 'label' => 'Rapporte'],
     ['visible' => $features['materialRequests'], 'href' => '/mobile/material-requests', 'icon' => 'package', 'label' => 'Materialbedarf'],
     ['visible' => $features['measurements'], 'href' => '/mobile/measurements', 'icon' => 'ruler', 'label' => 'Aufmaße'],
-    ['visible' => $features['times'], 'href' => '/mobile/times?view=week', 'icon' => 'clock-3', 'label' => 'Zeiten, Abwesenheiten, Reisekosten und Einreichung'],
+    ['visible' => $features['times'], 'href' => '/mobile/times?view=week', 'icon' => 'clock-3', 'label' => 'Zeiterfassung: Zeiten, Abwesenheiten, Reisekosten und Einreichung'],
     ['visible' => $features['documents'], 'href' => '/documents', 'icon' => 'files', 'label' => 'Dokumente'],
 ], static fn (array $link): bool => $link['visible']));
 ?>
