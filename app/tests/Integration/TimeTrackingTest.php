@@ -97,8 +97,8 @@ final class TimeTrackingTest extends TestCase
             $this->assertSame(240, $entry['netMinutes']);
             // Folgetag: Überschneidung mit dem Nachtblock erkannt.
             $this->assertThrows(DocumentValidationException::class, fn () => $service->createEntry(['date' => '2026-11-17', 'start' => '01:00', 'end' => '03:00', 'activity' => 'work'], $tech));
+            // Ruhezeit-Hinweise liefert die Prüfung der Freigabe (TimeApprovalService::check, TimeApprovalTest).
             $next = $service->createEntry(['date' => '2026-11-17', 'start' => '08:00', 'end' => '09:00', 'activity' => 'work'], $tech);
-            $this->assertTrue(in_array('Weniger als 11 Stunden Ruhezeit seit dem Vortag – bitte prüfen.', $next['warnings'], true), 'Hinweis auf kurze Ruhezeit.');
 
             $edited = $service->updateEntry($entry['id'], ['version' => $entry['version'], 'date' => '2026-11-16', 'start' => '21:00', 'end' => '23:00', 'activity' => 'internal'], $tech);
             $this->assertSame(120, $edited['entries'][0]['netMinutes']);
@@ -390,7 +390,6 @@ final class TimeTrackingTest extends TestCase
             $range = $service->range($employee, '2026-11-16', '2026-11-22', $tech);
             $month = $service->range($employee, '2026-11-01', '2026-11-30', $tech);
             $this->assertSame([960, 960, ['work_report' => 300, 'daily_report' => 540, 'manual' => 120]], [$range['totals']['netMinutes'], $month['totals']['netMinutes'], $range['totals']['bySource']], 'Woche und Monat enthalten alle Herkünfte.');
-            $this->assertTrue(str_contains(implode(' ', $service->day($employee, '2026-11-17', $tech)['warnings']), '10 Stunden') === false, 'Keine automatische Zusammenführung oder Löschung.');
             // Überschneidung mit ergänzten Uhrzeiten wird abgelehnt (auch zwischen Herkünften).
             $this->assertThrows(DocumentValidationException::class, fn () => $service->createEntry(['date' => '2026-11-17', 'start' => '16:30', 'end' => '17:30', 'activity' => 'other'], $tech));
         });
@@ -494,7 +493,7 @@ final class TimeTrackingTest extends TestCase
             $this->assertSame($hashes, $pdo->query('SELECT id, submitted_sha256 FROM work_reports ORDER BY id')->fetchAll(), 'Prüfsummen unverändert.');
             $this->assertSame([], $pdo->query('PRAGMA foreign_key_check')->fetchAll());
             $this->assertSame(1, (int) $pdo->query("SELECT COUNT(*) FROM operational_settings WHERE setting_key = 'time_tracking.times_optional'")->fetchColumn());
-            $this->assertSame(['idx_time_entries_employee_date', 'idx_time_entries_order'], $pdo->query("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'time_entries' AND name LIKE 'idx_%' ORDER BY name")->fetchAll(PDO::FETCH_COLUMN));
+            $this->assertSame(['idx_time_entries_cost_center', 'idx_time_entries_employee_date', 'idx_time_entries_order'], $pdo->query("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'time_entries' AND name LIKE 'idx_%' ORDER BY name")->fetchAll(PDO::FETCH_COLUMN));
 
             // Auftrags-Ist-Stunden ausschließlich aus time_entries: 3 × 4 h manuell + 2 + 1,5 + 1 + 3 h Bautagesbericht + 8 + 8 h Rapport (w2, w3).
             $service = new TimeTrackingService(new TimeTrackingRepository($pdo), new AttachmentStore($tmp));

@@ -184,7 +184,9 @@ final class WorkReportTest extends TestCase
             $this->assertSame($report['id'], $correction['correctionOfId']);
             $this->assertSame($confirmed['reportNumber'], $correction['correctedNumber']);
             $this->assertSame('none', $correction['confirmationStatus'], 'Die Bestätigung wird nicht auf die Korrektur übertragen.');
-            $this->assertSame($report['labor'], $correction['labor'], 'Die Korrektur startet mit dem eingereichten Stand.');
+            // Inhaltlich gleich; die Positionen erhalten in der Korrektur eigene IDs.
+            $withoutIds = static fn (array $rows): array => array_map(static fn (array $row): array => array_diff_key($row, ['id' => true]), $rows);
+            $this->assertSame($withoutIds($report['labor']), $withoutIds($correction['labor']), 'Die Korrektur startet mit dem eingereichten Stand.');
 
             $this->saveProof($service, $correction, ['description' => 'Korrigiert', 'labor' => [['employeeId' => $anna, 'hours' => '2']]], $technician);
             $original = $service->detail($report['id'], $office);

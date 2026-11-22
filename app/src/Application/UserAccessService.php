@@ -222,9 +222,8 @@ final readonly class UserAccessService
         if (!$this->users->updateAccess($id, $role, $active, Clock::now())) {
             throw new InvalidArgumentException('Benutzerkonto wurde nicht gefunden.');
         }
-        if (is_array($target) && (int) $target['active'] === 1 && !$active) {
-            $this->users->invalidateSessions($id);
-        }
+        // Deaktivierung wirkt über Application::handle (findActiveById); die Sitzungsversion
+        // invalidiert UserAccessService::updateAccount.
         return $this->users->all();
     }
 

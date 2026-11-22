@@ -170,7 +170,8 @@ final class MaterialRequestAndAttachmentTest extends TestCase
             $this->assertSame(1, substr_count($pdf, '/Subtype /Image'), 'JPEG-Fotos werden eingebettet, andere Formate nur aufgeführt.');
             $this->assertTrue(str_contains($pdf, 'Skizze.png'));
             $this->assertTrue(!str_contains($pdf, 'Geheime Materialanforderung'), 'Materialanforderungen sind nicht Teil des Dokuments.');
-            $this->assertTrue(!str_contains($pdf, 'ENTWURF') && str_ends_with($document['fileName'], '.pdf'));
+            // Entwürfe tragen seit dem Berichtslebenszyklus (0045) das Wasserzeichen ENTWURF.
+            $this->assertTrue(str_contains($pdf, 'ENTWURF') && str_ends_with($document['fileName'], '.pdf'));
         });
     }
 

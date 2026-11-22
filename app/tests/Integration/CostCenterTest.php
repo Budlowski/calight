@@ -18,6 +18,7 @@ use App\Application\TimeTrackingService;
 use App\Application\WorkReportService;
 use App\Domain\Calculation\PriceCalculator;
 use App\Domain\Document\DocumentValidationException;
+use App\Domain\DailyReportValidationException;
 use App\Domain\Offer\OfferCalculator;
 use App\Domain\Offer\OfferValidator;
 use App\Domain\Order\OrderValidationException;
@@ -216,9 +217,9 @@ final class CostCenterTest extends TestCase
             $this->assertSame([[$order, null, 120]], $booking($onOrder['id']));
             $this->assertSame([[null, $k110, 180]], $booking($visit['id']));
             $this->assertSame([[null, null, 60]], $booking($none['id']));
-            $this->assertThrows(DocumentValidationException::class, fn () => $reports->create(['orderId' => $order, 'costCenterId' => $k110] + $base('2026-11-18', '1'), $tech), 'Nie Auftrag und Kostenstelle zugleich.');
+            $this->assertThrows(DailyReportValidationException::class, fn () => $reports->create(['orderId' => $order, 'costCenterId' => $k110] + $base('2026-11-18', '1'), $tech), 'Nie Auftrag und Kostenstelle zugleich.');
             $centers->save($k120, ['number' => 'K120', 'name' => 'Lager & Rüstzeit', 'active' => false, 'version' => 1], $admin);
-            $this->assertThrows(DocumentValidationException::class, fn () => $reports->create(['customerId' => $customer, 'costCenterId' => $k120] + $base('2026-11-18', '1'), $tech), 'Deaktivierte Kostenstelle nicht für neue Berichte.');
+            $this->assertThrows(DailyReportValidationException::class, fn () => $reports->create(['customerId' => $customer, 'costCenterId' => $k120] + $base('2026-11-18', '1'), $tech), 'Deaktivierte Kostenstelle nicht für neue Berichte.');
             $this->assertSame(['K110', 'Vertrieb & Angebote'], [$reports->detail($visit['id'], $tech)['cost_center_number'], $reports->detail($visit['id'], $tech)['cost_center_name']]);
             $this->assertSame(1, $reports->page(['assignment' => 'with_cost_center'], $office)['total']);
             $this->assertSame(1, $reports->page(['assignment' => 'unassigned'], $office)['total']);
@@ -245,7 +246,7 @@ final class CostCenterTest extends TestCase
             $step = $reports->assignOrder($none['id'], ['version' => $step['version']], $office);                                        // Auftrag → ohne
             $this->assertSame($before, $count(), 'Keine zusätzlichen Zeitbuchungen.');
             $this->assertSame('1.000', $reports->detail($none['id'], $office)['entries'][0]['duration_hours'], 'Stunden unverändert.');
-            $this->assertThrows(DocumentValidationException::class, fn () => $reports->assignOrder($none['id'], ['version' => $step['version'], 'orderId' => $order, 'costCenterId' => $k110], $office));
+            $this->assertThrows(DailyReportValidationException::class, fn () => $reports->assignOrder($none['id'], ['version' => $step['version'], 'orderId' => $order, 'costCenterId' => $k110], $office));
             $events = array_map(static fn (array $event): array => [$event['previous_order_id'], $event['previous_cost_center_id'], $event['order_id'], $event['cost_center_id']], $step['orderEvents']);
             $this->assertSame([[null, null, null, $k110], [null, $k110, $order, null], [$order, null, null, $k110], [null, $k110, null, null], [null, null, $order, null], [$order, null, null, null]], $events,
                 'Eine nachvollziehbare Historie für Auftrag und Kostenstelle.');
@@ -309,7 +310,7 @@ final class CostCenterTest extends TestCase
 
             // Bearbeiten, Zeiterfassung, Wechsel des Kostenziels (Kunde wird bei Auftrag übernommen), keine Doppelbuchungen.
             $edited = $reports->update($inventory['id'], ['version' => $inventory['version'], 'reportDate' => '2026-11-20', 'title' => 'Lagerinventur', 'activities' => 'Inventur abgeschlossen', 'notes' => 'Regal B fehlt',
-                'entries' => [['id' => $inventory['entries'][0]['id'], 'employeeId' => $employee, 'durationHours' => '3,5', 'targetKey' => 'order']]], $tech);
+                'entries' => [['id' => $inventory['entries'][0]['id'], 'employeeId' => $employee, 'durationHours' => '3.5', 'targetKey' => 'order']]], $tech);
             $this->assertSame([[null, $k120, 210]], $booking($inventory['id']));
             $this->assertSame(210 + 60 + 60, $time->day($employee, '2026-11-20', $tech)['totals']['netMinutes']);
             $count = (int) $pdo->query("SELECT COUNT(*) FROM time_entries WHERE source_kind = 'daily_report'")->fetchColumn();

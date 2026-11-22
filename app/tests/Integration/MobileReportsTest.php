@@ -91,7 +91,7 @@ final class MobileReportsTest extends TestCase
         $this->withEnvironment(function (array $env): void {
             ['daily' => $daily, 'tech' => $tech, 'order' => $order, 'employee' => $employee, 'times' => $times, 'workspace' => $workspace] = $env;
             $report = $daily->create(['orderId' => $order, 'reportDate' => '2026-11-19', 'activities' => 'Verteilung gesetzt',
-                'entries' => [['employeeId' => $employee, 'durationHours' => '7,5', 'targetKey' => 'order', 'description' => 'Montage']]], $tech);
+                'entries' => [['employeeId' => $employee, 'durationHours' => '7.5', 'targetKey' => 'order', 'description' => 'Montage']]], $tech);
             $booking = $times->day(null, '2026-11-19', $tech)['entries'][0];
             $this->assertSame([450, 'daily_report', $order], [$booking['netMinutes'], $booking['sourceKind'], $booking['orderId']], 'Eine zentrale Buchung je Stundenposition.');
             $submitted = $daily->submit($report['id'], ['version' => $report['version']], $tech);

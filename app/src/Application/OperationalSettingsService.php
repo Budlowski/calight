@@ -42,14 +42,6 @@ final readonly class OperationalSettingsService
 
     /** @var array<string,array<string,mixed>> */
     public const DEFINITIONS = [
-        // Gilt zusätzlich zur Freigaberegel (Monteure nie „Offen“); ausgewertet in SQL über
-        // OrderVisibility. Ohne gespeicherten Wert: nur zugewiesene Aufträge.
-        'orders.technician_visibility' => [
-            'group' => 'orders', 'type' => 'choice', 'default' => 'assigned',
-            'options' => ['assigned' => 'Nur zugewiesene Aufträge', 'released' => 'Alle für Monteure freigegebenen Aufträge'],
-            'label' => 'Sichtbare Aufträge für Monteure',
-            'description' => 'Freigegeben sind Aufträge ab „In Bearbeitung“. „Nur zugewiesene“ zeigt Monteuren zusätzlich nur Aufträge, denen ihr Mitarbeiter auf der Auftragsdetailseite zugeordnet ist. Eigene Berichte, Rapporte und Zeiten bleiben immer einsehbar.',
-        ],
         'time_tracking.times_optional' => [
             'group' => 'time', 'type' => 'bool', 'default' => true,
             'label' => 'Stundenerfassung ohne Uhrzeiten erlauben',
@@ -104,6 +96,14 @@ final readonly class OperationalSettingsService
             'label' => 'Kürzung gestelltes Abendessen', 'description' => 'Bezogen auf die Pauschale für einen vollen Tag (Standard 40 %).'],
         'travel.km_rate' => ['group' => 'travel', 'type' => 'number', 'default' => '0.30', 'scale' => 2, 'min' => '0', 'max' => '5', 'unit' => '€/km',
             'label' => 'Privat-Pkw-Kilometersatz', 'description' => 'Rechnerischer Betrag je dienstlich gefahrenem Kilometer (Standard 0,30 €/km).'],
+        // Gilt zusätzlich zur Freigaberegel (Monteure nie „Offen“); ausgewertet in SQL über
+        // OrderVisibility. Ohne gespeicherten Wert: nur zugewiesene Aufträge.
+        'orders.technician_visibility' => [
+            'group' => 'orders', 'type' => 'choice', 'default' => 'assigned',
+            'options' => ['assigned' => 'Nur zugewiesene Aufträge', 'released' => 'Alle für Monteure freigegebenen Aufträge'],
+            'label' => 'Sichtbare Aufträge für Monteure',
+            'description' => 'Freigegeben sind Aufträge ab „In Bearbeitung“. „Nur zugewiesene“ zeigt Monteuren zusätzlich nur Aufträge, denen ihr Mitarbeiter auf der Auftragsdetailseite zugeordnet ist. Eigene Berichte, Rapporte und Zeiten bleiben immer einsehbar.',
+        ],
     ];
 
     public function __construct(private PDO $pdo, private ?ModuleService $modules = null)

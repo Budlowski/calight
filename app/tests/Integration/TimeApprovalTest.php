@@ -413,10 +413,11 @@ final class TimeApprovalTest extends TestCase
             $this->assertSame([420, 2, 0], [$report['totals']['netMinutes'], $report['absences']['vacation']['days'], $report['absences']['vacation']['minutes']]);
             $this->assertSame([], $service->report('2026-10-01', '2026-10-31', null, $order, $office)['absenceRows'], 'Nie je Auftrag.');
 
-            // Prüfung: Abwesenheit ersetzt den Fehlzeit-Hinweis; ganztägig Urlaub/Krank + Arbeit = Hinweis; Feiertag + Arbeit zulässig.
+            // Prüfung: Abwesenheit ersetzt den Fehlzeit-Hinweis; ganztägig Urlaub/Krank + Arbeit = Hinweis; Feiertag + Arbeit zulässig
+            // (nur der gesetzliche Hinweis auf Feiertagsarbeit).
             $week = $approvals->period(null, 'week', '2026-10-12', $tech);
             $codes = static fn (string $date): array => array_values(array_column(array_filter($week['warnings'], static fn (array $item): bool => $item['date'] === $date), 'code'));
-            $this->assertSame([[], [], [], ['absence_conflict']], [$codes('2026-10-13'), $codes('2026-10-14'), $codes('2026-10-15'), $codes('2026-10-16')]);
+            $this->assertSame([[], [], ['sunday'], ['absence_conflict']], [$codes('2026-10-13'), $codes('2026-10-14'), $codes('2026-10-15'), $codes('2026-10-16')]);
             $this->assertSame([], $week['errors']);
 
             // Sperren, Wiederöffnung und neue Revision mit Abwesenheiten.
@@ -505,7 +506,7 @@ final class TimeApprovalTest extends TestCase
             $cancelled = $reports->cancel($report['id'], ['version' => $report['version'], 'reason' => 'Doppelt erfasst'], $office);
             $this->assertSame(['cancelled', 0, 0, false], [$cancelled['status'], $bookings($report['id']), $service->day($employee, '2026-10-13', $tech)['totals']['netMinutes'], $cancelled['statements'][1]['current']]);
             $this->assertSame(['submit', 'return', 'submit', 'approve', 'reopen', 'submit', 'approve', 'cancel'], array_column($cancelled['events'], 'action'));
-            $this->assertThrows(DailyReportValidationException::class, fn () => $reports->delete($report['id'], $cancelled['version'], $office), 'Stornierte Berichte bleiben erhalten.');
+            $this->assertThrows(AccessDeniedException::class, fn () => $reports->delete($report['id'], $cancelled['version'], $office), 'Stornierte Berichte bleiben erhalten.');
             $this->assertSame([], array_column($approvals->period(null, 'week', '2026-10-13', $tech)['errors'], 'code'), 'Storno ohne Konsistenzfehler; Entwurf ohne Stunden blockiert nicht.');
 
             // Bericht ohne Mitarbeiterstunden: unabhängig festschreibbar.
@@ -676,7 +677,7 @@ final class TimeApprovalTest extends TestCase
                 $pdo->query('SELECT work_date, travel_category, absence_minutes, overnight, location FROM time_day_details ORDER BY work_date')->fetchAll(PDO::FETCH_NUM));
             $this->assertSame([['2026-10-05', '182.5', 'Leipzig', 'Anreise']], $pdo->query('SELECT work_date, kilometers, route, purpose FROM time_private_trips')->fetchAll(PDO::FETCH_NUM));
             $this->assertSame([], array_intersect(['private_km', 'absence_start', 'travel_day', 'assignment_kind'], array_column($pdo->query('PRAGMA table_info(time_day_details)')->fetchAll(), 'name')));
-            $this->assertSame(15, (int) $pdo->query("SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE '%lock%'")->fetchColumn(), 'Sperre auch für Fahrten und Abwesenheiten.');
+            $this->assertSame(19, (int) $pdo->query("SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE '%lock%'")->fetchColumn(), 'Sperre auch für Fahrten, Abwesenheiten und Tagesberichte (0045).');
             $this->assertSame([], $pdo->query('PRAGMA foreign_key_check')->fetchAll());
         } finally {
             $this->remove($tmp);
@@ -690,7 +691,7 @@ final class TimeApprovalTest extends TestCase
             $tables = $pdo->query("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('time_submissions', 'time_day_locks', 'time_lock_events', 'time_statements') ORDER BY name")->fetchAll(PDO::FETCH_COLUMN);
             $this->assertSame(['time_day_locks', 'time_lock_events', 'time_statements', 'time_submissions'], $tables);
             $triggers = $pdo->query("SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE '%lock%'")->fetchColumn();
-            $this->assertSame(15, (int) $triggers, 'Sperr-Trigger für Buchungen, Tagesangaben, Fahrten, Auslagen und Abwesenheiten.');
+            $this->assertSame(19, (int) $triggers, 'Sperr-Trigger für Buchungen, Tagesangaben, Fahrten, Auslagen, Abwesenheiten und Tagesberichte (0045).');
             $this->assertThrows(PDOException::class, fn () => $pdo->exec("INSERT INTO time_day_locks (employee_id, work_date, status, updated_by_user_id, updated_at) VALUES ('x', '2026-01-01', 'approved', 'y', 't')"), 'Festgeschrieben nur mit Einreichung.');
             $this->assertSame([], $pdo->query('PRAGMA foreign_key_check')->fetchAll());
         });

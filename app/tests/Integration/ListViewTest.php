@@ -180,10 +180,13 @@ final class ListViewTest extends TestCase
             // Zwei Berichte am selben Tag zum selben Auftrag sind zulässig.
             $first = $this->report($pdo, $released['id'], '2026-11-10', $user, '2026-11-10T09:00:00Z', [[$anna, '2.500', '100.00']]);
             $second = $this->report($pdo, $released['id'], '2026-11-10', $user, '2026-11-10T12:00:00Z', [[$ben, '1.000', '40.00'], [$anna, '0.250', '10.00']]);
-            $this->report($pdo, $open['id'], '2026-11-11', $user, '2026-11-11T09:00:00Z', [[$ben, '8.000', '320.00']]);
+            // Bericht des Büros zum offenen Auftrag (eigene Berichte sieht der Monteur immer).
+            $office = ['id' => Uuid::v4(), 'role' => 'office'];
+            $pdo->prepare("INSERT INTO users(id,username,password_hash,display_name,role,active,created_at,updated_at) VALUES(:id,'office','hash','Büro','office',1,:now,:now)")
+                ->execute(['id' => $office['id'], 'now' => $now]);
+            $this->report($pdo, $open['id'], '2026-11-11', $office['id'], '2026-11-11T09:00:00Z', [[$ben, '8.000', '320.00']]);
 
             $service = new DailyReportService($pdo, new DailyReportRepository($pdo), new EmployeeRepository($pdo), new OrderRepository($pdo));
-            $office = ['id' => Uuid::v4(), 'role' => 'office'];
             $technician = ['id' => $user, 'role' => 'technician'];
 
             $officePage = $service->page([], $office);

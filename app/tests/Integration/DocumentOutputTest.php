@@ -152,7 +152,7 @@ final class DocumentOutputTest extends TestCase
             $this->assertTrue(!$evidence['inline'], 'PDF-Nachweise werden heruntergeladen.');
 
             // Manuelle Bestätigung ohne Nachweis bleibt möglich, aber ausdrücklich gekennzeichnet.
-            $manual = $this->submitted($service, ['customerId' => $customer], $technician, $env['anna']);
+            $manual = $this->submitted($service, ['orderId' => $regie['id']], $technician, $env['anna']);
             $confirmed = $service->confirm($manual['id'], ['version' => $manual['version'], 'confirmedByName' => 'Herr Mack', 'method' => 'later'], $office);
             $this->assertSame('manual', $confirmed['confirmationKind']);
             $this->assertSame(null, $confirmed['confirmationEvidence']);
