@@ -119,9 +119,9 @@ final readonly class WorkReportRepository
     public function insert(array $data): void
     {
         $this->pdo->prepare('INSERT INTO work_reports
-            (id, customer_id, order_id, work_date, work_date_to, contact_person, work_location, description, notes, status, correction_of_id, version,
+            (id, customer_id, order_id, project_id, work_date, work_date_to, contact_person, work_location, description, notes, status, correction_of_id, version,
              created_by_user_id, created_at, updated_at)
-            VALUES (:id, :customer_id, :order_id, :work_date, :work_date_to, :contact_person, :work_location, :description, :notes, \'draft\', :correction_of_id, 1,
+            VALUES (:id, :customer_id, :order_id, :project_id, :work_date, :work_date_to, :contact_person, :work_location, :description, :notes, \'draft\', :correction_of_id, 1,
              :created_by_user_id, :created_at, :updated_at)')->execute($data);
     }
 
@@ -272,7 +272,7 @@ final readonly class WorkReportRepository
             o.order_number, o.title AS order_title, p.project_number, p.name AS project_name,
             rec.display_name AS confirmation_recorded_by_name, req.display_name AS confirmation_requested_by_name
             FROM work_reports w JOIN customers c ON c.id = w.customer_id LEFT JOIN orders o ON o.id = w.order_id
-            LEFT JOIN projects p ON p.id = o.project_id LEFT JOIN users rec ON rec.id = w.confirmation_recorded_by_user_id
+            LEFT JOIN projects p ON p.id = w.project_id LEFT JOIN users rec ON rec.id = w.confirmation_recorded_by_user_id
             LEFT JOIN users req ON req.id = w.confirmation_requested_by_user_id WHERE w.id = :id');
         $statement->execute(['id' => $id]);
         $row = $statement->fetch();
@@ -283,11 +283,11 @@ final readonly class WorkReportRepository
      * Ordnet einen eigenständigen Rapport nachträglich einem Auftrag zu. Leistungsnachweis,
      * Prüfsumme und Abrechnungspositionen bleiben unverändert.
      */
-    public function assignOrder(string $id, int $version, string $orderId, string $userId, string $at): bool
+    public function assignOrder(string $id, int $version, string $orderId, ?string $projectId, string $userId, string $at): bool
     {
-        $statement = $this->pdo->prepare('UPDATE work_reports SET order_id = :order_id, order_assigned_at = :at, order_assigned_by_user_id = :user,
+        $statement = $this->pdo->prepare('UPDATE work_reports SET order_id = :order_id, project_id = :project_id, order_assigned_at = :at, order_assigned_by_user_id = :user,
             version = version + 1, updated_at = :at WHERE id = :id AND version = :version AND order_id IS NULL');
-        $statement->execute(['order_id' => $orderId, 'at' => $at, 'user' => $userId, 'id' => $id, 'version' => $version]);
+        $statement->execute(['order_id' => $orderId, 'project_id' => $projectId, 'at' => $at, 'user' => $userId, 'id' => $id, 'version' => $version]);
         return $statement->rowCount() === 1;
     }
 

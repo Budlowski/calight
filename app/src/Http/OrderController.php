@@ -24,7 +24,7 @@ final readonly class OrderController
   $r->add('POST','/api/offers/{id}/order',fn(Request $q,array $p):Response=>$this->mutation($q,fn()=> $this->service->createFromOffer($p['id']),201));
   $r->add('POST','/api/orders/{id}/change-orders',fn(Request $q,array $p):Response=>$this->mutation($q,fn($d)=>$this->service->createChangeOrder($p['id'],(string)($d['title']??'')),201));
   $r->add('POST','/api/change-orders/{id}/accept',fn(Request $q,array $p):Response=>$this->mutation($q,fn($d)=>$this->service->acceptChangeOrder($p['id'],(string)($d['expectedStatus']??''))));
-  $r->add('PATCH','/api/orders/{id}',fn(Request $q,array $p):Response=>$this->mutation($q,fn($d)=>$this->service->updateDetails($p['id'],$d)));
+  $r->add('PATCH','/api/orders/{id}',fn(Request $q,array $p):Response=>$this->mutation($q,fn($d)=>$this->service->updateDetails($p['id'],$d,Session::user()??[])));
   // Mitarbeiterzuordnung (Sichtbarkeit für Monteure): lesen mit orders.read, ändern mit orders.write.
   $r->add('GET','/api/orders/{id}/employees',fn(Request $q,array $p):Response=>$this->api(fn()=>Response::json(['data'=>$this->service->employees($p['id'],Session::user()??[])])));
   $r->add('POST','/api/orders/{id}/employees',fn(Request $q,array $p):Response=>$this->mutation($q,fn($d)=>$this->service->assignEmployee($p['id'],(string)($d['employeeId']??''),true,Session::user()??[])));
@@ -43,6 +43,7 @@ final readonly class OrderController
  {
   $actor=Session::user()??[];
   $order=$this->service->readableDetail($id,$actor);
+  $orderProjects=$this->service->projectsForOrderEdit((string)$order['customerId'],$order['projectId']!==null?(string)$order['projectId']:null);
   $workTracking=$this->modules===null||$this->modules->isEnabled('work_tracking');
   $procurement=$this->modules===null||$this->modules->isEnabled('procurement');
   $reportPage=$this->dailyReports!==null&&Session::can('reports.read')?$this->dailyReports->page(['order'=>$id,'per_page'=>'10'],$actor):['items'=>[],'total'=>0];
@@ -56,6 +57,7 @@ final readonly class OrderController
   if(!Session::can('commercial.read')){$order=ConfidentialDataFilter::salesValues($order);if($measurementOverview!==null)$measurementOverview=ConfidentialDataFilter::salesValues($measurementOverview);}
   return$this->view->render('orders/show',[
    'order'=>$order,
+   'orderProjects'=>$orderProjects,
    'commercial'=>Session::can('commercial.read'),
    'modulesActive'=>['work_tracking'=>$workTracking,'procurement'=>$procurement],
    'dailyReports'=>$reportPage['items'],'dailyReportTotal'=>(int)$reportPage['total'],

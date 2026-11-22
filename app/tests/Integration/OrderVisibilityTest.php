@@ -82,6 +82,7 @@ final class OrderVisibilityTest extends TestCase
             $this->assertSame(2, $orders->page([], $eva)['total'], 'Alle freigegebenen, nie offene Aufträge.');
             $this->assertSame(['operations.manage'], AuthorizationPolicy::required(new Request('GET', '/settings/orders', [], [], [], '')));
             $this->assertSame(['orders.write'], AuthorizationPolicy::required(new Request('POST', '/api/orders/x/employees', [], [], [], '')));
+            $this->assertSame(['orders.write'], AuthorizationPolicy::required(new Request('PATCH', '/api/orders/x', [], [], [], '')));
             $this->assertSame(['orders.read'], AuthorizationPolicy::required(new Request('GET', '/api/orders/x/employees', [], [], [], '')));
         });
     }

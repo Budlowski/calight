@@ -37,17 +37,13 @@
   });
   editForm.addEventListener('submit',async event=>{
     event.preventDefault();
-    const title=editForm.elements.title.value.trim(),newDescription=editForm.elements.description.value.trim(),submit=editForm.querySelector('[type="submit"]');
+    const title=editForm.elements.title.value.trim(),projectId=editForm.elements.projectId.value,newDescription=editForm.elements.description.value.trim(),submit=editForm.querySelector('[type="submit"]');
     if(title===''){editError.textContent='Die Auftragsbezeichnung ist erforderlich.';editError.hidden=false;editForm.elements.title.focus();return;}
     if(title.length>200||newDescription.length>5000){editError.textContent=title.length>200?'Die Auftragsbezeichnung darf höchstens 200 Zeichen lang sein.':'Die Auftragsbeschreibung darf höchstens 5.000 Zeichen lang sein.';editError.hidden=false;return;}
     submit.disabled=true;editError.hidden=true;
     try{
-      const updated=await request(`/api/orders/${encodeURIComponent(root.dataset.id)}`,{method:'PATCH',headers:{'Content-Type':'application/json','X-CSRF-Token':root.dataset.csrf},body:JSON.stringify({title,description:newDescription,expectedUpdatedAt:root.dataset.updatedAt})});
-      root.dataset.updatedAt=updated.updatedAt;root.querySelector('[data-order-title]').textContent=updated.title;
-      description.textContent=updated.description;description.hidden=updated.description==='';
-      editForm.elements.title.value=updated.title;editForm.elements.description.value=updated.description;
-      editForm.elements.title.defaultValue=updated.title;editForm.elements.description.defaultValue=updated.description;
-      editDirty=false;setEditOpen(false);
+      await request(`/api/orders/${encodeURIComponent(root.dataset.id)}`,{method:'PATCH',headers:{'Content-Type':'application/json','X-CSRF-Token':root.dataset.csrf},body:JSON.stringify({title,projectId,description:newDescription,expectedUpdatedAt:root.dataset.updatedAt})});
+      editDirty=false;location.reload();
     }catch(error){editError.textContent=error.message;editError.hidden=false;}
     finally{submit.disabled=false;}
   });

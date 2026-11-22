@@ -122,6 +122,7 @@ final readonly class WorkReportService
         $this->requireWrite($actor);
         $correctionOf = trim((string) ($input['correctionOf'] ?? ''));
         $original = null;
+        $order = null;
         if ($correctionOf !== '') {
             $original = $this->accessibleReport($correctionOf, $actor);
             if ($original['status'] === 'draft') {
@@ -151,6 +152,7 @@ final readonly class WorkReportService
             }
             $customerId = (string) $order['customer_id'];
         }
+        $projectId = $original['project_id'] ?? ($order['project_id'] ?? null);
         if ($original === null && !$this->customerIsActive($customerId)) {
             throw new OrderValidationException(['Bitte einen aktiven Kunden auswählen.']);
         }
@@ -165,6 +167,7 @@ final readonly class WorkReportService
                 'id' => $id,
                 'customer_id' => $customerId,
                 'order_id' => $orderId !== '' ? $orderId : null,
+                'project_id' => $projectId,
                 'work_date' => $original['work_date'] ?? $date,
                 'work_date_to' => $original['work_date_to'] ?? null,
                 'contact_person' => $original['contact_person'] ?? '',
@@ -319,7 +322,8 @@ final readonly class WorkReportService
             $now = Clock::now();
             if ($report['order_id'] === null) {
                 [$orderId, $createdOrder] = $this->orderForSubmission($report, $input, $actor);
-                if (!$this->reports->assignOrder($id, $version, $orderId, (string) $actor['id'], $now)) {
+                $assignedOrder=$this->orders->find($orderId)??throw new OrderValidationException(['Auftrag wurde nicht gefunden.']);
+                if (!$this->reports->assignOrder($id, $version, $orderId, $assignedOrder['project_id']!==null?(string)$assignedOrder['project_id']:null, (string) $actor['id'], $now)) {
                     throw new OrderValidationException(['Der Rapport wurde zwischenzeitlich geändert oder eingereicht. Bitte neu laden.']);
                 }
                 $version++;
@@ -573,7 +577,7 @@ final readonly class WorkReportService
         }
         $this->pdo->exec('BEGIN IMMEDIATE');
         try {
-            if (!$this->reports->assignOrder($id, $this->version($input), (string) $order['id'], (string) $actor['id'], Clock::now())) {
+            if (!$this->reports->assignOrder($id, $this->version($input), (string) $order['id'], $order['project_id']!==null?(string)$order['project_id']:null, (string) $actor['id'], Clock::now())) {
                 throw new OrderValidationException(['Der Rapport wurde zwischenzeitlich geändert. Bitte neu laden.']);
             }
             // Zeitbuchungen folgen dem Auftrag des Rapports (keine neuen Buchungen).

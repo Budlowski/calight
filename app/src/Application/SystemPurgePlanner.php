@@ -53,7 +53,7 @@ final class SystemPurgePlanner
         'customers' => 'customers', 'customer_contacts' => 'customers', 'customer_addresses' => 'customers',
         'projects' => 'projects',
         'offers' => 'offers',
-        'orders' => 'orders', 'order_status_history' => 'orders', 'order_employees' => 'orders', 'order_addenda' => 'orders',
+        'orders' => 'orders', 'order_status_history' => 'orders', 'order_project_history' => 'orders', 'order_employees' => 'orders', 'order_addenda' => 'orders',
         'measurements' => 'measurements', 'measurement_items' => 'measurements', 'measurement_source_totals' => 'measurements',
         'work_reports' => 'work_reports', 'work_report_labor' => 'work_reports', 'work_report_materials' => 'work_reports', 'work_report_billing_items' => 'work_reports',
         'daily_reports' => 'daily_reports', 'daily_report_time_entries' => 'daily_reports', 'daily_report_events' => 'daily_reports',
@@ -77,7 +77,7 @@ final class SystemPurgePlanner
     public const TABLE_LABELS = [
         'customers' => 'Kunden', 'customer_contacts' => 'Ansprechpartner', 'customer_addresses' => 'Kundenadressen',
         'projects' => 'Projekte', 'offers' => 'Angebote/Nachträge (alle Revisionen)', 'orders' => 'Aufträge',
-        'order_status_history' => 'Auftragsstatusverlauf', 'order_employees' => 'Mitarbeiterzuordnungen zu Aufträgen', 'order_addenda' => 'Angenommene Nachträge',
+        'order_status_history' => 'Auftragsstatusverlauf', 'order_project_history' => 'Auftragsprojektverlauf', 'order_employees' => 'Mitarbeiterzuordnungen zu Aufträgen', 'order_addenda' => 'Angenommene Nachträge',
         'measurements' => 'Aufmaße', 'measurement_items' => 'Aufmaßpositionen', 'measurement_source_totals' => 'Aufmaßsummen',
         'work_reports' => 'Rapporte', 'work_report_labor' => 'Rapport-Stundenpositionen', 'work_report_materials' => 'Rapport-Materialpositionen',
         'work_report_billing_items' => 'Rapport-Abrechnungspositionen',
@@ -300,6 +300,7 @@ final class SystemPurgePlanner
             case 'orders':
                 $this->add('orders');
                 $this->add('order_status_history');
+                $this->add('order_project_history');
                 $this->add('order_employees');
                 $this->add('order_addenda');
                 // Nachträge sind Angebotsdokumente eines Auftrags.
