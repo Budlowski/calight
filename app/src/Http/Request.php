@@ -19,6 +19,8 @@ final readonly class Request
         public array $headers,
         public string $body,
         public array $files = [],
+        // Direkte Gegenstelle (REMOTE_ADDR); Proxy-Header wertet nur LoginThrottle::clientIp aus.
+        public string $remoteAddress = '',
     ) {
     }
 
@@ -40,6 +42,7 @@ final readonly class Request
             headers: $headers,
             body: (string) file_get_contents('php://input'),
             files: self::singleFiles($_FILES),
+            remoteAddress: (string) ($_SERVER['REMOTE_ADDR'] ?? ''),
         );
     }
 

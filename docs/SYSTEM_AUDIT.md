@@ -53,7 +53,7 @@ Schweregrade: kritisch / hoch / mittel / niedrig. Aufwand: XS (< 1 h), S (≤ ½
   - Vor „abgeschlossen“ und „abgerechnet“ offene Vorgänge anzeigen und bestätigen lassen, analog zur Moduldeaktivierung.
   - **M**
 
-### F-03 – Rechtematrix erlaubt unbekannte Pfade jedem angemeldeten Benutzer · Sicherheit · **mittel** · nachgewiesen (Design)
+### F-03 – Rechtematrix erlaubt unbekannte Pfade jedem angemeldeten Benutzer · Sicherheit · **mittel** · nachgewiesen (Design) · **umgesetzt** (Paket 2; Laufzeittests auf OMV ausstehend)
 - **Dateien:** `AuthorizationPolicy::required` endet mit `return [];`, `Application.php:99`.
 - **Nachweis:** Ohne Treffer genügt die Anmeldung. Ein Abgleich aller 233 registrierten Routen mit den Präfixregeln zeigt: Derzeit fällt keine fachliche Route durch, nur `/` und `/api/customer-projects`, die anderweitig abgedeckt sind. Eine künftig vergessene Route wäre aber auch für Monteure erreichbar.
 - **Lösung:**
@@ -61,7 +61,7 @@ Schweregrade: kritisch / hoch / mittel / niedrig. Aufwand: XS (< 1 h), S (≤ ½
   - Ein Test, der alle Router-Routen gegen die Policy prüft (Routen aus `Router` auslesen).
   - **S**
 
-### F-04 – Kein Schutz gegen Passwort-Raten · Sicherheit · **mittel** · nachgewiesen
+### F-04 – Kein Schutz gegen Passwort-Raten · Sicherheit · **mittel** · nachgewiesen · **umgesetzt** (Paket 2; Laufzeittests auf OMV ausstehend)
 - **Dateien:** `Application.php:178–187`.
 - **Nachweis:** Bei falscher Anmeldung gibt es nur `usleep(250000)`. Es fehlen Fehlversuchszähler, Sperre und Protokoll.
 - **Auswirkung:** Bei Internet-Erreichbarkeit (z. B. eigener Mobil-Host) sind Online-Rateangriffe nur gebremst.
@@ -72,7 +72,7 @@ Schweregrade: kritisch / hoch / mittel / niedrig. Aufwand: XS (< 1 h), S (≤ ½
   - Alternativ oder ergänzend: Reverse-Proxy-Rate-Limit dokumentieren.
   - **S–M**
 
-### F-05 – Sicherungen der Datenbereinigung sind nicht besonders geschützt · Sicherheit · **mittel** · plausibel
+### F-05 – Sicherungen der Datenbereinigung sind nicht besonders geschützt · Sicherheit · **mittel** · plausibel · **umgesetzt** (Paket 2; Laufzeittests auf OMV ausstehend)
 - **Dateien:** `SystemPurgeBackup.php` (`VACUUM INTO`, `copy`).
 - **Nachweis:**
   - **Inhalt:** Die Sicherung enthält die vollständige Datenbank inklusive Passwort-Hashes sowie alle Dokumente.
@@ -147,7 +147,7 @@ Schweregrade: kritisch / hoch / mittel / niedrig. Aufwand: XS (< 1 h), S (≤ ½
   - die Datenbereinigung mit `SystemPurgeTest`.
 - **Lösung:** `php tests/run.php` auf OMV ausführen und die Migration zuerst auf einer Kopie der Produktivdatenbank testen. **XS**
 
-### F-18 – Kein Test aller Routen gegen die Rechtematrix · Tests · **niedrig** · nachgewiesen
+### F-18 – Kein Test aller Routen gegen die Rechtematrix · Tests · **niedrig** · nachgewiesen · **umgesetzt** (Paket 2; Laufzeittests auf OMV ausstehend)
 - **Nachweis:** Bestehende Tests prüfen einzelne Pfade (`SecurityTest`, `UserManagementTest`), nicht vollständig.
 - **Lösung:** Siehe F-03. **S**
 

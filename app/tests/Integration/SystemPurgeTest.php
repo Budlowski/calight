@@ -146,6 +146,29 @@ final class SystemPurgeTest extends TestCase
         });
     }
 
+    public function testBackupFilesAreOnlyAccessibleToTheWebServerUser(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['service' => $service, 'tmp' => $tmp] = $env;
+            mkdir($tmp . '/backups', 0755);
+            chmod($tmp . '/backups', 0755);
+            $preview = $service->preview(['areas' => self::BUSINESS], self::ADMIN);
+            $umask = umask();
+            $backup = $service->createBackup($preview['previewId'], self::ADMIN);
+            $this->assertSame($umask, umask(), 'umask nach der Sicherung wiederhergestellt.');
+            clearstatcache();
+            $this->assertSame(0700, fileperms($tmp . '/backups') & 0777, 'Zu offenes Sicherungsverzeichnis wird auf 0700 gesetzt.');
+            $paths = [$backup['directory']];
+            foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($backup['directory'], \FilesystemIterator::SKIP_DOTS), \RecursiveIteratorIterator::SELF_FIRST) as $item) {
+                $paths[] = $item->getPathname();
+            }
+            $this->assertTrue(count($paths) >= 7, 'Datenbank, Manifest, Dokumente.');
+            foreach ($paths as $path) {
+                $this->assertSame(is_dir($path) ? 0700 : 0600, fileperms($path) & 0777, 'Rechte: ' . basename($path));
+            }
+        });
+    }
+
     public function testFailedBackupPreventsAnyDeletion(): void
     {
         $this->withEnvironment(function (array $env): void {

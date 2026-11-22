@@ -14,6 +14,16 @@ final class Router
         $this->routes[] = ['method' => $method, 'pattern' => $pattern, 'handler' => $handler];
     }
 
+    /**
+     * Registrierte Routen (Methode und Muster), z. B. für den Abgleich mit AuthorizationPolicy.
+     *
+     * @return list<array{method:string,pattern:string}>
+     */
+    public function routes(): array
+    {
+        return array_map(static fn (array $route): array => ['method' => $route['method'], 'pattern' => $route['pattern']], $this->routes);
+    }
+
     public function dispatch(Request $request): Response
     {
         foreach ($this->routes as $route) {

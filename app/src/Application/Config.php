@@ -19,6 +19,10 @@ final readonly class Config
         public string $mobileHost = '',
         // Sicherungen der Datenbereinigung (APP_BACKUPS_PATH). Leer: <Datenverzeichnis>/backups neben der Datenbank.
         public string $backupsPath = '',
+        // Vertrauenswürdige Reverse Proxys (APP_TRUSTED_PROXIES, kommagetrennt: IPs oder IPv4-CIDR).
+        // Nur deren X-Forwarded-For wird für die Quell-IP der Anmeldedrosselung ausgewertet.
+        /** @var list<string> */
+        public array $trustedProxies = [],
     ) {
     }
 }

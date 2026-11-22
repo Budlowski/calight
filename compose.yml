@@ -11,6 +11,9 @@ services:
       APP_DOCUMENTS_PATH: /var/www/data/documents
       APP_TEMPLATES_PATH: /var/www/data/templates
       APP_BACKUPS_PATH: /var/www/data/backups
+      # Nur hinter einem Reverse Proxy: dessen IP bzw. IPv4-Netz, damit X-Forwarded-For für die
+      # Anmeldedrosselung ausgewertet wird (sonst bleibt der Header unberücksichtigt).
+      # APP_TRUSTED_PROXIES: 172.18.0.0/16
       APP_SESSION_NAME: calight_session
       APP_SECURE_COOKIES: "${APP_SECURE_COOKIES:-0}"
       APP_TIMEZONE: "${APP_TIMEZONE:-Europe/Berlin}"

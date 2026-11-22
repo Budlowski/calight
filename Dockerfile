@@ -21,6 +21,7 @@ COPY app/composer.json app/composer.lock ./
 RUN composer install --no-dev --no-interaction --no-progress --prefer-dist --classmap-authoritative
 COPY app/ ./
 RUN mkdir -p /var/www/data/database /var/www/data/offers /var/www/data/documents /var/www/data/templates /var/www/data/backups \
-    && chown -R www-data:www-data /var/www/data /var/www/app/var
+    && chown -R www-data:www-data /var/www/data /var/www/app/var \
+    && chmod 700 /var/www/data/backups
 
 EXPOSE 80

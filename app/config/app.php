@@ -15,4 +15,5 @@ return new Config(
     mobileHost: strtolower(trim((string) (getenv('APP_MOBILE_HOST') ?: ''))),
     // Sicherungen der Datenbereinigung; außerhalb von Dokumenten-/Angebotsverzeichnis.
     backupsPath: getenv('APP_BACKUPS_PATH') ?: '/var/www/data/backups',
+    trustedProxies: array_values(array_filter(array_map('trim', explode(',', (string) (getenv('APP_TRUSTED_PROXIES') ?: ''))))),
 );

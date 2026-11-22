@@ -145,6 +145,7 @@ final readonly class Bootstrap
                 new SystemPurgePlanner($this->pdo, $this->config->documentsPath, $this->config->offersPath),
                 new SystemPurgeBackup($this->pdo, $this->config->databasePath, $this->config->documentsPath, $this->config->offersPath,
                     $this->config->backupsPath !== '' ? $this->config->backupsPath : dirname($this->config->databasePath, 2) . '/backups'))),
+            new \App\Security\LoginThrottle($this->pdo, $this->config->trustedProxies),
         );
     }
 }

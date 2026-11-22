@@ -80,6 +80,13 @@ Ziel ist `APP_BACKUPS_PATH`, im Docker-Standard `/var/www/data/backups` im persi
 
 Vorher prüft der Server Speicherplatz und Schreibrechte. Calight löscht Sicherungen nie.
 
+**Dateirechte und Ablage (Systemaudit F-05):**
+- Sicherungen entstehen mit `umask 0077`: Verzeichnisse `0700`, Dateien `0600` (auch Datenbankkopie, Manifest und kopierte Dokumente), lesbar nur für den Webserver-Benutzer (`www-data`). Nach der Erstellung prüft Calight alle Rechte; lassen sie sich nicht einschränken, bricht die Sicherung mit Meldung ab (keine Löschung).
+- Ist `APP_BACKUPS_PATH` selbst für Gruppe/andere zugänglich, setzt Calight es auf `0700` oder bricht mit verständlicher Meldung ab.
+- Das Verzeichnis darf nie unter `app/public` liegen (`StoragePaths` verhindert den Start); Apache liefert nur `public/` aus.
+- **Docker:** `/var/www/data/backups` gehört `www-data` mit `0700` (Image). Bei Bind-Mounts auf dem Host: `chown 33:33 <pfad>/backups && chmod 700 <pfad>/backups` (UID/GID von `www-data` im Image). Sicherungen enthalten die vollständige Datenbank einschließlich Passwort-Hashes und alle Dokumente.
+- **Aufbewahrung:** manuell. Nach erfolgreicher Produktivnahme Sicherungen auf ein geschütztes Medium verschieben oder bewusst löschen; Calight löscht sie nie automatisch.
+
 **Wiederherstellung (manuell, keine Automatik):**
 1. Calight anhalten (Container stoppen).
 2. Die aktuelle Datenbank samt `-wal`/`-shm` beiseitelegen.

@@ -364,11 +364,13 @@ Verbindliche Regeln:
 - Auftragssichtbarkeit für Monteure ausschließlich über `Infrastructure\Persistence\OrderVisibility` (SQL-Bedingung `condition()` bzw. `visible()`/`visibleIds()`, im Repository `OrderRepository::visibleTo`): freigegeben (nicht „Offen“) UND (Einstellung `orders.technician_visibility` = alle freigegebenen ODER Mitarbeiter über `order_employees` zugeordnet). Keine eigenen Status- oder Zuordnungsprüfungen in Diensten, Controllern oder JavaScript. Eigene Vorgänge (Ersteller) bleiben unabhängig davon erreichbar. Tests, die die bisherige Freigaberegel ohne Zuordnung prüfen, setzen `TestCase::useReleasedOrderVisibility`.
 - Verkaufsseitige Werte (Einzelpreise, Auftrags-/Nachtragssummen, Aufmaßbeträge, Auftragsgrundlage) nur mit `commercial.read` (Büro, Administratoren). Ohne dieses Recht filtern Controller die Antworten mit `ConfidentialDataFilter::salesValues` (Werte null, Summentabellen leer); PDFs mit Preisen erfordern das Recht in `AuthorizationPolicy`. Monteure sehen Leistungsbeschreibungen, Mengen, Einsatzorte und notwendige Kontaktdaten, nie Preise, Summen, Kostensätze oder Kalkulationsdaten.
 - Keine parallele improvisierte Rollenmatrix in Controller oder JavaScript anlegen.
+- **Standard-Verweigern (Systemaudit F-03):** Pfade ohne Regel in `AuthorizationPolicy` liefern `AuthorizationPolicy::UNREGISTERED`, das `RolePermissions` keiner Rolle erlaubt (auch nicht Administratoren). Öffentlich sind ausschließlich `AuthorizationPolicy::PUBLIC_PATHS`. `RouteAuthorizationTest` gleicht alle registrierten Routen ab; eine neue Route ohne Regel lässt die Tests fehlschlagen.
 
 ### Authentifizierung und Konten
 
 - Bestehende Session-Authentifizierung weiterverwenden, keine zweite Authentifizierung einführen.
 - Nur aktive Benutzer können angemeldet bleiben; `Application::handle` aktualisiert Sitzungsrolle/-name aus der Datenbank.
+- Anmeldedrosselung (`Security\LoginThrottle`, Migration `0052`, Systemaudit F-04): je Benutzerkennung 5, je Quell-IP 20 Fehlversuche in 15 Minuten, dann zeitlich begrenzte Sperre mit einheitlicher Meldung; Versuche werden vor der Passwortprüfung erfasst (parallel sicher), protokolliert ohne Passwörter (nur Hash des Benutzernamens). Proxy-Header nur von `APP_TRUSTED_PROXIES`.
 - Login regeneriert die Session-ID. Cookies sind `HttpOnly`, `SameSite=Lax` und bei `APP_SECURE_COOKIES=1` sicher.
 - Passwörter werden mit PHP `password_hash`/`password_verify` verwaltet; CLI-Mindestlänge ist acht Zeichen.
 - Das letzte aktive Administratorkonto darf nicht deaktiviert oder herabgestuft werden.

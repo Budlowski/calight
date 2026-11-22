@@ -46,6 +46,19 @@ final readonly class SystemPurgeBackup
      */
     public function create(string $id, array $metadata): array
     {
+        // Systemaudit F-05: Alles, was hier entsteht (Verzeichnisse, VACUUM-INTO-Datei, Kopien, Manifest,
+        // temporäre Dateien), wird bereits beim Anlegen nur für den Webserver-Benutzer lesbar.
+        $previousUmask = umask(0077);
+        try {
+            return $this->createPrivate($id, $metadata);
+        } finally {
+            umask($previousUmask);
+        }
+    }
+
+    /** @param array<string,mixed> $metadata @return array{directory:string,databaseSha256:string,contentSha256:string,fileCount:int,totalBytes:int} */
+    private function createPrivate(string $id, array $metadata): array
+    {
         $root = $this->checkedBackupRoot();
         $sourceBytes = (is_file($this->databasePath) ? (int) filesize($this->databasePath) : 0) + $this->directorySize($this->documentsPath) + $this->directorySize($this->offersPath);
         $free = @disk_free_space($root);
@@ -53,7 +66,7 @@ final readonly class SystemPurgeBackup
             throw new RuntimeException('Nicht genügend freier Speicherplatz für die Sicherung.');
         }
         $directory = $root . '/calight-purge-' . gmdate('Ymd-His') . '-' . substr($id, 0, 8);
-        if (file_exists($directory) || !@mkdir($directory, 0770) ) {
+        if (file_exists($directory) || !@mkdir($directory, 0700)) {
             throw new RuntimeException('Sicherungsverzeichnis konnte nicht angelegt werden.');
         }
         try {
@@ -89,6 +102,7 @@ final readonly class SystemPurgeBackup
             if (file_put_contents($directory . '/manifest.json', $json, LOCK_EX) !== strlen($json)) {
                 throw new RuntimeException('Sicherungsprotokoll konnte nicht geschrieben werden.');
             }
+            $this->assertPrivate($directory);
             return ['directory' => $directory, 'databaseSha256' => $databaseSha, 'contentSha256' => $after, 'fileCount' => count($files), 'totalBytes' => $total + strlen($json)];
         } catch (\Throwable $exception) {
             $this->removeTree($directory);
@@ -144,7 +158,7 @@ final readonly class SystemPurgeBackup
             $existing = dirname($existing);
         }
         $assertOutside((realpath($existing) ?: $existing) . substr($root, strlen($existing)));
-        if (!is_dir($root) && !@mkdir($root, 0770, true) && !is_dir($root)) {
+        if (!is_dir($root) && !@mkdir($root, 0700, true) && !is_dir($root)) {
             throw new RuntimeException('Das Sicherungsverzeichnis ' . $root . ' konnte nicht angelegt werden. Bitte das Verzeichnis anlegen und dem Webserver-Benutzer Schreibrechte geben (APP_BACKUPS_PATH).');
         }
         if (!is_writable($root)) {
@@ -152,7 +166,28 @@ final readonly class SystemPurgeBackup
         }
         $real = realpath($root) ?: $root;
         $assertOutside($real);
+        // Für andere Benutzer lesbares Sicherungsverzeichnis: auf 0700 setzen oder verständlich abbrechen.
+        $mode = (int) (@fileperms($real) ?: 0) & 0777;
+        if (($mode & 0077) !== 0 && !@chmod($real, 0700)) {
+            throw new RuntimeException(sprintf('Das Sicherungsverzeichnis %s ist für andere Benutzer zugänglich (Rechte %04o) und kann nicht auf 0700 gesetzt werden. Bitte Eigentümer und Rechte prüfen (siehe docs/system-purge.md).', $real, $mode));
+        }
         return $real;
+    }
+
+    /** Prüft, dass keine Datei und kein Verzeichnis der Sicherung für Gruppe oder andere zugänglich ist. */
+    private function assertPrivate(string $directory): void
+    {
+        $paths = [$directory];
+        foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS), \RecursiveIteratorIterator::SELF_FIRST) as $item) {
+            /** @var \SplFileInfo $item */
+            $paths[] = $item->getPathname();
+        }
+        foreach ($paths as $path) {
+            $mode = (int) (@fileperms($path) ?: 0) & 0777;
+            if (($mode & 0077) !== 0 && !@chmod($path, is_dir($path) ? 0700 : 0600)) {
+                throw new RuntimeException(sprintf('Rechte der Sicherung konnten nicht eingeschränkt werden (%s, %04o).', basename($path), $mode));
+            }
+        }
     }
 
     private static function within(string $path, string $base): bool
@@ -167,7 +202,7 @@ final readonly class SystemPurgeBackup
         if (!is_dir($source)) {
             return [];
         }
-        if (!@mkdir($target, 0770, true) && !is_dir($target)) {
+        if (!@mkdir($target, 0700, true) && !is_dir($target)) {
             throw new RuntimeException('Sicherungsverzeichnis für Dateien konnte nicht angelegt werden.');
         }
         $files = [];
@@ -180,7 +215,7 @@ final readonly class SystemPurgeBackup
                 continue;
             }
             if ($item->isDir()) {
-                if (!is_dir($destination) && !@mkdir($destination, 0770, true) && !is_dir($destination)) {
+                if (!is_dir($destination) && !@mkdir($destination, 0700, true) && !is_dir($destination)) {
                     throw new RuntimeException('Sicherungsverzeichnis für Dateien konnte nicht angelegt werden.');
                 }
                 continue;

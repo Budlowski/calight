@@ -48,6 +48,13 @@ use Throwable;
 final readonly class Application
 {
     /** Meldung, wenn eine Änderung eingereichte oder festgeschriebene Arbeitszeiten beträfe. */
+    /** Vergleichshash für unbekannte Benutzer (gleicher Rechenaufwand wie bei vorhandenen Konten). */
+    private static function dummyHash(): string
+    {
+        static $hash = null;
+        return $hash ??= password_hash('calight-unknown-user', PASSWORD_DEFAULT);
+    }
+
     public const TIME_LOCKED_MESSAGE = 'Die Arbeitszeiten dieses Tages sind eingereicht oder festgeschrieben und können nicht geändert werden – auch nicht über Rapporte oder Tagesberichte. Bitte im Büro zur Korrektur öffnen lassen.';
 
     public function __construct(
@@ -80,8 +87,15 @@ final readonly class Application
         private ?MobileController $mobileController = null,
         private UserInterface $interfaces = new UserInterface(),
         private ?SystemPurgeController $systemPurgeController = null,
+        private ?\App\Security\LoginThrottle $loginThrottle = null,
     ) {
         $this->registerRoutes();
+    }
+
+    /** @return list<array{method:string,pattern:string}> Registrierte Routen (Tests, Rechteabgleich). */
+    public function routes(): array
+    {
+        return $this->router->routes();
     }
 
     public function handle(Request $request): Response
@@ -179,8 +193,20 @@ final readonly class Application
             if (!Session::verifyCsrf($request->post['_csrf'] ?? null)) {
                 return $this->view->render('auth/login', ['hasUsers' => $this->users->count() > 0, 'error' => 'Sicherheitsprüfung fehlgeschlagen.'], 419);
             }
-            $user = $this->users->findActiveByUsername(trim((string) ($request->post['username'] ?? '')));
-            if ($user === null || !password_verify((string) ($request->post['password'] ?? ''), (string) $user['password_hash'])) {
+            $username = trim((string) ($request->post['username'] ?? ''));
+            // Drosselung gegen Passwort-Raten (LoginThrottle): gleiche Meldung für alle Benutzernamen.
+            $attempt = $this->loginThrottle?->begin($username, $this->loginThrottle->clientIp($request));
+            if ($this->loginThrottle !== null && $attempt === null) {
+                usleep(250000);
+                return $this->view->render('auth/login', ['hasUsers' => true, 'error' => 'Zu viele fehlgeschlagene Anmeldeversuche. Bitte in einigen Minuten erneut versuchen.'], 429);
+            }
+            $user = $this->users->findActiveByUsername($username);
+            // Auch ohne Benutzer ein Hash-Vergleich, damit die Antwortzeit die Existenz nicht verrät.
+            $valid = password_verify((string) ($request->post['password'] ?? ''), $user !== null ? (string) $user['password_hash'] : self::dummyHash()) && $user !== null;
+            if ($attempt !== null) {
+                $this->loginThrottle?->finish($attempt, $valid);
+            }
+            if (!$valid) {
                 usleep(250000);
                 return $this->view->render('auth/login', ['hasUsers' => true, 'error' => 'Benutzername oder Passwort ist falsch.'], 401);
             }

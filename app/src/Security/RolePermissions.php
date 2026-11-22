@@ -77,6 +77,10 @@ final class RolePermissions
 
     public static function allows(string $role, string $permission): bool
     {
+        // Ungeregelte Routen (AuthorizationPolicy::UNREGISTERED) sind für niemanden freigegeben.
+        if ($permission === AuthorizationPolicy::UNREGISTERED) {
+            return false;
+        }
         $permissions = self::PERMISSIONS[$role] ?? [];
         return in_array('*', $permissions, true) || in_array($permission, $permissions, true);
     }

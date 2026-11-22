@@ -9,17 +9,28 @@ use App\Http\Response;
 
 final class AuthorizationPolicy
 {
+    /**
+     * Ausdrücklich öffentliche Pfade (ohne Anmeldung): Einstieg, Anmeldung/Abmeldung (CSRF-geschützt),
+     * Web-App-Manifest und Service Worker des mobilen Frontends (enthalten keine Daten).
+     */
+    public const PUBLIC_PATHS = ['/', '/login', '/logout', '/mobile/manifest.webmanifest', '/mobile/sw.js'];
+
+    /**
+     * Pfade ohne eigene Regel (Systemaudit F-03): standardmäßig verweigert. Diese Kennung erlaubt
+     * RolePermissions keiner Rolle, auch nicht Administratoren.
+     */
+    public const UNREGISTERED = 'route.unregistered';
+
     /** @return list<string> */
     public static function required(Request $request): array
     {
         $path = $request->path;
         $write = !in_array($request->method, ['GET', 'HEAD'], true);
-        if ($path === '/' || $path === '/login' || $path === '/logout') return [];
+        if (in_array($path, self::PUBLIC_PATHS, true)) return [];
         if ($path === '/dashboard') return ['dashboard.read'];
         // Mobiles Frontend: Manifest und Service Worker enthalten keine Daten und werden vom Browser
         // ohne Anmeldedaten geladen. Alle übrigen mobilen Seiten verlangen dieselben Rechte wie die
         // Büroansicht; die Datensatzrechte prüfen die Fachdienste.
-        if ($path === '/mobile/manifest.webmanifest' || $path === '/mobile/sw.js') return [];
         if ($path === '/interface') return ['interface.switch'];
         if ($path === '/mobile/orders' || str_starts_with($path, '/mobile/orders/')) return ['orders.read'];
         if ($path === '/mobile/times') return ['timesheet.own'];
@@ -73,7 +84,8 @@ final class AuthorizationPolicy
         if (str_starts_with($path, '/offers') || str_starts_with($path, '/api/offers') || str_starts_with($path, '/api/change-orders')) return [$write ? 'offers.write' : 'offers.read'];
         if (str_starts_with($path, '/orders') || str_starts_with($path, '/api/orders')) return [$write ? 'orders.write' : 'orders.read'];
         if (str_starts_with($path, '/api/document-locks/offers/')) return ['offers.write'];
-        return [];
+        // Standard: verweigern. Neue Routen brauchen eine ausdrückliche Regel (geprüft in RouteAuthorizationTest).
+        return [self::UNREGISTERED];
     }
 
     public static function deniedResponse(Request $request):Response
