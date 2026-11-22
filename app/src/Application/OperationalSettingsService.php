@@ -231,7 +231,7 @@ final readonly class OperationalSettingsService
         if ($number->isLessThan($definition['min']) || $number->isGreaterThan($definition['max'])) {
             throw new DocumentValidationException([sprintf('%s: bitte einen Wert zwischen %s und %s %s angeben.', $definition['label'], $definition['min'], $definition['max'], $definition['unit'])]);
         }
-        return (string) $number->toScale($definition['scale'], \Brick\Math\RoundingMode::Down)->stripTrailingZeros();
+        return (string) $number->toScale($definition['scale'], \Brick\Math\RoundingMode::Down)->strippedOfTrailingZeros();
     }
 
     /** @param array<string,mixed> $actor */
