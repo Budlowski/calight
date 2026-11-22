@@ -774,8 +774,8 @@ final readonly class TimeTrackingService
 
     /**
      * Prüft und berechnet einen manuellen Zeitblock. Mit Uhrzeiten: Ende ≤ Beginn bedeutet
-     * „endet am Folgetag“, Nettozeit = Ende − Beginn − Pause. Ohne Uhrzeiten (nur wenn die
-     * Betriebseinstellung es erlaubt): Dauer in Minuten (durationMinutes).
+     * „endet am Folgetag“, Nettozeit = Ende − Beginn − Pause. Uhrzeiten sind für manuelle
+     * Blöcke immer Pflicht (Ausnahme nur Berichtsstunden, siehe timing()).
      *
      * @param array<string,mixed> $input
      * @param array<string,mixed>|null $existing
@@ -836,14 +836,9 @@ final readonly class TimeTrackingService
             if ($fixedNet !== null) {
                 return ['start_time' => null, 'end_time' => null, 'ends_next_day' => 0, 'break_minutes' => 0, 'net_minutes' => $fixedNet];
             }
-            if (!$this->times->timesOptional()) {
-                throw new DocumentValidationException(['Bitte Beginn und Ende angeben (Stundenerfassung ohne Uhrzeiten ist in den Betriebseinstellungen deaktiviert).']);
-            }
-            $duration = filter_var(trim((string) ($input['durationMinutes'] ?? '')), FILTER_VALIDATE_INT);
-            if ($duration === false || $duration < 1 || $duration > 1440) {
-                throw new DocumentValidationException(['Bitte Beginn und Ende oder eine Dauer (1 bis 1.440 Minuten) angeben.']);
-            }
-            return ['start_time' => null, 'end_time' => null, 'ends_next_day' => 0, 'break_minutes' => 0, 'net_minutes' => $duration];
+            // Manuelle Zeiterfassung immer mit Uhrzeiten; nur Stunden aus Tagesberichten und Rapporten
+            // ($fixedNet) dürfen ohne Beginn und Ende bestehen.
+            throw new DocumentValidationException(['Bitte Beginn und Ende angeben. In der Zeiterfassung wird immer mit Uhrzeiten erfasst.']);
         }
         $start = $this->time($rawStart, 'Beginn');
         $end = $this->time($rawEnd, 'Ende');

@@ -223,7 +223,7 @@ final class TimeApprovalTest extends TestCase
             $this->assertThrows(DailyReportValidationException::class, fn () => $reports->delete($report['id'], $report['version'], $office), 'Eingereichte Berichte nie löschen.');
             $this->assertThrows(PDOException::class, fn () => $reports->cancel($report['id'], ['version' => $report['version'], 'reason' => 'Doppelt'], $office), 'Stornierung erst nach Wiederöffnung der Zeiterfassung.');
             $this->assertThrows(PDOException::class, fn () => $reports->create(['orderId' => $order, 'reportDate' => '2026-10-14', 'activities' => 'Nachtrag', 'entries' => [['employeeId' => $employee, 'durationHours' => '1', 'targetKey' => 'order']]], $tech), 'Neue Berichtsstunden.');
-            $service->createEntry(['employeeId' => $eva, 'date' => '2026-10-14', 'durationMinutes' => '60', 'activity' => 'internal'], $office);
+            $service->createEntry(['employeeId' => $eva, 'date' => '2026-10-14', 'start' => '20:00', 'end' => '21:00', 'activity' => 'internal'], $office);
 
             // Rapporte: neue Stunden und Korrekturrapport (alte und neue Fassung) gesperrt.
             $new = $workReports->create(['customerId' => $customer, 'orderId' => $order, 'workDate' => '2026-10-22'], $office);

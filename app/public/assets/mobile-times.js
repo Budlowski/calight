@@ -476,14 +476,14 @@
 
   function entryForm(entry = null, preset = {}) {
     const fixed = Boolean(entry?.durationFixed);
-    const allowUntimed = state.reference.timesOptional;
-    const untimed = entry ? !entry.hasTimes && (fixed || allowUntimed) : false;
+    // Manuelle Zeiterfassung immer mit Uhrzeiten; nur Berichtsstunden (fixed) dürfen ohne bleiben.
+    const untimed = fixed && !entry.hasTimes;
     const body = `
       ${fixed ? `<p class="mobile-card-text"><strong>${esc(entry.sourceLabel)}</strong> · Dauer ${formatMinutes(entry.netMinutes)} (aus dem Bericht, hier nicht änderbar)${entry.orderNumber ? ` · ${esc(entry.orderNumber)}` : ""}</p>` : ""}
       ${fixed ? "" : field("Datum", `<input type="date" name="date" value="${esc(entry?.date || state.date)}" required>`)}
-      ${allowUntimed || fixed ? `<div class="mobile-segmented mobile-segmented-small" role="radiogroup" aria-label="Erfassungsart">
+      ${fixed ? `<div class="mobile-segmented mobile-segmented-small" role="radiogroup" aria-label="Erfassungsart">
           <label><input type="radio" name="mode" value="times"${untimed ? "" : " checked"}><span>Mit Uhrzeit</span></label>
-          <label><input type="radio" name="mode" value="duration"${untimed ? " checked" : ""}><span>${fixed ? "Ohne Uhrzeit" : "Nur Dauer"}</span></label>
+          <label><input type="radio" name="mode" value="duration"${untimed ? " checked" : ""}><span>Ohne Uhrzeit</span></label>
         </div>` : ""}
       <div class="mobile-field-row" data-times-fields>
         ${field("Beginn", `<input type="time" name="start" value="${esc(entry?.start || "")}" step="60">`)}
@@ -493,7 +493,6 @@
         ${field("Pause (Min.)", `<input type="number" name="breakMinutes" inputmode="numeric" min="0" step="1" value="${esc(entry?.breakMinutes || "")}" placeholder="0">`)}
         <p class="mobile-preview" data-net-preview aria-live="polite"></p>
       </div>
-      ${fixed ? "" : `<div data-duration-fields>${field("Dauer", `<input type="text" name="duration" inputmode="decimal" placeholder="z. B. 7:30 oder 7,5" value="${esc(untimed ? durationText(entry?.netMinutes) : "")}">`, "Stunden:Minuten oder Dezimalstunden")}</div>`}
       ${field("Davon Reisezeit (Min.)", `<input type="number" name="travelMinutes" inputmode="numeric" min="0" step="1" value="${esc(entry?.travelMinutes || "")}" placeholder="0">`, "Reisezeit ist Teil der Arbeitszeit")}
       ${fixed ? "" : costTargetField()}
       ${Calight.workLocationFields({ workLocation: entry?.workLocation || "", assignmentKind: entry?.assignmentKind || "" })}

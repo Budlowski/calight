@@ -44,8 +44,8 @@ final readonly class OperationalSettingsService
     public const DEFINITIONS = [
         'time_tracking.times_optional' => [
             'group' => 'time', 'type' => 'bool', 'default' => true,
-            'label' => 'Stundenerfassung ohne Uhrzeiten erlauben',
-            'description' => 'Aktiviert: Buchungen ohne Beginn und Ende gelten als vollständig. Deaktiviert: Stunden aus Berichten bleiben vollständig erhalten und zählen, sind aber bis zur Ergänzung der Uhrzeiten als „Uhrzeiten fehlen“ gekennzeichnet; manuelle Zeitblöcke benötigen Uhrzeiten, und fehlende Uhrzeiten verhindern die Einreichung.',
+            'label' => 'Berichtsstunden ohne Uhrzeiten erlauben',
+            'description' => 'Manuelle Zeiterfassung erfolgt immer mit Beginn und Ende. Diese Einstellung betrifft nur Stunden aus Tagesberichten und Rapporten: Aktiviert gelten sie ohne Uhrzeiten als vollständig. Deaktiviert zählen sie weiter, sind aber bis zur Ergänzung der Uhrzeiten als „Uhrzeiten fehlen“ gekennzeichnet, und fehlende Uhrzeiten verhindern die Einreichung.',
         ],
         'time_tracking.submission_rhythm' => [
             'group' => 'time', 'type' => 'choice', 'default' => 'both',

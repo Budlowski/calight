@@ -488,7 +488,8 @@
     };
     const chooseKind = !entry && !absence;
     let kind = absence ? "absence" : preset.kind || "work";
-    const timesRequired = !current.timesOptional && fixed === null;
+    // Manuelle Zeitblöcke immer mit Uhrzeiten; nur Berichtsstunden (fixed) ohne.
+    const timesRequired = fixed === null;
     const form = document.createElement("form");
     form.className = "form-stack";
     form.noValidate = true;

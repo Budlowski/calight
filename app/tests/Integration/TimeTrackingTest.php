@@ -419,17 +419,21 @@ final class TimeTrackingTest extends TestCase
             $this->assertThrows(DocumentValidationException::class, fn () => $settings->save(['time_tracking.times_optional' => 'nein'], $admin));
             $this->assertThrows(DocumentValidationException::class, fn () => $settings->save(['unbekannt' => true], $admin));
 
-            // Aktiviert: Stunden ohne Uhrzeiten sind vollständig.
-            $manual = $service->createEntry(['date' => '2026-11-16', 'durationMinutes' => '90', 'activity' => 'internal', 'notes' => 'Angebotsbearbeitung'], $tech);
+            // Manuelle Zeiterfassung immer mit Uhrzeiten (unabhängig von der Einstellung).
+            $this->assertThrows(DocumentValidationException::class, fn () => $service->createEntry(['date' => '2026-11-16', 'durationMinutes' => '90', 'activity' => 'internal'], $tech), 'Keine reine Dauer.');
+            // Aktiviert: Berichtsstunden ohne Uhrzeiten sind vollständig.
+            $manual = $service->createEntry(['date' => '2026-11-16', 'start' => '13:00', 'end' => '14:30', 'activity' => 'internal', 'notes' => 'Angebotsbearbeitung'], $tech);
             $reports->create(['customerId' => $customer, 'reportDate' => '2026-11-16', 'activities' => 'Termin', 'entries' => [['employeeId' => $employee, 'durationHours' => '2', 'targetKey' => 'order']]], $tech);
             $day = $service->day($employee, '2026-11-16', $tech);
-            $this->assertSame([210, 0, false], [$day['totals']['netMinutes'], $day['totals']['incompleteMinutes'], $day['entries'][0]['timesMissing']]);
+            $this->assertSame([210, 0, [false, false]], [$day['totals']['netMinutes'], $day['totals']['incompleteMinutes'], array_column($day['entries'], 'timesMissing')]);
             $this->assertSame(90, $manual['entries'][0]['netMinutes']);
 
             // Deaktiviert: nichts geht verloren, Stunden zählen weiter, sind aber „Uhrzeiten fehlen“.
             $settings->save(['time_tracking.times_optional' => false], $admin);
             $day = $service->day($employee, '2026-11-16', $tech);
-            $this->assertSame([210, 210, [true, true]], [$day['totals']['netMinutes'], $day['totals']['incompleteMinutes'], array_column($day['entries'], 'timesMissing')]);
+            $missing = array_column($day['entries'], 'timesMissing');
+            sort($missing);
+            $this->assertSame([210, 120, [false, true]], [$day['totals']['netMinutes'], $day['totals']['incompleteMinutes'], $missing], 'Nur die Berichtsstunden ohne Uhrzeiten.');
             $this->assertThrows(DocumentValidationException::class, fn () => $service->createEntry(['date' => '2026-11-17', 'durationMinutes' => '60', 'activity' => 'internal'], $tech), 'Manuell nur mit Uhrzeiten.');
             $report = $reports->create(['customerId' => $customer, 'reportDate' => '2026-11-17', 'activities' => 'Termin', 'entries' => [['employeeId' => $employee, 'durationHours' => '1', 'targetKey' => 'order']]], $tech);
             $this->assertSame(60, $service->range($employee, '2026-11-17', '2026-11-17', $tech)['totals']['incompleteMinutes'], 'Berichte bleiben unkompliziert; Buchung zunächst unvollständig.');
