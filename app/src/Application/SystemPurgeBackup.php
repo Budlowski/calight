@@ -145,10 +145,10 @@ final readonly class SystemPurgeBackup
         }
         $assertOutside((realpath($existing) ?: $existing) . substr($root, strlen($existing)));
         if (!is_dir($root) && !@mkdir($root, 0770, true) && !is_dir($root)) {
-            throw new RuntimeException('Das Sicherungsverzeichnis konnte nicht angelegt werden.');
+            throw new RuntimeException('Das Sicherungsverzeichnis ' . $root . ' konnte nicht angelegt werden. Bitte das Verzeichnis anlegen und dem Webserver-Benutzer Schreibrechte geben (APP_BACKUPS_PATH).');
         }
         if (!is_writable($root)) {
-            throw new RuntimeException('Das Sicherungsverzeichnis ist nicht beschreibbar.');
+            throw new RuntimeException('Das Sicherungsverzeichnis ' . $root . ' ist nicht beschreibbar. Bitte dem Webserver-Benutzer Schreibrechte geben (APP_BACKUPS_PATH).');
         }
         $real = realpath($root) ?: $root;
         $assertOutside($real);
