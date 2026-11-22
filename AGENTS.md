@@ -101,7 +101,8 @@ Laufzeitdaten liegen außerhalb des Anwendungscodes in den über `Config` konfig
 - `APP_DATABASE_PATH` – SQLite-Datei;
 - `APP_OFFERS_PATH` – Entwürfe, Snapshots und archivierte Angebots-PDFs;
 - `APP_DOCUMENTS_PATH` – Dokumentdaten;
-- `APP_TEMPLATES_PATH` – Vorlagendaten.
+- `APP_TEMPLATES_PATH` – Vorlagendaten;
+- `APP_BACKUPS_PATH` – Sicherungen der Datenbereinigung (außerhalb von Dokument- und Angebotsverzeichnis; siehe `docs/system-purge.md`).
 
 In Docker sind diese Pfade Unterverzeichnisse von `/var/www/data` im Volume `calight-data`. Datenbanken, Angebote, Dokumente, Logs, `.env` und andere Laufzeitdateien dürfen nicht eingecheckt werden. Datenverzeichnisse dürfen nie im Projektordner oder unter `app/public` liegen; `StoragePaths` verhindert den Start bei Datenpfaden im Webverzeichnis, `php bin/console storage:check` zeigt die Konfiguration. Neue Dateiablagen nutzen Unterordner von `APP_DOCUMENTS_PATH` (z. B. `daily-reports/`), speichern Pfade relativ und nur aus internen IDs. Details: `docs/storage.md`.
 
@@ -404,6 +405,7 @@ Verbindliche Regeln:
 - Entwürfe, Snapshots und PDFs nicht durch Reparaturskripte stillschweigend verändern.
 - Atomare Dateischreibweise, Prüfsummen und Transaktionsgrenzen bei kombinierten Datei-/DB-Vorgängen erhalten. Fehlschläge müssen aufräumen oder zurückrollen.
 - Löschregeln bewusst wählen: Geschäfts- und Archivdaten meist `RESTRICT`; abhängige reine Bearbeitungsdaten nur bei fachlich sicherem Besitz `CASCADE`.
+- Massenlöschungen ausschließlich über die Datenbereinigung (`SystemPurgePlanner`/`SystemPurgeService`, Migration `0050`, `docs/system-purge.md`): Vorschau mit Fingerabdruck, verpflichtende Sicherung, keine stillen Kaskaden, Produktivstatus sperrt dauerhaft. Neue Tabellen mit Geschäftsdaten müssen dort einem Bereich zugeordnet werden (`selectArea`, `TABLE_AREAS`, `TABLE_LABELS`, ggf. Dateispalten); neue Lösch- oder Unveränderlichkeitstrigger brauchen die Ausnahme `NOT EXISTS (SELECT 1 FROM system_purge_guard)`.
 
 Vor jeder Migration sind Upgrade-Pfad, Datenübernahme, Downtime/Locking, eindeutige Indizes und Verhalten alter Datensätze zu prüfen.
 

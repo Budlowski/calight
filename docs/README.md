@@ -185,6 +185,7 @@ export APP_DATABASE_PATH=/absoluter/pfad/database/app.sqlite
 export APP_OFFERS_PATH=/absoluter/pfad/offers
 export APP_DOCUMENTS_PATH=/absoluter/pfad/documents
 export APP_TEMPLATES_PATH=/absoluter/pfad/templates
+export APP_BACKUPS_PATH=/absoluter/pfad/backups
 php bin/console migrate
 php bin/console user:create admin "Administrator"
 ```

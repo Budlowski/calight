@@ -730,6 +730,10 @@ Kontakte und Kalender (Allgemein) sowie **Kaufmännisch** (Abrechnung, Nachkalku
 
 Die Auftragsdetailseite ist in Reiter gegliedert: Übersicht (Summen, Kennzahlen, Statusverlauf), Leistungen (Auftragsgrundlage, Nachträge), Ausführung (Tagesberichte, Rapporte), Material (Materialbedarf, Bestellungen), Aufmaße, Dokumente. Reiter abgeschalteter Module erscheinen nur bei vorhandenen Daten und ohne Anlegeaktionen. Stunden kommen in Übersicht und Ausführung aus derselben Aggregation der zentralen Basis (`DailyReportService::orderHours`): gesamt, festgeschrieben, vorläufig sowie davon aus Rapporten, Tagesberichten und manuell; Bestell-Ist-Kosten nur mit `costs.read`, Bestellungen ohne bekannte Ist-Kosten werden gesondert genannt und nicht als 0 gewertet.
 
+### Datenbereinigung und Produktivstatus (Migration `0050`)
+
+Einstellungen → System → Datenbereinigung (nur Administratoren, `system.purge`): einzeln wählbare Geschäfts- und Stammdatenbereiche (Standard: alle Geschäftsdaten), optional Zeitraum nur für Rapporte, Tagesberichte, Zeiterfassung sowie Reisekosten/Auslagen, optionales Zurücksetzen von Nummernkreisen. Serverseitige Vorschau mit Fingerabdruck, generischer Fremdschlüsselprüfung (keine stillen Kaskaden), Sperr-, Dokument- und Dateiprüfung; verpflichtende geprüfte Sicherung (`VACUUM INTO`, Dateien mit SHA-256, `APP_BACKUPS_PATH`); Ausführung nur mit Passwort, Bestätigungstext `DATEN LÖSCHEN` und ausdrücklicher Bestätigung, transaktional mit Integritätsprüfung und unveränderlichem Protokoll. Ein einmal gesetzter Produktivstatus sperrt die Bereinigung dauerhaft. Details: [`system-purge.md`](system-purge.md).
+
 ## Technische Leitlinien
 
 - Bestehender Stack: **PHP, Apache, SQLite, HTML/CSS/Vanilla JavaScript, JSON und die projekteigene PDF-Infrastruktur**.

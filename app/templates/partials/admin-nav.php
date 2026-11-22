@@ -55,6 +55,9 @@ $groups = $adminArea === 'master-data'
             ['key' => 'orders', 'label' => 'Auftragsabwicklung', 'href' => '/settings/orders', 'visible' => $can('operations.manage')],
             ['key' => 'work-tracking', 'label' => 'Arbeitserfassung', 'href' => '/settings/work-tracking', 'visible' => $can('operations.manage') && $moduleEnabled('work_tracking')],
         ],
+        'System' => [
+            ['key' => 'system-purge', 'label' => 'Datenbereinigung', 'href' => '/settings/system/purge', 'visible' => $can('system.purge')],
+        ],
     ];
 $groups = array_filter(array_map(static fn (array $items): array => array_values(array_filter($items, static fn (array $item): bool => $item['visible'])), $groups));
 $activeLabel = '';

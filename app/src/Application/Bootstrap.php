@@ -10,6 +10,7 @@ use App\Http\MasterDataController;
 use App\Http\CustomerProjectController;
 use App\Http\OfferCalculationController;
 use App\Http\SettingsController;
+use App\Http\SystemPurgeController;
 use App\Http\OrderController;
 use App\Http\DocumentLockController;
 use App\Http\UserAccessController;
@@ -140,6 +141,10 @@ final readonly class Bootstrap
             $modules,
             new MobileController($view,$mobileWorkspace,$userRepository,$root.'/public',$workReportService,$modules,$documentSettingsRepository),
             new UserInterface($this->config->mobileHost),
+            new SystemPurgeController($view, new SystemPurgeService($this->pdo,
+                new SystemPurgePlanner($this->pdo, $this->config->documentsPath, $this->config->offersPath),
+                new SystemPurgeBackup($this->pdo, $this->config->databasePath, $this->config->documentsPath, $this->config->offersPath,
+                    $this->config->backupsPath !== '' ? $this->config->backupsPath : dirname($this->config->databasePath, 2) . '/backups'))),
         );
     }
 }

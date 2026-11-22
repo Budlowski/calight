@@ -10,6 +10,7 @@ services:
       APP_OFFERS_PATH: /var/www/data/offers
       APP_DOCUMENTS_PATH: /var/www/data/documents
       APP_TEMPLATES_PATH: /var/www/data/templates
+      APP_BACKUPS_PATH: /var/www/data/backups
       APP_SESSION_NAME: calight_session
       APP_SECURE_COOKIES: "${APP_SECURE_COOKIES:-0}"
       APP_TIMEZONE: "${APP_TIMEZONE:-Europe/Berlin}"

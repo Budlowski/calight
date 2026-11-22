@@ -17,6 +17,8 @@ final readonly class Config
         // Optionaler eigener Hostname des mobilen Frontends (z. B. m.calight.example.de), ohne Port.
         // Leer: Das mobile Frontend ist nur unter /mobile/ auf demselben Host erreichbar.
         public string $mobileHost = '',
+        // Sicherungen der Datenbereinigung (APP_BACKUPS_PATH). Leer: <Datenverzeichnis>/backups neben der Datenbank.
+        public string $backupsPath = '',
     ) {
     }
 }

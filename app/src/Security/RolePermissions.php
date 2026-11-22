@@ -71,6 +71,7 @@ final class RolePermissions
             'employees.manage' => 'Mitarbeiter verwalten', 'cost_centers.manage' => 'Kostenstellen verwalten',
             'settings.manage' => 'Firmen- und Dokumenteinstellungen', 'operations.manage' => 'Module und Arbeitserfassungseinstellungen',
             'users.manage' => 'Benutzerkonten verwalten',
+            'system.purge' => 'Datenbereinigung vor der Produktivnahme (nur Administratoren)',
         ],
     ];
 

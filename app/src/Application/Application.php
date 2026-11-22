@@ -30,6 +30,7 @@ use App\Http\TimeTrackingController;
 use App\Http\CostCenterController;
 use App\Http\WorkReportController;
 use App\Http\MobileController;
+use App\Http\SystemPurgeController;
 use App\Domain\Order\OrderValidationException;
 use App\Domain\Document\DocumentValidationException;
 use App\Domain\DocumentLockException;
@@ -78,6 +79,7 @@ final readonly class Application
         private ?ModuleService $modules = null,
         private ?MobileController $mobileController = null,
         private UserInterface $interfaces = new UserInterface(),
+        private ?SystemPurgeController $systemPurgeController = null,
     ) {
         $this->registerRoutes();
     }
@@ -158,6 +160,7 @@ final readonly class Application
         $this->timeTrackingController->register($this->router);
         $this->costCenterController->register($this->router);
         $this->mobileController?->register($this->router);
+        $this->systemPurgeController?->register($this->router);
 
         // Einstieg je Konto: Monteure mobil, Büro/Administratoren nach gespeicherter Auswahl
         // (Standard Büro); auf dem optionalen mobilen Hostnamen immer mobil. Keine Geräteerkennung.

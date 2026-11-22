@@ -20,12 +20,13 @@ Calight trennt strikt zwischen **Quellcode**, **interner Anwendungsdaten** und (
 │   ├── purchase-orders/<bestellung>/<datei>.<ext>  Bestell-PDFs je Fassung, Belege des Lieferanten
 │   ├── attachments/<JJJJ>/<MM>/<uuid>.<ext>        allgemeine Anhänge zu Kunde/Projekt/Angebot/Auftrag (Phase 3.4.2)
 │   └── expenses/<mitarbeiter>/<uuid>.<ext>         Belege zu Auslagen der Zeiterfassung (Phase 3.4.3)
-└── templates/                   benutzerdefinierte Vorlagen   APP_TEMPLATES_PATH (derzeit ungenutzt)
+├── templates/                   benutzerdefinierte Vorlagen   APP_TEMPLATES_PATH (derzeit ungenutzt)
+└── backups/                     Sicherungen der Datenbereinigung  APP_BACKUPS_PATH (siehe docs/system-purge.md)
 ```
 
 Weitere Unterordner von `documents/` (z. B. `measurements/`, `reports/`, `orders/`, `delivery-notes/`) entstehen erst, wenn die jeweilige Funktion Dateien speichert.
 
-Die Pfade werden ausschließlich über die Umgebungsvariablen `APP_DATABASE_PATH`, `APP_OFFERS_PATH`, `APP_DOCUMENTS_PATH` und `APP_TEMPLATES_PATH` festgelegt (`app/config/app.php`, Standardwerte wie oben). Im Docker-Betrieb genügt es, **ein** persistentes Verzeichnis nach `/var/www/data` einzubinden; die Variablen müssen dann nicht geändert werden.
+Die Pfade werden ausschließlich über die Umgebungsvariablen `APP_DATABASE_PATH`, `APP_OFFERS_PATH`, `APP_DOCUMENTS_PATH`, `APP_TEMPLATES_PATH` und `APP_BACKUPS_PATH` festgelegt (`app/config/app.php`, Standardwerte wie oben). Im Docker-Betrieb genügt es, **ein** persistentes Verzeichnis nach `/var/www/data` einzubinden; die Variablen müssen dann nicht geändert werden.
 
 ## Regeln
 

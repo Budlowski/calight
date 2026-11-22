@@ -28,6 +28,8 @@ final class AuthorizationPolicy
         if ($path === '/mobile/measurements' || str_starts_with($path, '/mobile/measurements/')) return ['measurements.read'];
         if ($path === '/mobile/material-requests') return ['reports.read'];
         if ($path === '/mobile' || str_starts_with($path, '/mobile/')) return ['dashboard.read'];
+        // Datenbereinigung (Einstellungen → System): nur Administratoren.
+        if (str_starts_with($path, '/settings/system') || str_starts_with($path, '/api/system/')) return ['system.purge'];
         if (str_starts_with($path, '/api/users')) return ['users.manage'];
         if ($path === '/settings/employees' || $path === '/master-data/employees' || str_starts_with($path, '/api/employees')) return ['employees.manage', 'costs.read'];
         // Benutzerverwaltung: Benutzerkonten und Berechtigungsübersicht nur für Administratoren.

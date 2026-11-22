@@ -13,4 +13,6 @@ return new Config(
     secureCookies: filter_var(getenv('APP_SECURE_COOKIES') ?: '0', FILTER_VALIDATE_BOOL),
     timezone: getenv('APP_TIMEZONE') ?: 'Europe/Berlin',
     mobileHost: strtolower(trim((string) (getenv('APP_MOBILE_HOST') ?: ''))),
+    // Sicherungen der Datenbereinigung; außerhalb von Dokumenten-/Angebotsverzeichnis.
+    backupsPath: getenv('APP_BACKUPS_PATH') ?: '/var/www/data/backups',
 );

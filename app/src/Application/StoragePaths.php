@@ -25,7 +25,7 @@ final readonly class StoragePaths
             'Angebote (APP_OFFERS_PATH)' => $this->config->offersPath,
             'Dokumente und Anhänge (APP_DOCUMENTS_PATH)' => $this->config->documentsPath,
             'Vorlagen (APP_TEMPLATES_PATH)' => $this->config->templatesPath,
-        ];
+        ] + ($this->config->backupsPath !== '' ? ['Sicherungen (APP_BACKUPS_PATH)' => $this->config->backupsPath] : []);
     }
 
     /**
