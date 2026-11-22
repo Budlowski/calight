@@ -263,6 +263,15 @@ button.mobile-list-item:active { background: #f5f9fc; }
 .mobile-app .report-head-actions > .button, .mobile-app .work-report-header-actions .order-detail-actions > .button,
 .mobile-app .work-report-header-actions .context-menu > summary { min-height: var(--mobile-touch); flex: 1 1 140px; }
 .mobile-app .work-report-header-actions .context-menu { flex: 1 1 140px; }
+/* Aufmaß-Editor: Aktionen wie bei Tagesbericht und Rapport. */
+.mobile-app .measurement-actions { display: grid; gap: var(--space-2); }
+.mobile-app .measurement-actions .order-detail-actions { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: var(--space-3); }
+.mobile-app .measurement-actions .order-detail-actions > .button, .mobile-app .measurement-actions .context-menu { min-height: var(--mobile-touch); flex: 1 1 140px; }
+.mobile-app .measurement-actions .context-menu > summary { width: 100%; min-height: var(--mobile-touch); justify-content: center; }
+.mobile-app .measurement-quantity { min-height: var(--mobile-touch); font-size: 16px; }
+.mobile-excluded-orders { margin-top: var(--space-2); }
+.mobile-excluded-orders > summary { min-height: 32px; cursor: pointer; }
+.mobile-excluded-orders ul { margin: var(--space-2) 0 0; padding-left: 18px; }
 .mobile-app .work-report-header-actions .context-menu > summary { width: 100%; justify-content: center; }
 .mobile-app .context-menu-panel > a, .mobile-app .context-menu-panel > button { min-height: var(--mobile-touch); }
 .mobile-app .project-facts { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }

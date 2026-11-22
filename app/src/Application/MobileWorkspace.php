@@ -642,16 +642,41 @@ final readonly class MobileWorkspace
      * Auswahl „Auftrag“ für mobiles Anlegen: aktive, für den Benutzer sichtbare Aufträge
      * (OrderVisibility über OrderService::page), nur Nummer und Bezeichnung.
      *
+     * Mit $forMeasurement wird zusätzlich gekennzeichnet, ob der Auftrag aufmaßfähige Positionen hat
+     * (dieselbe Positionsermittlung wie die Aufmaße, MeasurementService::basisPositions); der Server
+     * prüft das beim Anlegen weiterhin selbst.
+     *
      * @param array<string,mixed> $actor
-     * @return list<array{id:string,label:string}>
+     * @return list<array{id:string,label:string,measurable?:bool}>
      */
-    public function selectableOrders(array $actor): array
+    public function selectableOrders(array $actor, bool $forMeasurement = false): array
     {
         if (!$this->can($actor, 'orders.read')) {
             return [];
         }
         $page = $this->orders->page(['status' => 'active', 'sort' => 'number', 'per_page' => '100'], $actor);
-        return array_map(static fn (array $order): array => ['id' => (string) $order['id'], 'label' => $order['orderNumber'] . ' · ' . $order['title'] . ' · ' . $order['customerName']], $page['items']);
+        return array_map(function (array $order) use ($actor, $forMeasurement): array {
+            $option = ['id' => (string) $order['id'], 'label' => $order['orderNumber'] . ' · ' . $order['title'] . ' · ' . $order['customerName']];
+            if ($forMeasurement) {
+                $option['measurable'] = $this->measurable((string) $order['id'], $actor);
+            }
+            return $option;
+        }, $page['items']);
+    }
+
+    /** Hat der Auftrag verbindliche, aufmaßfähige Positionen? @param array<string,mixed> $actor */
+    private function measurable(string $orderId, array $actor): bool
+    {
+        try {
+            foreach ($this->measurements->basisPositions($orderId, $actor) as $source) {
+                if (($source['positions'] ?? []) !== []) {
+                    return true;
+                }
+            }
+        } catch (OrderValidationException|AccessDeniedException) {
+            return false;
+        }
+        return false;
     }
 
     /** @param array<string,mixed> $parameters @param array<string,string> $filters */

@@ -56,8 +56,9 @@ final class MobileCaptureTest extends TestCase
     {
         $this->withEnvironment(function (array $env): void {
             ['workspace' => $workspace, 'measurements' => $measurements, 'tech' => $tech, 'other' => $other, 'office' => $office, 'order' => $order, 'hidden' => $hidden, 'key' => $key] = $env;
-            $this->assertSame([$order], array_column($workspace->selectableOrders($tech), 'id'), 'Auftragsauswahl nur sichtbare Aufträge.');
-            $this->assertSame(2, count($workspace->selectableOrders($office)));
+            $this->assertTrue(!in_array($hidden, array_column($workspace->selectableOrders($tech), 'id'), true), 'Auftragsauswahl nur sichtbare Aufträge.');
+            $this->assertSame(2, count($workspace->selectableOrders($tech)));
+            $this->assertSame(3, count($workspace->selectableOrders($office)));
             $draft = $measurements->create(['orderId' => $order], $tech);
             $saved = $measurements->update($draft['id'], ['version' => $draft['version'], 'title' => 'Teilaufmaß', 'measurementDate' => '2026-11-20', 'notes' => '',
                 'items' => [['key' => $key, 'quantity' => '10']]], $tech);
@@ -75,6 +76,18 @@ final class MobileCaptureTest extends TestCase
             $visible = ConfidentialDataFilter::salesValues($measurements->detail($saved['id'], $tech));
             $json = json_encode($visible, JSON_THROW_ON_ERROR);
             $this->assertTrue(!str_contains($json, '"2.50"') && !str_contains($json, '"25.00"') && str_contains($json, '"10.000"'));
+        });
+    }
+
+    public function testMeasurementOrderChoiceMarksOrdersWithoutMeasurablePositions(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['workspace' => $workspace, 'measurements' => $measurements, 'tech' => $tech, 'order' => $order, 'regie' => $regie] = $env;
+            $options = array_column($workspace->selectableOrders($tech, true), 'measurable', 'id');
+            $this->assertSame([true, false], [$options[$order], $options[$regie]], 'Regieauftrag ohne Nachtrag ist nicht aufmaßfähig.');
+            $this->assertTrue(!array_key_exists('measurable', $workspace->selectableOrders($tech)[0]), 'Kennzeichen nur für die Aufmaßauswahl.');
+            // Serverseitige Prüfung bleibt maßgeblich.
+            $this->assertThrows(\App\Domain\Order\OrderValidationException::class, fn () => $measurements->create(['orderId' => $regie], $tech));
         });
     }
 
@@ -168,6 +181,9 @@ final class MobileCaptureTest extends TestCase
             $hidden = $offerOrder('Nicht zugeordnet');
             $order = $offerOrder('Elektroinstallation');
             $orders->assignEmployee($order, $techEmployee, true, $office);
+            $regie = (string) $orders->createRegie(['customerId' => $customer, 'title' => 'Störung', 'orderDate' => '2026-11-01'])['id'];
+            $orders->changeStatus($regie, 'open', 'in_progress');
+            $orders->assignEmployee($regie, $techEmployee, true, $office);
 
             $store = new AttachmentStore($tmp . '/documents');
             $modules = new ModuleService($pdo);
@@ -175,7 +191,7 @@ final class MobileCaptureTest extends TestCase
             $measurements = new MeasurementService($pdo, $measurementRepository, new OrderRepository($pdo), $numbers);
             $materials = new MaterialRequestService(new MaterialRequestRepository($pdo), new OrderRepository($pdo), new DailyReportRepository($pdo), $modules);
             $test([
-                'pdo' => $pdo, 'order' => $order, 'hidden' => $hidden, 'key' => 'order:' . $order . ':' . $nodeId,
+                'pdo' => $pdo, 'order' => $order, 'hidden' => $hidden, 'regie' => $regie, 'key' => 'order:' . $order . ':' . $nodeId,
                 'tech' => $tech, 'other' => $other, 'office' => $office, 'admin' => $admin, 'modules' => $modules,
                 'measurements' => $measurements, 'materials' => $materials,
                 'pdf' => new MeasurementPdfService($measurements, $measurementRepository, new DocumentSettingsRepository($pdo), new DocumentArchive(new GeneratedDocumentRepository($pdo), $store)),

@@ -196,8 +196,14 @@ final readonly class DocumentService
                     $context($document['customer_id'], $document['project_id'], $document['order_id']));
             }
         }
+        // Zusätzliche Absicherung für Monteure (falls ihnen documents.read gegeben würde): nur eigene bzw.
+        // Vorgänge sichtbarer Aufträge, wie in den Fachmodulen (OrderVisibility).
+        $orderVisible = fn (?string $orderId): bool => !OrderVisibility::restricted($actor) || ($orderId !== null && OrderVisibility::visible($this->pdo, $orderId, $actor));
         if ($this->can($actor, 'workreports.read')) {
             foreach ($this->documents->workReports() as $report) {
+                if (OrderVisibility::restricted($actor) && (string) ($report['created_by_user_id'] ?? '') !== (string) $actor['id'] && !$orderVisible($report['order_id'] !== null ? (string) $report['order_id'] : null)) {
+                    continue;
+                }
                 $objects = [['label' => 'Rapport ' . $report['report_number'], 'href' => '/work-reports/' . rawurlencode((string) $report['id'])],
                     ['label' => 'Kunde ' . $report['customer_name'], 'href' => '/customers/' . rawurlencode((string) $report['customer_id'])]];
                 $ctx = $context($report['customer_id'], $report['project_id'], $report['order_id']);
@@ -211,19 +217,26 @@ final readonly class DocumentService
             }
         }
         if ($this->can($actor, 'measurements.read')) {
+            // Ohne kaufmännisches Recht der Aufmaßnachweis ohne Preise statt des bewerteten Aufmaßes.
+            $measurementPdf = $this->can($actor, 'commercial.read') ? '/pdf' : '/proof-pdf';
             foreach ($this->documents->measurements() as $measurement) {
+                if (!$orderVisible((string) $measurement['order_id'])) {
+                    continue;
+                }
                 $rows[] = $row('measurement:' . $measurement['id'], 'measurement', 'Aufmaß ' . $measurement['measurement_number'], 'Aufmass_' . $measurement['measurement_number'] . '.pdf',
                     'application/pdf', $measurement['completed_at'],
                     [['label' => 'Aufmaß ' . $measurement['measurement_number'] . ($measurement['title'] !== '' ? ' · ' . $measurement['title'] : ''), 'href' => '/measurements/' . rawurlencode((string) $measurement['id'])],
                      ['label' => 'Auftrag ' . $measurement['order_number'], 'href' => '/orders/' . rawurlencode((string) $measurement['order_id'])]],
-                    '/api/measurements/' . rawurlencode((string) $measurement['id']) . '/pdf', $context($measurement['customer_id'], $measurement['project_id'], $measurement['order_id']));
+                    '/api/measurements/' . rawurlencode((string) $measurement['id']) . $measurementPdf, $context($measurement['customer_id'], $measurement['project_id'], $measurement['order_id']));
             }
         }
         if ($this->can($actor, 'reports.read')) {
-            // Monteure: eigene Berichte und Berichte freigegebener Aufträge (wie im Fachmodul).
-            $visible = fn (array $report): bool => ($actor['role'] ?? '') !== 'technician' || (string) $report['created_by_user_id'] === (string) $actor['id']
-                || ($report['order_id'] !== null && ($report['order_status'] ?? 'open') !== 'open');
-            foreach ($this->documents->dailyReports() as $report) {
+            // Monteure: eigene Berichte und Berichte für sie sichtbarer Aufträge (OrderVisibility, wie im Fachmodul).
+            $reports = $this->documents->dailyReports();
+            $visibleOrders = OrderVisibility::visibleIds($this->pdo, $actor, array_values(array_unique(array_filter(array_map(static fn (array $report): string => (string) ($report['order_id'] ?? ''), $reports)))));
+            $visible = fn (array $report): bool => !OrderVisibility::restricted($actor) || (string) $report['created_by_user_id'] === (string) $actor['id']
+                || ($report['order_id'] !== null && isset($visibleOrders[(string) $report['order_id']]));
+            foreach ($reports as $report) {
                 // Archivierte Berichte erscheinen mit ihren Revisionen; sonst die Vorschau des aktuellen Stands.
                 if (!$visible($report) || (int) $report['statement_count'] > 0) {
                     continue;

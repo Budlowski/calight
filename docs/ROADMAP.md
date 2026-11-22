@@ -28,7 +28,7 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 | 3.4.1.1 | Bestellverwaltung als Vorgang: AB, Lieferungen, Belege, Zahlungen, Lieferantenanschrift | Implementiert (`0030`); Phase 3.4.1 damit abgeschlossen |
 | 3.4.2 | Zentrale Dokumentenübersicht und geschäftsbezogene Anhänge | Implementiert (`0031`) |
 | 3.4.3 | Zeiterfassung: Arbeits- und Reisezeiten, Einsatz, Kilometer und Auslagen | Abgeschlossen (`0032`, Korrekturen `0033`, `0034`); zentrale Stundenbasis `0037`, Bereinigung `0038` |
-| 3.4.4 | Monteurs-Interface (mobile Oberfläche für Zeiterfassung, Berichte, Rapporte) | Phase 1 implementiert (`0046`): mobiles Frontend unter `/mobile/`; Phase 2 implementiert (ohne Migration): vollständige persönliche Zeiterfassung mobil, Schutz verkaufsseitiger Werte für Monteure (`commercial.read`); Phase 3 implementiert (ohne Migration): Tagesberichte und Rapporte mobil inkl. Kundenunterschrift; Materialbedarf und Aufmaße mobil sowie preisfreier Aufmaßnachweis (ohne Migration) |
+| 3.4.4 | Monteurs-Interface (mobile Oberfläche für Zeiterfassung, Berichte, Rapporte) | Phase 1 implementiert (`0046`): mobiles Frontend unter `/mobile/`; Phase 2 implementiert (ohne Migration): vollständige persönliche Zeiterfassung mobil, Schutz verkaufsseitiger Werte für Monteure (`commercial.read`); Phase 3 implementiert (ohne Migration): Tagesberichte und Rapporte mobil inkl. Kundenunterschrift; Materialbedarf und Aufmaße mobil sowie preisfreier Aufmaßnachweis (ohne Migration); **Monteurs-Frontend abgeschlossen** (Abschlussreview) |
 | 3.5 | Nachkalkulation und Soll-Ist-Vergleich | Geplant |
 | 3.6 | Abrechnungstracking, ohne Rechnungsstellung | Geplant |
 | 3.7 | Lieferscheine mit PDF-Ausgabe (Liefernachweise) | Geplant |
@@ -496,6 +496,13 @@ Mobile, auf das Wesentliche reduzierte Oberfläche für Monteure: Zeiterfassung 
 - `/mobile/measurements` und `/mobile/measurements/{id}`: Übersicht ohne Beträge und derselbe Aufmaß-Editor wie im Büro (Positionen aus Auftragsgrundlage und Nachträgen, Mengen als Karten); ohne `commercial.read` liefert die API keine Preise. Anlegen über `CalightMeasurements.createForOrder` mit Auftragswahl bzw. vorbelegtem Auftrag (`?create_for=`), Auftragsauswahl nur aus sichtbaren aktiven Aufträgen (`MobileWorkspace::selectableOrders`, OrderVisibility).
 - **Aufmaßnachweis ohne Preise** (`GET /api/measurements/{id}/proof-pdf`, `measurements.read`): gleiche Darstellung wie das Aufmaß-PDF ohne Summenteil; abgeschlossene Aufmaße werden je Stand archiviert (eigener Prüfwert). Das **bewertete Aufmaß** (`/pdf`) bleibt unverändert und erfordert `commercial.read`, auch bei direktem Aufruf.
 - Schnellzugriffe, „Mehr“, Auftragsaktionen und offene Vorgänge führen in die mobilen Ansichten.
+- Auftragswahl für neue Aufmaße kennzeichnet Aufträge ohne aufmaßfähige Positionen (`MobileWorkspace::selectableOrders(..., true)`, gleiche Positionsermittlung wie die Aufmaße) und bietet sie nicht zur Auswahl an; der Server prüft beim Anlegen weiterhin selbst.
+
+### Abschluss Monteurs-Frontend
+
+Funktionsumfang: Anmeldung und Oberflächenwahl, Startseite, Aufträge mit Sichtbarkeit und Zuordnung, persönliche Zeiterfassung mit Abwesenheiten, Reisekosten und Einreichung, Tagesberichte, Rapporte mit Korrektur und Kundenunterschrift, Materialbedarf, Aufmaße mit preisfreiem Nachweis, eigene Nachweise und historische Dokumente – jeweils über dieselben Dienste, API-Regeln, Rechte und Modulprüfungen wie die Büroansicht. PWA: Manifest mit Start und Scope `/mobile/`, Icons, `standalone`, Service Worker ohne Zwischenspeicher (nur Offline-Hinweis), mobile Seiten `Cache-Control: no-store`. Anmeldung (`/login`) liegt außerhalb des Scopes und öffnet sich in installierten Apps mit Browserleiste; iOS führt für installierte Web-Apps eine eigene Sitzung (erneute Anmeldung nötig).
+
+Offen (nicht Teil des Monteurs-Frontends): Offline-Erfassung/Synchronisation, Push, native Apps, Einsatzplanung, mobile Dokumentenübersicht (Monteure haben kein `documents.read`), artikelbezogene Materialpositionen.
 
 - **Bewusst noch nicht:** Offline-Erfassung/IndexedDB/Synchronisation, Push, native Apps und Einsatzplanung. Die Dokumentenübersicht öffnet mobil weiterhin die Standardansicht. (Mitarbeiterzuordnung zu Aufträgen siehe „Auftragssichtbarkeit für Monteure“.)
 

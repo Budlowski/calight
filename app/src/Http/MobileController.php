@@ -105,7 +105,7 @@ final readonly class MobileController
             'filters' => MobileWorkspace::MEASUREMENT_FILTERS,
             'canCreate' => Session::can('measurements.write'),
             'createFor' => $this->createFor($request),
-            'orderOptions' => Session::can('measurements.write') ? $this->workspace->selectableOrders($actor) : [],
+            'orderOptions' => Session::can('measurements.write') ? $this->workspace->selectableOrders($actor, true) : [],
         ])));
         $router->add('GET', '/mobile/measurements/{id}', fn (Request $request, array $parameters): Response => $this->page(fn (): Response => $this->render('measurements/show', [
             'navigation' => 'more', 'measurementId' => (string) $parameters['id'], 'mobile' => true,

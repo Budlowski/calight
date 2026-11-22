@@ -25,15 +25,24 @@
    * sichtbaren Aufträge; Suche über das gemeinsame Suchfeld. Liefert die ID oder "".
    */
   async function chooseOrder(title) {
-    if (!orderOptions.length) {
-      Calight.notify(message, "Für Sie ist derzeit kein aktiver Auftrag verfügbar.", "warning");
+    // Aufmaß: Aufträge ohne aufmaßfähige Positionen (Kennzeichen vom Server) sind nicht wählbar und
+    // werden mit Grund darunter genannt. Der Server prüft beim Anlegen zusätzlich.
+    const selectable = orderOptions.filter((order) => order.measurable !== false);
+    const excluded = orderOptions.filter((order) => order.measurable === false);
+    if (!selectable.length) {
+      Calight.notify(message, excluded.length
+        ? "Keiner Ihrer aktiven Aufträge hat aufmaßfähige Leistungspositionen (z. B. Regieaufträge ohne angenommenen Nachtrag)."
+        : "Für Sie ist derzeit kein aktiver Auftrag verfügbar.", "warning");
       return "";
     }
     const form = document.createElement("form");
     form.className = "admin-form";
     form.noValidate = true;
-    form.innerHTML = `<label><span class="field-label">Auftrag <span aria-hidden="true">*</span></span><select name="orderId" required><option value="">Auftrag wählen …</option>${orderOptions
-      .map((order) => `<option value="${Calight.esc(order.id)}">${Calight.esc(order.label)}</option>`).join("")}</select></label>`;
+    form.innerHTML = `<label><span class="field-label">Auftrag <span aria-hidden="true">*</span></span><select name="orderId" required><option value="">Auftrag wählen …</option>${selectable
+      .map((order) => `<option value="${Calight.esc(order.id)}">${Calight.esc(order.label)}</option>`).join("")}</select></label>
+      ${excluded.length ? `<details class="field-hint mobile-excluded-orders"><summary>${excluded.length} ${excluded.length === 1 ? "Auftrag" : "Aufträge"} ohne aufmaßfähige Positionen</summary>
+        <p>Nur Aufträge mit verbindlichen Leistungspositionen (Auftragsgrundlage oder angenommener Nachtrag) können aufgemessen werden.</p>
+        <ul>${excluded.map((order) => `<li>${Calight.esc(order.label)}</li>`).join("")}</ul></details>` : ""}`;
     Calight.searchableSelect(form.elements.orderId, { placeholder: "Nummer, Bezeichnung oder Kunde …" });
     let chosen = "";
     const confirmed = await CalightModal.open({
@@ -107,7 +116,10 @@
     const url = new URL(location.href);
     url.searchParams.delete("create_for");
     history.replaceState(null, "", url.pathname + url.search);
-    if (kind === "measurement") {
+    const preset = orderOptions.find((order) => order.id === orderId);
+    if (kind === "measurement" && preset?.measurable === false) {
+      Calight.notify(message, "Dieser Auftrag hat keine aufmaßfähigen Leistungspositionen (z. B. Regieauftrag ohne angenommenen Nachtrag). Ein Aufmaß ist nicht möglich.", "warning");
+    } else if (kind === "measurement") {
       // Aufmaß: Anlage erst nach Bestätigung (kein Anlegen allein durch Seitenaufruf).
       CalightModal.confirm({ title: "Aufmaß anlegen", content: `Neues Aufmaß für ${labelOf(orderId) || "diesen Auftrag"} anlegen?`, confirmLabel: "Anlegen" })
         .then((ok) => { if (ok) open(orderId); });
