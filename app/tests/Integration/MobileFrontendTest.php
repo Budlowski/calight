@@ -176,7 +176,7 @@ final class MobileFrontendTest extends TestCase
         mkdir($tmp, 0770, true);
         try {
             $pdo = ConnectionFactory::create($tmp . '/db.sqlite');
-            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate();
+            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate(); self::useReleasedOrderVisibility($pdo);
             $now = '2026-11-20T08:00:00Z';
             $customer = Uuid::v4();
             $contact = Uuid::v4();

@@ -79,7 +79,7 @@ final readonly class TimeTrackingService
                 'id' => $employee['id'], 'name' => $employee['display_name'], 'number' => $employee['personnel_number'], 'active' => (bool) $employee['active'],
             ], $this->times->employees()) : [],
             'orders' => $orders = array_map(static fn (array $order): array => ['id' => $order['id'], 'orderNumber' => $order['order_number'], 'title' => $order['title']],
-                $this->times->orders(!$this->releasedAll($actor))),
+                $this->times->orders($this->releasedAll($actor) ? null : (string) $actor['id'])),
             // Gemeinsames Suchfeld „Auftrag / Kostenstelle“ (Aufträge mit den bestehenden Freigaberegeln).
             'costTargets' => $this->targets?->options($orders) ?? array_map(static fn (array $order): array => ['type' => 'order', 'id' => $order['id'], 'number' => $order['orderNumber'],
                 'label' => $order['title'], 'active' => true], $orders),
@@ -1183,7 +1183,8 @@ final readonly class TimeTrackingService
             return $id;
         }
         $order = $this->times->order($id) ?? throw new DocumentValidationException(['Der Auftrag wurde nicht gefunden.']);
-        if ($order['status'] === 'invoiced' || (!$this->releasedAll($actor) && $order['status'] === 'open')) {
+        // Neu wählbar nur nicht abgerechnete; Monteure zusätzlich nur für sie sichtbare Aufträge (OrderVisibility).
+        if ($order['status'] === 'invoiced' || (!$this->releasedAll($actor) && !$this->times->orderVisible($id, $actor))) {
             throw new DocumentValidationException(['Dieser Auftrag steht für die Zeiterfassung nicht zur Verfügung.']);
         }
         return $id;
@@ -1199,7 +1200,7 @@ final readonly class TimeTrackingService
         return $targets->costCenter($value, $orderId, $current, static fn (string $message): DocumentValidationException => new DocumentValidationException([$message]));
     }
 
-    /** Büro sieht alle offenen Aufträge, Techniker nur freigegebene (wie in den Fachmodulen). @param array<string,mixed> $actor */
+    /** Büro sieht alle nicht abgerechneten Aufträge, Monteure nur für sie sichtbare (OrderVisibility). @param array<string,mixed> $actor */
     private function releasedAll(array $actor): bool
     {
         return $this->can($actor, 'timesheet.manage') || $this->can($actor, 'orders.write');

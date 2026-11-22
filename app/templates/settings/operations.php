@@ -2,7 +2,7 @@
 <div class="admin-shell">
 <?php $adminArea = 'settings'; $adminActive = 'work-tracking'; require __DIR__ . '/../partials/admin-nav.php'; ?>
 <div class="admin-content">
-<div id="operations-settings-app" data-csrf="<?= $escape($csrfToken) ?>">
+<div id="operations-settings-app" data-csrf="<?= $escape($csrfToken) ?>" data-groups="time,limits,travel">
     <div class="page-heading settings-heading"><div><h1>Arbeitserfassung</h1><p class="muted">Zeiterfassung, Arbeitszeitgrenzwerte, Einreichungsrhythmus und Reisekosten für alle Benutzer. Änderungen verändern keine bestehenden Buchungen oder Berichte.</p></div><button class="button" type="button" data-save data-shortcut-save data-icon="save">Speichern</button></div>
     <div class="notice" data-message role="status" hidden></div>
     <p class="muted operations-dirty" data-dirty-state aria-live="polite"></p>

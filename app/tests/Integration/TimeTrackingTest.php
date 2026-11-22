@@ -476,8 +476,8 @@ final class TimeTrackingTest extends TestCase
             }
             $hashes = $pdo->query('SELECT id, submitted_sha256 FROM work_reports ORDER BY id')->fetchAll();
 
-            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate();
-            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate();
+            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate(); self::useReleasedOrderVisibility($pdo);
+            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate(); self::useReleasedOrderVisibility($pdo);
 
             // Quellenwahl-Tabellen und Altfallspalten sind entfernt.
             $tables = $pdo->query("SELECT name FROM sqlite_master WHERE type = 'table'")->fetchAll(PDO::FETCH_COLUMN);
@@ -532,7 +532,7 @@ final class TimeTrackingTest extends TestCase
             }
             $pdo->prepare("INSERT INTO time_day_details (employee_id, work_date, assignment_kind, updated_by_user_id, updated_at) VALUES (:employee, '2026-11-16', 'external', :user, :now)")
                 ->execute(['employee' => $employee, 'user' => $tech['id'], 'now' => $now]);
-            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate();
+            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate(); self::useReleasedOrderVisibility($pdo);
 
             $service = new TimeTrackingService(new TimeTrackingRepository($pdo), new AttachmentStore($tmp));
             $day = $service->day(null, '2026-11-16', $tech);
@@ -555,7 +555,7 @@ final class TimeTrackingTest extends TestCase
         mkdir($tmp . '/documents', 0770, true);
         try {
             $pdo = ConnectionFactory::create($tmp . '/db.sqlite');
-            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate();
+            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate(); self::useReleasedOrderVisibility($pdo);
             $now = '2026-11-12T08:00:00Z';
             $customer = Uuid::v4();
             $pdo->prepare("INSERT INTO customers(id,customer_number,customer_type,company_name,created_at,updated_at) VALUES(:id,'K1','company','Matzko-Mack',:now,:now)")->execute(['id' => $customer, 'now' => $now]);

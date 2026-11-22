@@ -56,7 +56,7 @@ final readonly class MobileController
             } catch (OrderValidationException) {
                 return $this->render('mobile/error', ['title' => 'Nicht gefunden', 'navigation' => 'orders', 'message' => 'Der Auftrag wurde nicht gefunden.'], 404);
             } catch (AccessDeniedException) {
-                return $this->render('mobile/error', ['title' => 'Keine Berechtigung', 'navigation' => 'orders', 'message' => 'Dieser Auftrag ist für Sie nicht freigegeben.'], 403);
+                return $this->render('mobile/error', ['title' => 'Keine Berechtigung', 'navigation' => 'orders', 'message' => 'Dieser Auftrag ist für Sie nicht freigegeben oder Ihnen nicht zugeordnet. Eigene Berichte, Rapporte und Zeiten bleiben unter „Mehr“ bzw. „Zeiten“ erreichbar.'], 403);
             }
             return $this->render('mobile/order', ['title' => $detail['order']['number'], 'navigation' => 'orders', 'detail' => $detail]);
         }));

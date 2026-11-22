@@ -498,7 +498,7 @@ final class PurchaseOrderTest extends TestCase
                 ->execute(['id' => Uuid::v4(), 'order' => $order, 'user' => $user['id'], 'now' => $now]);
 
             // Upgrade auf den aktuellen Stand.
-            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate();
+            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate(); self::useReleasedOrderVisibility($pdo);
             $service = new PurchaseOrderService($pdo, new PurchaseOrderRepository($pdo), new NumberRangeRepository($pdo), new AttachmentStore($tmp),
                 new PurchaseOrderPdfService(new DocumentSettingsRepository($pdo)));
             $detail = $service->detail($order, $user);
@@ -564,7 +564,7 @@ final class PurchaseOrderTest extends TestCase
         mkdir($tmp . '/documents', 0770, true);
         try {
             $pdo = ConnectionFactory::create($tmp . '/db.sqlite');
-            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate();
+            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate(); self::useReleasedOrderVisibility($pdo);
             $now = '2026-11-12T08:00:00Z';
             $customer = Uuid::v4();
             $pdo->prepare("INSERT INTO customers(id,customer_number,customer_type,company_name,created_at,updated_at) VALUES(:id,'K1','company','Matzko-Mack',:now,:now)")

@@ -92,6 +92,17 @@ $openMaterial=count($materialRequests??[]);
             <?php endif; ?>
         </dl>
     </section>
+    <?php if ($canWriteOrders): // Sichtbarkeit für Monteure: Zuordnung nur über die Mitarbeiter-ID (Büro, orders.write). ?>
+    <section class="card order-employees-card" data-order-employees data-order-id="<?= $escape($order['id']) ?>">
+        <div class="section-heading"><div><h2>Zugeordnete Mitarbeiter</h2><span class="muted">Bestimmt, welche Monteure diesen Auftrag sehen (Einstellungen → Auftragsabwicklung). Monteure sehen Aufträge erst ab „In Bearbeitung“.</span></div></div>
+        <div class="notice" data-employees-message role="status" hidden></div>
+        <ul class="order-employee-list" data-employees-list><li class="muted">Wird geladen …</li></ul>
+        <form class="order-employee-add" data-employees-add hidden>
+            <label class="order-employee-select"><span class="visually-hidden">Mitarbeiter hinzufügen</span><select name="employeeId" required></select></label>
+            <button class="button button-light" type="submit" data-icon="plus">Zuordnen</button>
+        </form>
+    </section>
+    <?php endif; ?>
     <section class="card order-history-card"><div class="section-heading"><div><h2>Statusverlauf</h2><span class="muted">Neuester Eintrag zuerst</span></div></div><div class="order-status-history"><?php foreach($order['history'] as $history): ?><div class="order-status-entry"><span class="status-badge status-<?= $escape($history['new_status']) ?>"><?= $escape($labels[$history['new_status']]??$history['new_status']) ?></span><span><?= $history['previous_status']===null?'Auftrag angelegt':$escape(($labels[$history['previous_status']]??$history['previous_status']).' → '.($labels[$history['new_status']]??$history['new_status'])) ?></span><time datetime="<?= $escape($history['changed_at']) ?>"><?= $escape((new DateTimeImmutable($history['changed_at']))->format('d.m.Y H:i')) ?></time></div><?php endforeach; ?></div></section>
     </div>
 
@@ -207,4 +218,5 @@ $openMaterial=count($materialRequests??[]);
 <script src="/assets/material-requests.js?v=<?= $escape((string)filemtime(dirname(__DIR__,2).'/public/assets/material-requests.js')) ?>" defer></script>
 <script src="/assets/measurements.js?v=<?= $escape((string)filemtime(dirname(__DIR__,2).'/public/assets/measurements.js')) ?>" defer></script>
 <script src="/assets/work-reports.js?v=<?= $escape((string)filemtime(dirname(__DIR__,2).'/public/assets/work-reports.js')) ?>" defer></script>
+<script src="/assets/order-employees.js?v=<?= $escape((string) filemtime(dirname(__DIR__, 2) . '/public/assets/order-employees.js')) ?>" defer></script>
 <script src="/assets/order-detail.js?v=<?= $escape((string)filemtime(dirname(__DIR__,2).'/public/assets/order-detail.js')) ?>" defer></script>

@@ -695,6 +695,14 @@ Beide Verwaltungsbereiche verwenden eine gemeinsame vertikale Unternavigation (`
 - **Einstellungen:** Allgemein (Unternehmen, Steuern & Bank, Module) · Benutzerverwaltung (Benutzerkonten, Berechtigungen) · Dokumente (Dokumentlayout, Angebotsbedingungen) · Fachmodule (Arbeitserfassung). Nummernkreise sind noch nicht über die Oberfläche konfigurierbar und erscheinen daher nicht.
 - Bestehende Pfade bleiben gültig (`/master-data#suppliers`, `/settings#settings-finance`); `/settings/employees` leitet auf `/master-data/employees`, `/settings/operations` („Betrieb“) auf `/settings/work-tracking` weiter. Die Werte der früheren Seite „Betrieb“ sind unverändert gespeichert und stehen unter Arbeitserfassung.
 
+### Auftragssichtbarkeit für Monteure (Migration `0048`)
+
+- **Mitarbeiterzuordnung** (`order_employees`, n:m, nur über die Mitarbeiter-ID): auf der Büro-Auftragsdetailseite unter „Zugeordnete Mitarbeiter“ suchen, hinzufügen und entfernen (`orders.write`). Keine Gruppen, Einsatzplanung oder automatische Zuordnung aus Stundenbuchungen.
+- **Einstellung** „Sichtbare Aufträge für Monteure“ unter Einstellungen → Auftragsabwicklung (`orders.technician_visibility`, `operations.manage`): *Nur zugewiesene Aufträge* (Standard) oder *Alle für Monteure freigegebenen Aufträge*. Die Freigaberegel (nicht „Offen“) gilt immer zusätzlich. Installationen, die beim Update bereits Aufträge haben, erhalten durch die Migration „Alle freigegebenen“ – also exakt die bisherige Sichtbarkeit, nichts wird zusätzlich offengelegt; die Umstellung auf „Nur zugewiesene“ erfolgt bewusst nach dem Zuordnen.
+- **Zentrale Prüfung** `Infrastructure\Persistence\OrderVisibility` (SQL-Bedingung und Einzelprüfung) in Auftragsliste und -detail (Büro, mobil, API), Auswahllisten der Erfassungsformulare (Tagesbericht, Rapport, Zeiterfassung), Tagesberichten, Rapporten, Aufmaßen, Materialbedarf, Anhängen an Aufträgen und Auswertungen je Auftrag.
+- **Entzug einer Zuordnung:** löscht nichts; Zeiten, Nachweise und eigene Berichte, Rapporte und Aufmaße bleiben für den Monteur erreichbar, eigene Entwürfe lassen sich fertigstellen (oder vom Büro übernehmen), bestehende Buchungen behalten ihren Auftrag. Neue Vorgänge für den Auftrag sind gesperrt.
+- **Eigenständige Rapporte:** wird beim Einreichen ein Regieauftrag angelegt, wird der erstellende Mitarbeiter zugeordnet (gleiche Transaktion); die Freigabe (Status) bleibt Sache des Büros.
+
 ### Benutzer- und Mitarbeiterverwaltung (Migration `0047`)
 
 - **Benutzerkonten** (Einstellungen → Benutzerverwaltung, nur Administratoren, `users.manage`): Liste mit Suche, Anlegen mit Passwort, Bearbeiten von Benutzername, Anzeigename, Rolle (Administrator, Büro, Monteur), Aktivstatus, bevorzugter Oberfläche und Mitarbeiterzuordnung; Passwort administrativ zurücksetzen. Passwörter nur als `password_hash`; Benutzernamen eindeutig (ohne Groß-/Kleinschreibung). Konten werden nie gelöscht, nur deaktiviert.

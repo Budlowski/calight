@@ -258,7 +258,7 @@ final readonly class MobileWorkspace
         if ($filter !== 'all') {
             $query['status'] = $filter;
         }
-        $page = $this->orders->page($query, $this->isTechnician($actor));
+        $page = $this->orders->page($query, $actor);
         return [
             'items' => array_map($this->orderSummary(...), $page['items']),
             'total' => (int) $page['total'],
@@ -647,11 +647,6 @@ final readonly class MobileWorkspace
         }
     }
 
-    /** @param array<string,mixed> $actor */
-    private function isTechnician(array $actor): bool
-    {
-        return ($actor['role'] ?? '') === 'technician';
-    }
 
     /** @param list<mixed> $parts */
     private static function join(array $parts): string

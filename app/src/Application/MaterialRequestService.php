@@ -96,9 +96,9 @@ final readonly class MaterialRequestService
             if ($orderId !== '' && $orderId !== (string) ($report['order_id'] ?? '')) {
                 throw new DailyReportValidationException(['Der Tagesbericht gehört nicht zum angegebenen Auftrag.']);
             }
-            // Monteure: eigene Berichte oder Berichte freigegebener Aufträge (wie die Berichtsansicht).
+            // Monteure: eigene Berichte oder Berichte für sie sichtbarer Aufträge (wie die Berichtsansicht).
             if ($this->isTechnician($actor) && (string) $report['created_by_user_id'] !== (string) $actor['id']
-                && ($report['order_id'] === null || $report['order_status'] === 'open')) {
+                && ($report['order_id'] === null || !$this->orders->visibleTo((string) $report['order_id'], $actor))) {
                 throw new AccessDeniedException('reports.released.read');
             }
             // Aus dem Tagesbericht: dessen Kunde (optional) und Kostenziel (Auftrag oder Kostenstelle).
@@ -115,7 +115,7 @@ final readonly class MaterialRequestService
                 throw new DailyReportValidationException(['Auftrag wurde nicht gefunden.']);
             }
             if ($reportId === '') {
-                $this->assertOrderAccess((string) $order['status'], $actor);
+                $this->assertOrderAccess((string) $order['id'], $actor);
             }
             $customerId = (string) $order['customer_id'];
         } elseif (!$fromReport) {
@@ -206,9 +206,9 @@ final readonly class MaterialRequestService
         if ($row === null) {
             throw new DailyReportValidationException(['Materialanforderung wurde nicht gefunden.']);
         }
-        // Monteure: eigene Anforderungen immer, sonst nur zu freigegebenen Aufträgen.
+        // Monteure: eigene Anforderungen immer, sonst nur zu für sie sichtbaren Aufträgen.
         if ($this->isTechnician($actor) && (string) $row['created_by_user_id'] !== (string) $actor['id']) {
-            $this->assertOrderAccess((string) ($row['order_status'] ?? 'open'), $actor);
+            $this->assertOrderAccess((string) ($row['order_id'] ?? ''), $actor);
         }
         return $row;
     }
@@ -249,9 +249,10 @@ final readonly class MaterialRequestService
     }
 
     /** @param array<string,mixed> $actor */
-    private function assertOrderAccess(string $orderStatus, array $actor): void
+    private function assertOrderAccess(string $orderId, array $actor): void
     {
-        if ($this->isTechnician($actor) && $orderStatus === 'open') {
+        // Zentrale Sichtbarkeitsregel (OrderVisibility); ohne Auftrag für fremde Monteure nicht sichtbar.
+        if ($this->isTechnician($actor) && ($orderId === '' || !$this->orders->visibleTo($orderId, $actor))) {
             throw new AccessDeniedException('orders.released.read');
         }
     }

@@ -7,6 +7,7 @@
   const UNITS = { h: "Std.", min: "Min.", "€": "€", "%": "%", "€/km": "€/km" };
   /** Rein darstellende Gliederung; Schlüssel ohne Zuordnung erscheinen in „Weitere“. */
   const SUBGROUPS = {
+    orders: [["Sichtbarkeit", ["orders.technician_visibility"]]],
     time: [["Erfassung und Einreichung", ["time_tracking.times_optional", "time_tracking.submission_rhythm", "time_tracking.warnings_enabled"]]],
     limits: [
       ["Tägliche Arbeitszeit", ["time_limits.regular_daily_hours", "time_limits.max_daily_hours"]],
@@ -34,7 +35,9 @@
   const message = root.querySelector("[data-message]");
   const saveButton = root.querySelector("[data-save]");
   const dirtyState = root.querySelector("[data-dirty-state]");
-  const descriptions = { time: "Gilt für Rapporte, Tagesberichte und die Zeiterfassung.", limits: "Prüfgrenzwerte für Hinweise bei Einreichung und Festschreibung.", travel: "Rechnerische Referenzwerte für Verpflegung und Privat-Pkw." };
+  // Seite zeigt nur ihre Gruppen (Arbeitserfassung bzw. Auftragsabwicklung), gleiche API.
+  const onlyGroups = (root.dataset.groups || "").split(",").filter(Boolean);
+  const descriptions = { orders: "Gilt für mobile und Büroansicht, Listen, Suchen, Detailseiten und Schnittstellen.", time: "Gilt für Rapporte, Tagesberichte und die Zeiterfassung.", limits: "Prüfgrenzwerte für Hinweise bei Einreichung und Festschreibung.", travel: "Rechnerische Referenzwerte für Verpflegung und Privat-Pkw." };
   const changes = new Map();
   let current = null;
   let saving = false;
@@ -59,7 +62,7 @@
   function render(data) {
     current = data;
     const byKey = Object.fromEntries(data.settings.map((setting) => [setting.key, setting]));
-    box.innerHTML = Object.entries(data.groups).map(([group, title]) => {
+    box.innerHTML = Object.entries(data.groups).filter(([group]) => onlyGroups.length === 0 || onlyGroups.includes(group)).map(([group, title]) => {
       const settings = data.settings.filter((setting) => setting.group === group);
       if (!settings.length) return "";
       const used = new Set();

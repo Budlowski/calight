@@ -358,6 +358,7 @@ Verbindliche Regeln:
 - UI-Ausblendung ist Komfort, niemals Sicherheitsgrenze.
 - Fehlende Rechte liefern für APIs HTTP 403 mit „Keine Berechtigung“.
 - `ConfidentialDataFilter` und gezielte Response-Filter schützen Kosten, Deckungsbeiträge und Kalkulationsdetails. Neue Listen-/Export-APIs müssen auf Datenlecks geprüft werden.
+- Auftragssichtbarkeit für Monteure ausschließlich über `Infrastructure\Persistence\OrderVisibility` (SQL-Bedingung `condition()` bzw. `visible()`/`visibleIds()`, im Repository `OrderRepository::visibleTo`): freigegeben (nicht „Offen“) UND (Einstellung `orders.technician_visibility` = alle freigegebenen ODER Mitarbeiter über `order_employees` zugeordnet). Keine eigenen Status- oder Zuordnungsprüfungen in Diensten, Controllern oder JavaScript. Eigene Vorgänge (Ersteller) bleiben unabhängig davon erreichbar. Tests, die die bisherige Freigaberegel ohne Zuordnung prüfen, setzen `TestCase::useReleasedOrderVisibility`.
 - Verkaufsseitige Werte (Einzelpreise, Auftrags-/Nachtragssummen, Aufmaßbeträge, Auftragsgrundlage) nur mit `commercial.read` (Büro, Administratoren). Ohne dieses Recht filtern Controller die Antworten mit `ConfidentialDataFilter::salesValues` (Werte null, Summentabellen leer); PDFs mit Preisen erfordern das Recht in `AuthorizationPolicy`. Monteure sehen Leistungsbeschreibungen, Mengen, Einsatzorte und notwendige Kontaktdaten, nie Preise, Summen, Kostensätze oder Kalkulationsdaten.
 - Keine parallele improvisierte Rollenmatrix in Controller oder JavaScript anlegen.
 

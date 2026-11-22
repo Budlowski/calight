@@ -27,7 +27,9 @@ $listUrl = static function (array $changes) use ($list): string {
     <p class="mobile-result-count muted" role="status"><?= $escape($list['total'] === 1 ? '1 Auftrag' : $list['total'] . ' Aufträge') ?><?= $list['q'] !== '' ? ' für „' . $escape($list['q']) . '“' : '' ?></p>
 
     <?php if ($list['items'] === []): ?>
-        <p class="mobile-card empty-state"><?= $list['q'] !== '' ? 'Keine passenden Aufträge gefunden.' : 'Keine Aufträge in dieser Auswahl.' ?></p>
+        <p class="mobile-card empty-state"><?= $list['q'] !== '' ? 'Keine passenden Aufträge gefunden.' : (($currentUser['role'] ?? '') === 'technician'
+            ? 'Für Sie sind in dieser Auswahl keine Aufträge freigegeben oder Ihnen zugeordnet. Bitte im Büro melden, wenn ein Auftrag fehlt.'
+            : 'Keine Aufträge in dieser Auswahl.') ?></p>
     <?php else: ?>
         <ul class="mobile-list mobile-order-list">
             <?php foreach ($list['items'] as $order): ?>

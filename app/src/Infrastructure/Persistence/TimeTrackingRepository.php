@@ -280,11 +280,20 @@ final readonly class TimeTrackingRepository
         return $statement->fetch() ?: null;
     }
 
-    /** Auswählbare Aufträge (Techniker: nur freigegebene). @return list<array<string,mixed>> */
-    public function orders(bool $releasedOnly): array
+    /** Auswählbare Aufträge (Monteur: nur für ihn sichtbare, OrderVisibility). @return list<array<string,mixed>> */
+    public function orders(?string $technicianId): array
     {
-        $sql = "SELECT id, order_number, title, status FROM orders WHERE status <> 'invoiced'" . ($releasedOnly ? " AND status <> 'open'" : '');
-        return $this->pdo->query($sql . ' ORDER BY order_number DESC LIMIT 500')->fetchAll();
+        $sql = "SELECT o.id, o.order_number, o.title, o.status FROM orders o WHERE o.status <> 'invoiced'"
+            . ($technicianId !== null ? ' AND ' . OrderVisibility::condition('o', 'time_visibility') : '');
+        $statement = $this->pdo->prepare($sql . ' ORDER BY o.order_number DESC LIMIT 500');
+        $statement->execute($technicianId !== null ? ['time_visibility' => $technicianId] : []);
+        return $statement->fetchAll();
+    }
+
+    /** Darf der Monteur den Auftrag neu auswählen? @param array<string,mixed> $actor */
+    public function orderVisible(string $orderId, array $actor): bool
+    {
+        return OrderVisibility::visible($this->pdo, $orderId, $actor);
     }
 
     /** @return array<string,mixed>|null */

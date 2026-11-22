@@ -7,6 +7,7 @@ namespace App\Application;
 use App\Domain\Calculation\Decimal;
 use App\Domain\DailyReportValidationException;
 use App\Infrastructure\Persistence\AttachmentStore;
+use App\Infrastructure\Persistence\OrderVisibility;
 use App\Infrastructure\Persistence\DailyReportRepository;
 use App\Infrastructure\Persistence\DocumentSettingsRepository;
 use App\Infrastructure\Persistence\EmployeeRepository;
@@ -65,7 +66,10 @@ final readonly class DailyReportService
     /** @param array<string,mixed> $actor @return array<string,mixed> */
     public function referenceData(array $actor):array
     {
-        $technician=($actor['role']??'')==='technician';$orders=array_values(array_filter($this->orders->all(),static fn(array $o):bool=>!$technician||$o['status']!=='open'));$allEmployees=$this->employees->all();
+        $technician=($actor['role']??'')==='technician';$allOrders=$this->orders->all();
+        // Monteure: nur für sie sichtbare Aufträge (OrderVisibility).
+        $visibleOrders=OrderVisibility::visibleIds($this->pdo,$actor,array_map(static fn(array $o):string=>(string)$o['id'],$allOrders));
+        $orders=array_values(array_filter($allOrders,static fn(array $o):bool=>isset($visibleOrders[(string)$o['id']])));$allEmployees=$this->employees->all();
         $employees=array_values(array_filter($allEmployees,static fn(array $e):bool=>(int)$e['active']===1&&(!$technician||(string)$e['user_id']===(string)$actor['id'])));$filterEmployees=$technician?array_values(array_filter($allEmployees,static fn(array $e):bool=>(string)$e['user_id']===(string)$actor['id'])):$allEmployees;
         // Kunden und Projekte nur mit Nummer und Name (wie bei Rapporten), damit Monteure Berichte ohne Auftrag anlegen können.
         $customers=array_map(static fn(array $row):array=>['id'=>$row['id'],'customerNumber'=>$row['customer_number'],'name'=>$row['name']],$this->reports->activeCustomers());
@@ -667,12 +671,12 @@ final readonly class DailyReportService
      */
     private function assertReportAccess(array $report,array $actor):void{if(($actor['role']??'')==='technician'&&!$this->technicianMaySee($report,$actor))throw new AccessDeniedException('reports.released.read');}
     /** @param array<string,mixed> $report @param array<string,mixed> $actor */
-    private function technicianMaySee(array $report,array $actor):bool{return(string)$report['created_by_user_id']===(string)$actor['id']||($report['order_id']!==null&&($report['order_status']??'open')!=='open');}
+    private function technicianMaySee(array $report,array $actor):bool{return(string)$report['created_by_user_id']===(string)$actor['id']||($report['order_id']!==null&&$this->orders->visibleTo((string)$report['order_id'],$actor));}
     /** Kostenstelle prüfen (gemeinsame Regel in CostTargets). */
     private function costCenter(mixed $value,?string $orderId,?string $current):?string{return(new CostTargets($this->pdo))->costCenter($value,$orderId,$current,static fn(string $message):DailyReportValidationException=>new DailyReportValidationException([$message]));}
     /** @param array<string,mixed> $actor */ private function can(array $actor,string $permission):bool{return \App\Security\RolePermissions::allows((string)($actor['role']??''),$permission);}
     /** @param array<string,mixed> $resource @param array<string,mixed> $actor */
-    private function assertOrderAccess(array $resource,array $actor):void{if(($actor['role']??'')==='technician'&&($resource['order_status']??$resource['status']??'open')==='open')throw new AccessDeniedException('reports.released.read');}
+    private function assertOrderAccess(array $resource,array $actor):void{if(($actor['role']??'')==='technician'&&!$this->orders->visibleTo((string)($resource['id']??''),$actor))throw new AccessDeniedException('reports.released.read');}
     /** @param array<string,mixed> $report @param array<string,mixed> $actor */
     private function canEdit(array $report,array $actor):bool{return in_array($report['status']??'draft',['draft','reopened'],true)&&(($actor['role']??'')!=='technician'||(string)$report['created_by_user_id']===(string)$actor['id']);}
     /** @param list<array<string,mixed>> $employees @param array<string,mixed> $actor @return list<array<string,mixed>> */

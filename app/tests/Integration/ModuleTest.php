@@ -129,8 +129,9 @@ final class ModuleTest extends TestCase
             $settings->save(['time_limits.max_daily_hours' => '9'], $admin);
             $modules->setEnabled('work_tracking', false, true, $admin);
             $hidden = $settings->all($admin);
-            $this->assertSame([], $hidden['settings']);
-            $this->assertSame([], $hidden['groups']);
+            // Übrig bleibt nur die Auftragsabwicklung (Basissystem), keine Einstellung der Arbeitserfassung.
+            $this->assertSame(['orders.technician_visibility'], array_column($hidden['settings'], 'key'));
+            $this->assertSame(['orders'], array_keys($hidden['groups']));
             $this->assertThrows(DocumentValidationException::class, fn () => $settings->save(['time_limits.max_daily_hours' => '8'], $admin));
             $modules->setEnabled('work_tracking', true, false, $admin);
             $this->assertSame('9', $settings->values()['time_limits.max_daily_hours']);

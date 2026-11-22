@@ -9,6 +9,7 @@ use App\Domain\Calculation\PriceCalculator;
 use App\Domain\Order\OrderValidationException;
 use App\Http\AccessDeniedException;
 use App\Infrastructure\Persistence\AttachmentStore;
+use App\Infrastructure\Persistence\OrderVisibility;
 use App\Infrastructure\Persistence\NumberRangeRepository;
 use App\Infrastructure\Persistence\OrderRepository;
 use App\Infrastructure\Persistence\ReportTimeBookings;
@@ -73,8 +74,10 @@ final readonly class WorkReportService
      */
     public function referenceData(array $actor): array
     {
-        $orders = array_values(array_filter($this->reports->ordersForSelection(), fn (array $order): bool => in_array($order['status'], self::ASSIGNABLE_ORDER_STATUSES, true)
-            && (!$this->isTechnician($actor) || $order['status'] !== 'open')));
+        $candidates = array_values(array_filter($this->reports->ordersForSelection(), fn (array $order): bool => in_array($order['status'], self::ASSIGNABLE_ORDER_STATUSES, true)));
+        // Monteure: nur für sie sichtbare Aufträge (OrderVisibility).
+        $visible = OrderVisibility::visibleIds($this->pdo, $actor, array_map(static fn (array $order): string => (string) $order['id'], $candidates));
+        $orders = array_values(array_filter($candidates, static fn (array $order): bool => isset($visible[(string) $order['id']])));
         return [
             'customers' => array_map(static fn (array $row): array => ['id' => $row['id'], 'customerNumber' => $row['customer_number'], 'name' => $row['name']], $this->reports->activeCustomers()),
             'orders' => array_map(static fn (array $order): array => ['id' => $order['id'], 'orderNumber' => $order['order_number'], 'title' => $order['title'], 'customerId' => $order['customer_id']], $orders),
@@ -383,6 +386,12 @@ final readonly class WorkReportService
                 'description' => 'Automatisch beim Einreichen eines Rapports angelegt.',
                 'orderDate' => (string) $report['work_date'],
             ]);
+            // Der erstellende Mitarbeiter wird zugeordnet, damit der Auftrag für ihn erreichbar bleibt
+            // (gleiche Transaktion wie die Einreichung; ohne Mitarbeiterdatensatz keine Zuordnung).
+            $creatorEmployee = $this->orders->employeeIdForUser((string) $report['created_by_user_id']);
+            if ($creatorEmployee !== null) {
+                $this->orders->assignEmployee((string) $order['id'], $creatorEmployee, (string) ($actor['id'] ?? '') ?: null, Clock::now());
+            }
             return [(string) $order['id'], $order];
         }
         throw new OrderValidationException(['Bitte einen Auftrag auswählen oder einen Regieauftrag anlegen lassen.']);
@@ -1013,7 +1022,7 @@ final readonly class WorkReportService
         if ($order === null) {
             throw new OrderValidationException(['Auftrag wurde nicht gefunden.']);
         }
-        if ($this->isTechnician($actor) && $order['status'] === 'open') {
+        if (!$this->orders->visibleTo($orderId, $actor)) {
             throw new AccessDeniedException('orders.released.read');
         }
         return $order;
@@ -1026,9 +1035,9 @@ final readonly class WorkReportService
         if ($report === null) {
             throw new OrderValidationException(['Rapport wurde nicht gefunden.']);
         }
-        // Techniker: eigene Rapporte immer; fremde nur an freigegebenen Aufträgen, nie fremde eigenständige.
+        // Techniker: eigene Rapporte immer; fremde nur an für sie sichtbaren Aufträgen, nie fremde eigenständige.
         if ($this->isTechnician($actor) && (string) $report['created_by_user_id'] !== (string) ($actor['id'] ?? '')
-            && ($report['order_id'] === null || $report['order_status'] === 'open')) {
+            && ($report['order_id'] === null || !$this->orders->visibleTo((string) $report['order_id'], $actor))) {
             throw new AccessDeniedException('workreports.read.own');
         }
         return $report;

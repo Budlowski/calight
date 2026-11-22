@@ -181,7 +181,7 @@ final class MaterialRequestAndAttachmentTest extends TestCase
         mkdir($tmp, 0770, true);
         try {
             $pdo = ConnectionFactory::create($tmp . '/db.sqlite');
-            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate();
+            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate(); self::useReleasedOrderVisibility($pdo);
             $now = '2026-11-10T08:00:00Z';
             $customer = Uuid::v4();
             $pdo->prepare("INSERT INTO customers(id,customer_number,customer_type,company_name,created_at,updated_at) VALUES(:id,'K1','company','Kunde',:now,:now)")

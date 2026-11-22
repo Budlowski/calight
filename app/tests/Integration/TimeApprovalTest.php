@@ -671,7 +671,7 @@ final class TimeApprovalTest extends TestCase
                 VALUES (:employee, '2026-10-05', 1, 'arrival', 'Leipzig', '22:00', '06:30', '182.5', 'Anreise', :user, :now)")->execute(['employee' => $employee, 'user' => $user['id'], 'now' => $now]);
             $pdo->prepare("INSERT INTO time_day_details (employee_id, work_date, travel_day, updated_by_user_id, updated_at) VALUES (:employee, '2026-10-06', 'none', :user, :now)")
                 ->execute(['employee' => $employee, 'user' => $user['id'], 'now' => $now]);
-            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate();
+            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate(); self::useReleasedOrderVisibility($pdo);
             $this->assertSame([['2026-10-05', 'arrival', 510, 1, 'Leipzig'], ['2026-10-06', 'none', null, 0, '']],
                 $pdo->query('SELECT work_date, travel_category, absence_minutes, overnight, location FROM time_day_details ORDER BY work_date')->fetchAll(PDO::FETCH_NUM));
             $this->assertSame([['2026-10-05', '182.5', 'Leipzig', 'Anreise']], $pdo->query('SELECT work_date, kilometers, route, purpose FROM time_private_trips')->fetchAll(PDO::FETCH_NUM));
@@ -703,7 +703,7 @@ final class TimeApprovalTest extends TestCase
         mkdir($tmp . '/documents', 0770, true);
         try {
             $pdo = ConnectionFactory::create($tmp . '/db.sqlite');
-            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate();
+            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate(); self::useReleasedOrderVisibility($pdo);
             $now = '2026-09-01T08:00:00Z';
             $customer = Uuid::v4();
             $pdo->prepare("INSERT INTO customers(id,customer_number,customer_type,company_name,created_at,updated_at) VALUES(:id,'K1','company','Matzko-Mack',:now,:now)")->execute(['id' => $customer, 'now' => $now]);

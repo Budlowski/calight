@@ -51,7 +51,7 @@ final readonly class MeasurementService
     public function page(array $parameters, array $actor): array
     {
         $query = ListQuery::fromArray($parameters, MeasurementRepository::LIST_SORTS, 'updated', MeasurementRepository::LIST_FILTERS);
-        $page = $this->measurements->page($query, $this->isTechnician($actor));
+        $page = $this->measurements->page($query, $this->isTechnician($actor) ? (string) $actor['id'] : null);
         $page['items'] = array_map(fn (array $row): array => $this->summary($row, $actor), $page['items']);
         return $page;
     }
@@ -576,7 +576,7 @@ final readonly class MeasurementService
         if ($order === null) {
             throw new OrderValidationException(['Auftrag wurde nicht gefunden.']);
         }
-        if ($this->isTechnician($actor) && $order['status'] === 'open') {
+        if (!$this->orders->visibleTo($orderId, $actor)) {
             throw new AccessDeniedException('orders.released.read');
         }
         return $order;
@@ -589,7 +589,9 @@ final readonly class MeasurementService
         if ($measurement === null) {
             throw new OrderValidationException(['Aufmaß wurde nicht gefunden.']);
         }
-        if ($this->isTechnician($actor) && $measurement['order_status'] === 'open') {
+        // Eigene Aufmaße bleiben erreichbar (auch nach Entzug der Zuordnung), fremde nur an sichtbaren Aufträgen.
+        if ($this->isTechnician($actor) && (string) $measurement['created_by_user_id'] !== (string) ($actor['id'] ?? '')
+            && !$this->orders->visibleTo((string) $measurement['order_id'], $actor)) {
             throw new AccessDeniedException('orders.released.read');
         }
         return $measurement;

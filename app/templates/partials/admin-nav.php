@@ -52,6 +52,7 @@ $groups = $adminArea === 'master-data'
             ['key' => 'terms', 'label' => 'Angebotsbedingungen', 'href' => '/settings#settings-terms', 'settingsTab' => 'terms', 'visible' => $can('settings.manage')],
         ],
         'Fachmodule' => [
+            ['key' => 'orders', 'label' => 'Auftragsabwicklung', 'href' => '/settings/orders', 'visible' => $can('operations.manage')],
             ['key' => 'work-tracking', 'label' => 'Arbeitserfassung', 'href' => '/settings/work-tracking', 'visible' => $can('operations.manage') && $moduleEnabled('work_tracking')],
         ],
     ];

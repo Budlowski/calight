@@ -39,7 +39,9 @@ final readonly class WorkReportRepository
         $page = (new Paginator($this->pdo))
             ->search($query, ['w.report_number', 'w.description', 'w.contact_person', 'w.work_location', 'o.order_number', 'o.title', self::CUSTOMER_NAME, 'c.customer_number', 'u.display_name']);
         if ($technicianId !== null) {
-            $page->where("w.created_by_user_id = :work_technician OR (o.id IS NOT NULL AND o.status <> 'open')", ['work_technician' => $technicianId]);
+            // Eigene Rapporte immer, fremde nur an für den Monteur sichtbaren Aufträgen (OrderVisibility).
+            $page->where('w.created_by_user_id = :work_technician OR (o.id IS NOT NULL AND ' . OrderVisibility::condition('o', 'work_visibility') . ')',
+                ['work_technician' => $technicianId, 'work_visibility' => $technicianId]);
         }
         if ($query->filter('customer') !== null) {
             $page->where('w.customer_id = :work_customer', ['work_customer' => (string) $query->filter('customer')]);

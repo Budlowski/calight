@@ -18,12 +18,16 @@ final readonly class OrderController
  public function register(Router $r):void{
   $r->add('GET','/orders',fn():Response=>$this->page(fn()=> $this->view->render('orders/index',$this->service->referenceData())));
   $r->add('GET','/orders/{id}',fn(Request $q,array $p):Response=>$this->page(fn()=>$this->show((string)$p['id'])));
-  $r->add('GET','/api/orders',fn(Request $q):Response=>$this->api(fn()=>Response::json(['data'=>$this->visible($this->service->page($this->listQuery($q->query),$this->technician()))])));
+  $r->add('GET','/api/orders',fn(Request $q):Response=>$this->api(fn()=>Response::json(['data'=>$this->visible($this->service->page($this->listQuery($q->query),Session::user()??[]))])));
   $r->add('POST','/api/orders',fn(Request $q):Response=>$this->mutation($q,fn($d)=>$this->service->createRegie($d),201));
   $r->add('POST','/api/offers/{id}/order',fn(Request $q,array $p):Response=>$this->mutation($q,fn()=> $this->service->createFromOffer($p['id']),201));
   $r->add('POST','/api/orders/{id}/change-orders',fn(Request $q,array $p):Response=>$this->mutation($q,fn($d)=>$this->service->createChangeOrder($p['id'],(string)($d['title']??'')),201));
   $r->add('POST','/api/change-orders/{id}/accept',fn(Request $q,array $p):Response=>$this->mutation($q,fn($d)=>$this->service->acceptChangeOrder($p['id'],(string)($d['expectedStatus']??''))));
   $r->add('PATCH','/api/orders/{id}',fn(Request $q,array $p):Response=>$this->mutation($q,fn($d)=>$this->service->updateDetails($p['id'],$d)));
+  // Mitarbeiterzuordnung (Sichtbarkeit für Monteure): lesen mit orders.read, ändern mit orders.write.
+  $r->add('GET','/api/orders/{id}/employees',fn(Request $q,array $p):Response=>$this->api(fn()=>Response::json(['data'=>$this->service->employees($p['id'],Session::user()??[])])));
+  $r->add('POST','/api/orders/{id}/employees',fn(Request $q,array $p):Response=>$this->mutation($q,fn($d)=>$this->service->assignEmployee($p['id'],(string)($d['employeeId']??''),true,Session::user()??[])));
+  $r->add('DELETE','/api/orders/{id}/employees/{employee}',fn(Request $q,array $p):Response=>$this->mutation($q,fn()=>$this->service->assignEmployee($p['id'],(string)$p['employee'],false,Session::user()??[])));
   $r->add('PATCH','/api/orders/{id}/status',fn(Request $q,array $p):Response=>$this->mutation($q,fn($d)=>$this->service->changeStatus($p['id'],(string)($d['expectedStatus']??''),(string)($d['status']??''))));
  }
  /**
@@ -66,5 +70,5 @@ final readonly class OrderController
  private function listQuery(array $query):array{if(!Session::can('commercial.read')&&($query['sort']??'')==='total')unset($query['sort'],$query['dir']);return$query;}
  /** @param array<string,mixed> $data @return array<string,mixed> */
  private function visible(array $data):array{return Session::can('commercial.read')?$data:ConfidentialDataFilter::salesValues($data);}
- private function technician():bool{return(Session::user()['role']??'')==='technician';}
+
 }

@@ -7,6 +7,7 @@ namespace App\Application;
 use App\Domain\Document\DocumentValidationException;
 use App\Http\AccessDeniedException;
 use App\Infrastructure\Persistence\AttachmentRepository;
+use App\Infrastructure\Persistence\OrderVisibility;
 use App\Infrastructure\Persistence\AttachmentStore;
 use App\Infrastructure\Persistence\DocumentRepository;
 use App\Security\RolePermissions;
@@ -318,7 +319,7 @@ final readonly class DocumentService
             if ($target === null) {
                 continue;
             }
-            if (!$this->canReadTarget($actor, $type, $target)) {
+            if (!$this->canReadTarget($actor, $type, $target + ['id' => $id])) {
                 return null;
             }
             $result[] = $target + ['type' => $type, 'id' => $id, 'canWrite' => $this->can($actor, self::WRITE[$type])];
@@ -332,8 +333,8 @@ final readonly class DocumentService
         if (!$this->can($actor, self::READ[$type] ?? '')) {
             return false;
         }
-        // Wie in den Fachmodulen: Techniker sehen nur freigegebene Aufträge.
-        return !($type === 'order' && ($actor['role'] ?? '') === 'technician' && $target['status'] === 'open');
+        // Wie in den Fachmodulen: Monteure sehen nur für sie sichtbare Aufträge (OrderVisibility).
+        return !($type === 'order' && !OrderVisibility::visible($this->pdo, (string) $target['id'], $actor));
     }
 
     // -------------------------------------------------------------------------
@@ -474,7 +475,7 @@ final readonly class DocumentService
                 throw new AccessDeniedException(self::WRITE[$type]);
             }
             $object = $this->attachments->target($type, $id) ?? throw new DocumentValidationException(['Das zugeordnete Objekt wurde nicht gefunden.']);
-            if (!$this->canReadTarget($actor, $type, $object)) {
+            if (!$this->canReadTarget($actor, $type, $object + ['id' => $id])) {
                 throw new AccessDeniedException(self::READ[$type]);
             }
             $result[$type . ':' . $id] = ['type' => $type, 'id' => $id];

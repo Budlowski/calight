@@ -37,7 +37,7 @@ final class PermissionsAndLocksTest extends TestCase
     {
         $root=dirname(__DIR__,2);$tmp=sys_get_temp_dir().'/calight-locks-'.bin2hex(random_bytes(6));mkdir($tmp,0770,true);
         try{
-            $pdo=ConnectionFactory::create($tmp.'/db.sqlite');(new Migrator($pdo,$root.'/migrations'))->migrate();$now=Clock::now();$admin=Uuid::v4();$office=Uuid::v4();$customer=Uuid::v4();$offer=Uuid::v4();
+            $pdo=ConnectionFactory::create($tmp.'/db.sqlite');(new Migrator($pdo,$root.'/migrations'))->migrate();self::useReleasedOrderVisibility($pdo);$now=Clock::now();$admin=Uuid::v4();$office=Uuid::v4();$customer=Uuid::v4();$offer=Uuid::v4();
             $insertUser=$pdo->prepare('INSERT INTO users(id,username,password_hash,display_name,role,active,created_at,updated_at) VALUES(:id,:username,\'hash\',:name,:role,1,:now,:now)');
             $insertUser->execute(['id'=>$admin,'username'=>'admin','name'=>'Admin','role'=>'admin','now'=>$now]);$insertUser->execute(['id'=>$office,'username'=>'office','name'=>'Büro','role'=>'office','now'=>$now]);
             $pdo->prepare("INSERT INTO customers(id,customer_number,customer_type,company_name,created_at,updated_at) VALUES(:id,'10003','company','Kunde',:now,:now)")->execute(['id'=>$customer,'now'=>$now]);

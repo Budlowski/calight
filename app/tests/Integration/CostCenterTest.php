@@ -390,7 +390,7 @@ final class CostCenterTest extends TestCase
             $pdo->prepare("INSERT INTO time_entries(id,employee_id,work_date,start_time,end_time,net_minutes,activity,order_id,created_by_user_id,created_at,updated_by_user_id,updated_at)
                 VALUES('t1',:employee,'2026-01-05','08:00','12:00',240,'work',:order,:user,:now,:user,:now)")->execute(['employee' => $employee, 'order' => $order, 'user' => $user['id'], 'now' => $now]);
 
-            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate();
+            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate(); self::useReleasedOrderVisibility($pdo);
             $this->assertSame([['a1', $order, null, '60.00']], $pdo->query('SELECT id, order_id, cost_center_id, amount FROM purchase_order_allocations')->fetchAll(PDO::FETCH_NUM), 'Kostenverteilung erhalten.');
             $this->assertSame([$order, null], $pdo->query("SELECT order_id, cost_center_id FROM purchase_orders WHERE id = " . $pdo->quote($purchase))->fetch(PDO::FETCH_NUM));
             $this->assertSame([$order, null], $pdo->query("SELECT order_id, cost_center_id FROM time_entries WHERE id = 't1'")->fetch(PDO::FETCH_NUM));
@@ -420,7 +420,7 @@ final class CostCenterTest extends TestCase
         mkdir($tmp . '/documents', 0770, true);
         try {
             $pdo = ConnectionFactory::create($tmp . '/db.sqlite');
-            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate();
+            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate(); self::useReleasedOrderVisibility($pdo);
             $now = '2026-11-12T08:00:00Z';
             $customer = Uuid::v4();
             $pdo->prepare("INSERT INTO customers(id,customer_number,customer_type,company_name,created_at,updated_at) VALUES(:id,'K1','company','Matzko-Mack',:now,:now)")->execute(['id' => $customer, 'now' => $now]);

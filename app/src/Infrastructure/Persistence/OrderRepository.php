@@ -13,17 +13,17 @@ final readonly class OrderRepository
     public const LIST_FILTERS = ['status', 'type'];
 
     /**
-     * @param bool $releasedOnly Techniker sehen nur freigegebene Aufträge (nicht „Offen“).
+     * @param string|null $technicianId Monteur: nur für ihn sichtbare Aufträge (OrderVisibility).
      * @return array{items:list<array<string,mixed>>,total:int,page:int,perPage:int,pageCount:int,sort:string,dir:string}
      */
-    public function page(ListQuery $query, bool $releasedOnly): array
+    public function page(ListQuery $query, ?string $technicianId): array
     {
         $customer = "CASE WHEN c.customer_type='company' THEN c.company_name ELSE trim(c.first_name || ' ' || c.last_name) END";
         $sourceNumber = 'COALESCE(ofr.offer_number, root.offer_number)';
         $page = (new Paginator($this->pdo))
             ->search($query, ['o.order_number', 'o.title', $customer, 'c.customer_number', 'p.name', 'p.project_number', $sourceNumber]);
-        if ($releasedOnly) {
-            $page->where("o.status <> 'open'");
+        if ($technicianId !== null) {
+            $page->where(OrderVisibility::condition('o', 'order_visibility'), ['order_visibility' => $technicianId]);
         }
         if (in_array($query->filter('status'), ['open', 'in_progress', 'completed', 'invoiced'], true)) {
             $page->where('o.status = :order_status', ['order_status' => (string) $query->filter('status')]);
@@ -109,6 +109,47 @@ final readonly class OrderRepository
             ],
             'contacts' => $contacts->fetchAll(),
         ];
+    }
+
+    /** Auftrag für den Benutzer sichtbar (OrderVisibility)? @param array<string,mixed> $actor */
+    public function visibleTo(string $orderId, array $actor): bool
+    {
+        return OrderVisibility::visible($this->pdo, $orderId, $actor);
+    }
+
+    /** Zugeordnete Mitarbeiter eines Auftrags. @return list<array<string,mixed>> */
+    public function assignedEmployees(string $orderId): array
+    {
+        $statement = $this->pdo->prepare('SELECT e.id, e.display_name, e.personnel_number, e.active, e.user_id, oe.assigned_at, u.display_name AS assigned_by_name
+            FROM order_employees oe JOIN employees e ON e.id = oe.employee_id LEFT JOIN users u ON u.id = oe.assigned_by_user_id
+            WHERE oe.order_id = :order ORDER BY e.display_name COLLATE NOCASE, e.id');
+        $statement->execute(['order' => $orderId]);
+        return $statement->fetchAll();
+    }
+
+    /** Zuordnung anlegen (idempotent). */
+    public function assignEmployee(string $orderId, string $employeeId, ?string $userId, string $now): bool
+    {
+        $statement = $this->pdo->prepare('INSERT OR IGNORE INTO order_employees (order_id, employee_id, assigned_by_user_id, assigned_at) VALUES (:order, :employee, :user, :now)');
+        $statement->execute(['order' => $orderId, 'employee' => $employeeId, 'user' => $userId, 'now' => $now]);
+        return $statement->rowCount() === 1;
+    }
+
+    /** Zuordnung entfernen; Zeiten, Berichte und andere Vorgänge bleiben unberührt. */
+    public function removeEmployee(string $orderId, string $employeeId): bool
+    {
+        $statement = $this->pdo->prepare('DELETE FROM order_employees WHERE order_id = :order AND employee_id = :employee');
+        $statement->execute(['order' => $orderId, 'employee' => $employeeId]);
+        return $statement->rowCount() === 1;
+    }
+
+    /** Mitarbeiter-ID zu einem Benutzerkonto (nur über employees.user_id). */
+    public function employeeIdForUser(string $userId): ?string
+    {
+        $statement = $this->pdo->prepare('SELECT id FROM employees WHERE user_id = :user');
+        $statement->execute(['user' => $userId]);
+        $id = $statement->fetchColumn();
+        return $id === false ? null : (string) $id;
     }
 
  /** @return list<array<string,mixed>> */ public function history(string $id):array{$s=$this->pdo->prepare('SELECT * FROM order_status_history WHERE order_id=:id ORDER BY changed_at DESC');$s->execute(['id'=>$id]);return$s->fetchAll();}

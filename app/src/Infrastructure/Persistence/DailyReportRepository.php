@@ -32,7 +32,9 @@ final readonly class DailyReportRepository
         $page = (new Paginator($this->pdo))
             ->search($query, ['o.order_number', 'o.title', 'cc.number', 'cc.name', $customer, 'c.customer_number', 'p.project_number', 'p.name', 'r.title', 'r.activities', $employeeNames]);
         if ($technicianId !== null) {
-            $page->where("(r.created_by_user_id = :report_technician OR (r.order_id IS NOT NULL AND o.status <> 'open'))", ['report_technician' => $technicianId]);
+            // Eigene Berichte immer, fremde nur an für den Monteur sichtbaren Aufträgen (OrderVisibility).
+            $page->where('(r.created_by_user_id = :report_technician OR (r.order_id IS NOT NULL AND ' . OrderVisibility::condition('o', 'report_visibility') . '))',
+                ['report_technician' => $technicianId, 'report_visibility' => $technicianId]);
         }
         if ($query->filter('customer') !== null) {
             $page->where('r.customer_id = :report_customer', ['report_customer' => (string) $query->filter('customer')]);

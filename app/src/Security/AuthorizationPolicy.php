@@ -31,7 +31,7 @@ final class AuthorizationPolicy
         // Benutzerverwaltung: Benutzerkonten und Berechtigungsübersicht nur für Administratoren.
         if ($path === '/settings/users' || $path === '/settings/permissions') return ['users.manage'];
         // Betriebseinstellungen (Einstellungen → Arbeitserfassung): nur Administratoren.
-        if ($path === '/settings/operations' || $path === '/settings/work-tracking' || str_starts_with($path, '/api/operational-settings')) return ['operations.manage'];
+        if ($path === '/settings/operations' || $path === '/settings/work-tracking' || $path === '/settings/orders' || str_starts_with($path, '/api/operational-settings')) return ['operations.manage'];
         // Modulverwaltung (Einstellungen → Module): global für den Betrieb, nur Administratoren.
         if ($path === '/settings/modules' || $path === '/api/modules' || str_starts_with($path, '/api/modules/')) return ['operations.manage'];
         if (str_starts_with($path, '/daily-reports') || str_starts_with($path, '/api/daily-reports')) return [$write ? 'reports.write' : 'reports.read'];

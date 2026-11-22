@@ -26,6 +26,7 @@ use PDO;
 final readonly class OperationalSettingsService
 {
     public const GROUPS = [
+        'orders' => 'Auftragssichtbarkeit für Monteure',
         'time' => 'Zeiterfassung',
         'limits' => 'Arbeitszeitgrenzwerte',
         'travel' => 'Reisekosten',
@@ -33,6 +34,7 @@ final readonly class OperationalSettingsService
 
     /** Modulzugehörigkeit der Gruppen: Einstellungen deaktivierter Module werden ausgeblendet, aber nie gelöscht. */
     public const GROUP_MODULES = [
+        'orders' => 'core',
         'time' => 'work_tracking',
         'limits' => 'work_tracking',
         'travel' => 'work_tracking',
@@ -40,6 +42,14 @@ final readonly class OperationalSettingsService
 
     /** @var array<string,array<string,mixed>> */
     public const DEFINITIONS = [
+        // Gilt zusätzlich zur Freigaberegel (Monteure nie „Offen“); ausgewertet in SQL über
+        // OrderVisibility. Ohne gespeicherten Wert: nur zugewiesene Aufträge.
+        'orders.technician_visibility' => [
+            'group' => 'orders', 'type' => 'choice', 'default' => 'assigned',
+            'options' => ['assigned' => 'Nur zugewiesene Aufträge', 'released' => 'Alle für Monteure freigegebenen Aufträge'],
+            'label' => 'Sichtbare Aufträge für Monteure',
+            'description' => 'Freigegeben sind Aufträge ab „In Bearbeitung“. „Nur zugewiesene“ zeigt Monteuren zusätzlich nur Aufträge, denen ihr Mitarbeiter auf der Auftragsdetailseite zugeordnet ist. Eigene Berichte, Rapporte und Zeiten bleiben immer einsehbar.',
+        ],
         'time_tracking.times_optional' => [
             'group' => 'time', 'type' => 'bool', 'default' => true,
             'label' => 'Stundenerfassung ohne Uhrzeiten erlauben',

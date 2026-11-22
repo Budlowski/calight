@@ -149,16 +149,16 @@ final class ListViewTest extends TestCase
             $regie = $orderService->createRegie(['customerId' => $customer, 'title' => 'Störung', 'orderDate' => '2026-11-10']);
             $orderService->changeStatus($offerOrder['id'], 'open', 'in_progress');
 
-            $all = $orderService->page(['sort' => 'total', 'dir' => 'asc'], false);
+            $all = $orderService->page(['sort' => 'total', 'dir' => 'asc'], ['id' => 'office', 'role' => 'office']);
             $this->assertSame(2, $all['total']);
             $this->assertSame('300.00', $all['items'][0]['contractNetTotal']);
             $this->assertSame(null, $all['items'][1]['contractNetTotal'], 'Regieaufträge ohne Summe stehen am Ende.');
 
-            $technician = $orderService->page([], true);
+            $technician = $orderService->page([], ['id' => 'technician', 'role' => 'technician']);
             $this->assertSame(1, $technician['total'], 'Techniker sehen keine offenen Aufträge.');
             $this->assertSame($offerOrder['id'], $technician['items'][0]['id']);
-            $this->assertSame(1, $orderService->page(['type' => 'regie'], false)['total']);
-            $this->assertSame($regie['id'], $orderService->page(['q' => 'störung'], false)['items'][0]['id']);
+            $this->assertSame(1, $orderService->page(['type' => 'regie'], ['id' => 'office', 'role' => 'office'])['total']);
+            $this->assertSame($regie['id'], $orderService->page(['q' => 'störung'], ['id' => 'office', 'role' => 'office'])['items'][0]['id']);
         });
     }
 
@@ -228,7 +228,7 @@ final class ListViewTest extends TestCase
         mkdir($tmp, 0770, true);
         try {
             $pdo = ConnectionFactory::create($tmp . '/db.sqlite');
-            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate();
+            (new Migrator($pdo, dirname(__DIR__, 2) . '/migrations'))->migrate(); self::useReleasedOrderVisibility($pdo);
             $test($pdo, $tmp);
         } finally {
             $this->remove($tmp);

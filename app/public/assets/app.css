@@ -1697,3 +1697,8 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 .admin-content .page-heading p.muted { margin: 0; max-width: 75ch; }
 .admin-form input, .admin-form select, .admin-form textarea, .operations-control input, .operations-control select { font-weight: 400; }
 .operations-dirty { margin: 0 0 var(--space-3); font-size: var(--font-small); }
+/* Auftragsdetail: zugeordnete Mitarbeiter (Sichtbarkeit für Monteure). */
+.order-employee-list { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-2) 0 var(--space-3); padding: 0; list-style: none; }
+.order-employee { display: inline-flex; align-items: center; gap: var(--space-2); padding: 3px 4px 3px 10px; border: 1px solid var(--border); border-radius: 16px; background: #f7f9fb; }
+.order-employee-add { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.order-employee-select { flex: 1 1 260px; max-width: 420px; }

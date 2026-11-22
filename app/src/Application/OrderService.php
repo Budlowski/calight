@@ -6,6 +6,8 @@ use App\Http\AccessDeniedException;
 use App\Infrastructure\Persistence\NumberRangeRepository;
 use App\Infrastructure\Persistence\OfferRepository;
 use App\Infrastructure\Persistence\OrderRepository;
+use App\Infrastructure\Persistence\OrderVisibility;
+use App\Security\RolePermissions;
 use App\Support\Clock;
 use App\Support\ListQuery;
 use App\Support\Uuid;
@@ -21,8 +23,9 @@ final readonly class OrderService
  /** @return list<array<string,mixed>> */ public function overview(bool $releasedOnly=false):array{$items=array_map($this->map(...),$this->orders->all());return$releasedOnly?array_values(array_filter($items,static fn(array $order):bool=>$order['status']!=='open')):$items;}
  /** @return array<string,list<array<string,mixed>>> */ public function referenceData():array{return['customers'=>$this->pdo->query("SELECT id,customer_number,CASE WHEN customer_type='company' THEN company_name ELSE trim(first_name||' '||last_name) END name FROM customers WHERE active=1 ORDER BY name")->fetchAll(),'projects'=>$this->pdo->query('SELECT id,project_number,name,customer_id FROM projects WHERE status<>\'archived\' ORDER BY name')->fetchAll()];}
  /**
-  * Auftragsdetail mit der bestehenden Freigaberegel: Techniker sehen nur freigegebene Aufträge
-  * (nicht „Offen“). Gemeinsam von Büro- und mobiler Oberfläche genutzt.
+  * Auftragsdetail mit der zentralen Sichtbarkeitsregel (OrderVisibility): Monteure sehen nur
+  * freigegebene und – je nach Einstellung – ihnen zugeordnete Aufträge. Gemeinsam von Büro- und
+  * mobiler Oberfläche genutzt.
   *
   * @param array<string,mixed> $actor
   * @return array<string,mixed>
@@ -30,8 +33,47 @@ final readonly class OrderService
  public function readableDetail(string $id,array $actor):array
  {
   $order=$this->detail($id);
-  if(($actor['role']??'')==='technician'&&$order['status']==='open')throw new AccessDeniedException('orders.released.read');
+  if(!$this->orders->visibleTo($id,$actor))throw new AccessDeniedException('orders.released.read');
   return$order;
+ }
+ /**
+  * Zugeordnete Mitarbeiter eines Auftrags; mit orders.write zusätzlich die zuordenbaren aktiven
+  * Mitarbeiter. Zuordnung nur über die Mitarbeiter-ID.
+  *
+  * @param array<string,mixed> $actor
+  * @return array{assigned:list<array<string,mixed>>,available:list<array<string,mixed>>,canEdit:bool}
+  */
+ public function employees(string $id,array $actor):array
+ {
+  $this->readableDetail($id,$actor);
+  $canEdit=RolePermissions::allows((string)($actor['role']??''),'orders.write');
+  $map=static fn(array $row):array=>['id'=>$row['id'],'name'=>$row['display_name'],'personnelNumber'=>$row['personnel_number'],'active'=>(bool)$row['active'],
+   'hasLogin'=>$row['user_id']!==null,'assignedAt'=>$row['assigned_at']??null,'assignedByName'=>$row['assigned_by_name']??null];
+  $assigned=array_map($map,$this->orders->assignedEmployees($id));
+  $ids=array_column($assigned,'id');
+  $available=$canEdit?array_values(array_filter(array_map($map,$this->pdo->query('SELECT id,display_name,personnel_number,active,user_id FROM employees WHERE active=1 ORDER BY display_name COLLATE NOCASE,id')->fetchAll()),
+   static fn(array $employee):bool=>!in_array($employee['id'],$ids,true))):[];
+  return['assigned'=>$assigned,'available'=>$available,'canEdit'=>$canEdit];
+ }
+ /**
+  * Mitarbeiter zuordnen bzw. Zuordnung entfernen (orders.write). Entfernen löscht keine Zeiten,
+  * Berichte oder Entwürfe; eigene Vorgänge bleiben für den Mitarbeiter erreichbar.
+  *
+  * @param array<string,mixed> $actor
+  * @return array{assigned:list<array<string,mixed>>,available:list<array<string,mixed>>,canEdit:bool}
+  */
+ public function assignEmployee(string $id,string $employeeId,bool $assigned,array $actor):array
+ {
+  if(!RolePermissions::allows((string)($actor['role']??''),'orders.write'))throw new AccessDeniedException('orders.write');
+  if($this->orders->find($id)===null)throw new OrderValidationException(['Auftrag wurde nicht gefunden.']);
+  $employee=$this->row('employees',$employeeId)??throw new OrderValidationException(['Der Mitarbeiter wurde nicht gefunden.']);
+  if($assigned){
+   if(!(int)$employee['active'])throw new OrderValidationException(['Inaktive Mitarbeiter können nicht neu zugeordnet werden.']);
+   $this->orders->assignEmployee($id,$employeeId,(string)($actor['id']??'')?:null,Clock::now());
+  }else{
+   $this->orders->removeEmployee($id,$employeeId);
+  }
+  return$this->employees($id,$actor);
  }
  /** Einsatzort und Ansprechpartner eines Auftrags (ohne kaufmännische Werte). @return array<string,mixed> */
  public function executionContext(string $id):array{return$this->orders->executionContext($id);}
@@ -57,15 +99,16 @@ final readonly class OrderService
   $this->pdo->exec('BEGIN IMMEDIATE');try{$current=$this->offers->find($offerId);if($current===null||$current['status']!==$expectedStatus)throw new OrderValidationException(['Der Nachtragsstatus wurde zwischenzeitlich geändert.']);if(!$this->offers->changeStatus($offerId,$expectedStatus,'commissioned'))throw new OrderValidationException(['Der Nachtrag konnte nicht angenommen werden.']);$this->orders->addAcceptedAddendum(['id'=>Uuid::v4(),'order_id'=>$metadata['order_id'],'offer_revision_id'=>$offerId,'revision_root_id'=>$metadata['revision_root_id']??$offerId,'basis_json'=>$basis,'basis_sha256'=>hash('sha256',$basis),'net_total'=>$net,'accepted_at'=>Clock::now()]);$this->pdo->commit();return$this->detail((string)$metadata['order_id']);}catch(Throwable $e){if($this->pdo->inTransaction())$this->pdo->rollBack();if($e instanceof PDOException&&str_starts_with((string)$e->getCode(),'23'))throw new OrderValidationException(['Dieser Nachtrag oder eine andere Revision derselben Nachtragskette wurde bereits übernommen.']);throw$e;}
  }
  /**
-  * Seite der Auftragsübersicht; Techniker sehen nur freigegebene Aufträge.
+  * Seite der Auftragsübersicht; Monteure sehen nur für sie sichtbare Aufträge (OrderVisibility).
   *
   * @param array<string,mixed> $parameters URL-Parameter (q, status, type, sort, dir, page, per_page)
+  * @param array<string,mixed> $actor
   * @return array<string,mixed>
   */
- public function page(array $parameters, bool $releasedOnly): array
+ public function page(array $parameters, array $actor): array
  {
   $query = ListQuery::fromArray($parameters, OrderRepository::LIST_SORTS, 'updated', OrderRepository::LIST_FILTERS);
-  $page = $this->orders->page($query, $releasedOnly);
+  $page = $this->orders->page($query, OrderVisibility::restricted($actor) ? (string) ($actor['id'] ?? '') : null);
   $page['items'] = array_map(function (array $row): array {
    $item = $this->map($row);
    $item['contractNetTotal'] = $this->contractNetTotal($row['original_net_total'], (string) ($row['addenda_net_totals'] ?? ''));

@@ -33,7 +33,9 @@ final readonly class MaterialRequestRepository
         $page = (new Paginator($this->pdo))
             ->search($query, ['m.description', 'm.notes', 'o.order_number', 'o.title', self::CUSTOMER_NAME, 'u.display_name']);
         if ($technicianId !== null) {
-            $page->where("(m.created_by_user_id = :material_technician OR (m.order_id IS NOT NULL AND o.status <> 'open'))", ['material_technician' => $technicianId]);
+            // Eigene Anforderungen immer, übrige nur an für den Monteur sichtbaren Aufträgen (OrderVisibility).
+            $page->where('(m.created_by_user_id = :material_technician OR (m.order_id IS NOT NULL AND ' . OrderVisibility::condition('o', 'material_visibility') . '))',
+                ['material_technician' => $technicianId, 'material_visibility' => $technicianId]);
         }
         if ($query->filter('customer') !== null) {
             $page->where('m.customer_id = :material_customer', ['material_customer' => (string) $query->filter('customer')]);

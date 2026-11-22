@@ -26,15 +26,16 @@ final readonly class MeasurementRepository
     }
 
     /**
-     * @param bool $releasedOnly Techniker sehen nur Aufmaße freigegebener Aufträge.
+     * @param string|null $technicianId Techniker: eigene Aufmaße und solche für sie sichtbarer Aufträge (OrderVisibility).
      * @return array{items:list<array<string,mixed>>,total:int,page:int,perPage:int,pageCount:int,sort:string,dir:string}
      */
-    public function page(ListQuery $query, bool $releasedOnly): array
+    public function page(ListQuery $query, ?string $technicianId): array
     {
         $page = (new Paginator($this->pdo))
             ->search($query, ['m.measurement_number', 'm.title', 'o.order_number', 'o.title', self::CUSTOMER_NAME]);
-        if ($releasedOnly) {
-            $page->where("o.status <> 'open'");
+        if ($technicianId !== null) {
+            $page->where('(m.created_by_user_id = :measurement_technician OR ' . OrderVisibility::condition('o', 'measurement_visibility') . ')',
+                ['measurement_technician' => $technicianId, 'measurement_visibility' => $technicianId]);
         }
         if (in_array($query->filter('status'), ['draft', 'completed'], true)) {
             $page->where('m.status = :measurement_status', ['measurement_status' => (string) $query->filter('status')]);
