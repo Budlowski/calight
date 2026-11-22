@@ -1,6 +1,8 @@
 <?php $title = 'Kostenstellen'; $contentClass = 'content-wide'; ?>
+<div class="admin-shell">
+<?php $adminArea = 'master-data'; $adminActive = 'cost-centers'; require __DIR__ . '/../partials/admin-nav.php'; ?>
+<div class="admin-content">
 <div id="cost-centers-app" class="overview-page" data-csrf="<?= $escape($csrfToken) ?>">
-    <nav class="breadcrumb" aria-label="Brotkrümelnavigation"><ol><li><a href="/master-data">Stammdaten</a></li><li aria-current="page">Kostenstellen</li></ol></nav>
     <div class="page-heading">
         <div>
             <h1>Kostenstellen</h1>
@@ -15,5 +17,7 @@
     </div>
     <div class="overview-results" data-list aria-live="polite"><p class="empty-state">Kostenstellen werden geladen …</p></div>
     <p class="muted cost-center-note">Stunden aus der zentralen Zeiterfassung nach Buchungstag; Bestellungen nach Bestelldatum mit bekannten Ist-Kosten (bei Kostenverteilung nur der zugeordnete Betrag); Auslagen nach Datum. Keine Umlagen oder Zuschläge.</p>
+</div>
+</div>
 </div>
 <script src="/assets/cost-centers.js?v=<?= $escape((string) filemtime(dirname(__DIR__, 2) . '/public/assets/cost-centers.js')) ?>" defer></script>

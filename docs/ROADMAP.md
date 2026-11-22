@@ -425,7 +425,7 @@ Bestellungen sind **an Lieferanten gerichtete Beschaffungsdokumente**, keine Rec
 - **Rapport:** Stunden erscheinen sofort am Leistungsdatum (Entwurf als „Entwurf“ gekennzeichnet); das Einreichen erzeugt keine zweite Buchung. Korrekturentwürfe wirken nicht; beim Einreichen ersetzt die Korrektur atomar die Buchungen der Vorgängerfassung. Ergänzte Uhrzeiten werden nur bei eindeutig gleicher Position (Mitarbeiter, Datum, Dauer) übernommen. Ersetzte Fassungen bleiben vollständig erhalten.
 - **Tagesbericht:** Stunden erscheinen automatisch; Stundenkorrekturen am Bericht wirken sofort (ohne Differenzbuchung, mit Benutzer). Die Auftragszuordnung kann vom Büro gesetzt, geändert oder entfernt werden – die Stunden folgen (protokolliert). Die frühere separate „Stundenübernahme“ entfällt.
 - **Zeiterfassung:** Tag/Woche/Monat zeigen alle Herkünfte mit Kennzeichnung und Link zum Bericht. Für Berichtsbuchungen werden nur Beginn, Ende, Pause, Reisezeit und Einsatzart ergänzt; Ende − Beginn − Pause muss exakt der Berichtsdauer entsprechen (sonst eigener Zeitblock oder Berichtskorrektur). Manuelle Zeitblöcke wie bisher, ohne Uhrzeiten nur mit Dauer, wenn die Betriebseinstellung es erlaubt. Überschneidungsprüfung über alle Buchungen mit Uhrzeiten.
-- **Einstellungen → Betrieb** (nur Administratoren): „Stundenerfassung ohne Uhrzeiten erlauben“ (Standard: an). Aus: Stunden ohne Uhrzeiten zählen voll, sind aber „Uhrzeiten fehlen“; Auswertungen weisen sie gesondert aus.
+- **Einstellungen → Arbeitserfassung** (nur Administratoren): „Stundenerfassung ohne Uhrzeiten erlauben“ (Standard: an). Aus: Stunden ohne Uhrzeiten zählen voll, sind aber „Uhrzeiten fehlen“; Auswertungen weisen sie gesondert aus.
 - **Bereinigung (Migration `0038`):** Die für die Überführung eingeführte Altfallverwaltung und die frühere Quellenwahl (`time_source_choices`) wurden entfernt. **Rapporte, Tagesberichte und manuelle Zeiterfassung erzeugen gemeinsam genau eine zentrale Ist-Stundenbasis**; es gibt keine konkurrierenden Stundenquellen. Vorhandene Testbuchungen bleiben erhalten und zählen regulär.
 
 ## Phase 3.4.3 – Zeiterfassung (abgeschlossen, Migrationen `0032`, `0033`, `0034`; seit `0037` zentrale Stundenbasis)
@@ -689,6 +689,20 @@ Aktuell umgesetzt (nur implementierte, aktive und berechtigte Einträge; leere G
 - **Arbeitserfassung:** Zeiterfassung · Tagesberichte · Rapporte
 - **Beschaffung:** Bestellungen (Reiter „Bestellungen | Materialbedarf“; ohne Bestellrecht direkt „Materialbedarf“)
 - **Verwaltung:** Stammdaten · Einstellungen
+
+Beide Verwaltungsbereiche verwenden eine gemeinsame vertikale Unternavigation (`templates/partials/admin-nav.php`, auf kleinen Bildschirmen einklappbar; Einträge nur mit Recht und aktivem Modul):
+- **Stammdaten:** Kalkulation (Artikelstamm, Positionsstamm, Schlepptexte, Kategorien) · Organisation (Mitarbeiter, Kostenstellen) · Geschäftspartner (Lieferanten).
+- **Einstellungen:** Allgemein (Unternehmen, Steuern & Bank, Module) · Benutzerverwaltung (Benutzerkonten, Berechtigungen) · Dokumente (Dokumentlayout, Angebotsbedingungen) · Fachmodule (Arbeitserfassung). Nummernkreise sind noch nicht über die Oberfläche konfigurierbar und erscheinen daher nicht.
+- Bestehende Pfade bleiben gültig (`/master-data#suppliers`, `/settings#settings-finance`); `/settings/employees` leitet auf `/master-data/employees`, `/settings/operations` („Betrieb“) auf `/settings/work-tracking` weiter. Die Werte der früheren Seite „Betrieb“ sind unverändert gespeichert und stehen unter Arbeitserfassung.
+
+### Benutzer- und Mitarbeiterverwaltung (Migration `0047`)
+
+- **Benutzerkonten** (Einstellungen → Benutzerverwaltung, nur Administratoren, `users.manage`): Liste mit Suche, Anlegen mit Passwort, Bearbeiten von Benutzername, Anzeigename, Rolle (Administrator, Büro, Monteur), Aktivstatus, bevorzugter Oberfläche und Mitarbeiterzuordnung; Passwort administrativ zurücksetzen. Passwörter nur als `password_hash`; Benutzernamen eindeutig (ohne Groß-/Kleinschreibung). Konten werden nie gelöscht, nur deaktiviert.
+- **Sitzungen:** `users.session_version` wird bei Passwortwechsel und Deaktivierung erhöht; `Application::handle` beendet Sitzungen mit abweichender Version sofort (eigene Passwortänderung: aktuelle Sitzung bleibt).
+- **Schutzregeln:** letzter aktiver Administrator bleibt (Prüfung in der Transaktion); eigene Rolle und eigener Aktivstatus sind nicht änderbar; nur `users.manage` legt Konten an. Änderungen werden in `user_account_events` protokolliert (ohne Passwörter) und im Bearbeitungsdialog angezeigt.
+- **Berechtigungen:** Anzeige der festen Rollenrechte aus `RolePermissions` (`DESCRIPTIONS`), keine eigene Rechteverwaltung.
+- **Mitarbeiter** (Stammdaten → Organisation): kein Konto, vorhandenes Konto verknüpfen oder – mit `users.manage` – neues Konto in derselben Transaktion anlegen. Ein Konto gehört höchstens zu einem Mitarbeiter und umgekehrt (`UNIQUE employees.user_id`); keine Zuordnung über Namen. Mitarbeiter- und Benutzerdeaktivierung bleiben getrennt, mit Hinweis auf die jeweils andere Seite. Kostensätze wirken nur auf künftige Buchungen.
+- Die CLI `php bin/console user:create` bleibt für die Ersteinrichtung verfügbar.
 
 Kontakte und Kalender (Allgemein) sowie **Kaufmännisch** (Abrechnung, Nachkalkulation) erscheinen erst mit ihrer Implementierung. Lexware und weitere Integrationen gehören später unter Einstellungen.
 

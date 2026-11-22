@@ -1,22 +1,13 @@
 <?php $title='Einstellungen'; $contentClass='content-wide'; ?>
-<div id="settings-app" data-csrf="<?= $escape($csrfToken) ?>">
+<div id="settings-app" class="admin-shell" data-csrf="<?= $escape($csrfToken) ?>">
+<?php $adminArea = 'settings'; $adminActive = 'company'; require __DIR__ . '/../partials/admin-nav.php'; ?>
+<div class="admin-content">
     <div class="page-heading settings-heading">
-        <div><h1>Einstellungen</h1><p class="muted">Firmendaten und Darstellung der Angebotsdokumente zentral verwalten.</p></div>
+        <div><h1>Einstellungen</h1><p class="muted">Unternehmen, Steuern und Bank sowie Darstellung der Angebotsdokumente.</p></div>
         <button class="button" type="submit" form="settings-form" data-icon="save">Speichern</button>
     </div>
     <div id="settings-message" class="notice" role="status" hidden></div>
 
-    <nav class="tabs settings-tabs" aria-label="Einstellungsbereiche" role="tablist">
-        <button class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="settings-company" data-settings-tab="company">Firmendaten</button>
-        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="settings-finance" data-settings-tab="finance">Steuern &amp; Bank</button>
-        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="settings-document" data-settings-tab="document">Dokumentlayout</button>
-        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="settings-terms" data-settings-tab="terms">Angebotsbedingungen</button>
-        <a class="tab-button" href="/settings/employees" role="tab" aria-selected="false">Mitarbeiter</a>
-        <?php if (\App\Http\Session::can('operations.manage')): ?>
-        <?php if ($moduleEnabled('work_tracking')): ?><a class="tab-button" href="/settings/operations" role="tab" aria-selected="false">Betrieb</a><?php endif; ?>
-        <a class="tab-button" href="/settings/modules" role="tab" aria-selected="false">Module</a>
-        <?php endif; ?>
-    </nav>
 
     <form id="settings-form" class="settings-form">
         <section id="settings-company" class="tab-panel settings-panel" role="tabpanel" data-settings-panel="company">
@@ -128,5 +119,6 @@
             </div>
         </section>
     </form>
+</div>
 </div>
 <script src="/assets/settings.js?v=<?= $escape((string)filemtime(dirname(__DIR__,2).'/public/assets/settings.js')) ?>" defer></script>

@@ -30,6 +30,23 @@ final readonly class EmployeeRepository
         $s=$this->pdo->prepare('SELECT * FROM employees WHERE user_id=:id AND active=1');$s->execute(['id'=>$userId]);$row=$s->fetch();return is_array($row)?$row:null;
     }
 
+    /** Mitarbeiter eines Benutzerkontos unabhängig vom Aktivstatus. @return array<string,mixed>|null */
+    public function findAnyByUser(string $userId): ?array
+    {
+        $statement = $this->pdo->prepare('SELECT * FROM employees WHERE user_id = :id');
+        $statement->execute(['id' => $userId]);
+        $row = $statement->fetch();
+        return is_array($row) ? $row : null;
+    }
+
+    /** Benutzerkonto eines Mitarbeiters setzen oder lösen (UNIQUE auf user_id verhindert Doppelzuordnung). */
+    public function linkUser(string $employeeId, ?string $userId, string $now): bool
+    {
+        $statement = $this->pdo->prepare('UPDATE employees SET user_id = :user, updated_at = :now WHERE id = :id');
+        $statement->execute(['user' => $userId, 'now' => $now, 'id' => $employeeId]);
+        return $statement->rowCount() === 1;
+    }
+
     /** @param array<string,mixed> $data */
     public function insert(array $data):void
     {

@@ -196,7 +196,7 @@ php bin/console user:create buero "Büro" office
 php bin/console user:create monteur "Monteur" technician
 ```
 
-Die Rollen `admin`, `office` und `technician` verwenden feste Berechtigungsgruppen. Bestehende Konten werden bei der zugehörigen Migration als Administratoren übernommen. Benutzerstatus und Rolle können ohne zusätzliche Verwaltungsoberfläche über die geschützte Benutzer-API verwaltet werden.
+Die Rollen `admin`, `office` und `technician` verwenden feste Berechtigungsgruppen. Bestehende Konten werden bei der zugehörigen Migration als Administratoren übernommen. Nach der Ersteinrichtung verwalten Administratoren alle weiteren Benutzerkonten über **Einstellungen → Benutzerkonten** (Anlegen, Rolle, Aktivstatus, Passwort zurücksetzen, Mitarbeiterzuordnung); Mitarbeiter mit eigenem Konto können auch direkt unter **Stammdaten → Mitarbeiter** angelegt werden. Die Kommandozeile ist dafür nicht mehr nötig.
 
 Alle konfigurierten Verzeichnisse müssen für den Webserver-Benutzer schreibbar sein. Im produktiven Betrieb sind HTTPS, sichere Cookies, regelmäßige Backups und restriktive Dateiberechtigungen erforderlich.
 

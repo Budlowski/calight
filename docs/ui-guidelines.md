@@ -98,6 +98,8 @@ Nur `CalightModal` bzw. `Calight.createDialog`. Aufbau:
 
 ## Navigation
 
+**Verwaltungsbereiche (Stammdaten, Einstellungen):** gemeinsame vertikale Unternavigation (`partials/admin-nav.php`, `.admin-shell`/`.admin-nav`, ca. 210 px, hell, Gruppenüberschriften in Kapitälchen, aktiver Eintrag mit blauer Randmarkierung). Unter 900 px ersetzt ein einklappbares Menü (`.admin-nav-compact`) die Liste. Keine horizontalen Reiter für Verwaltungsbereiche und keine Brotkrümel auf diesen Seiten; Bereiche derselben Seite schalten über den URL-Hash um (`data-tab`, `data-settings-tab`). Neue Verwaltungsseiten werden nur im Partial ergänzt – mit Recht und Modulprüfung, ohne leere Platzhalter.
+
 Die Sidebar ist nach Arbeitsbereichen gegliedert: **Allgemein** (Übersicht, Kunden, Projekte, Dokumente), **Auftragsabwicklung** (Angebote, Aufträge, Aufmaße), **Arbeitserfassung** (Zeiterfassung, Tagesberichte, Rapporte), **Beschaffung** (Bestellungen), **Verwaltung**.
 - Ein Eintrag erscheint nur für implementierte, aktive Module (`ModuleService`, im Template `$moduleEnabled`) und mit Leserecht; eine Gruppe nur mit mindestens einem Eintrag.
 - Es gibt keine deaktivierten Platzhalter. **Kaufmännisch** (Abrechnung, Nachkalkulation), Kontakte und Kalender kommen erst mit ihrer Implementierung hinzu.

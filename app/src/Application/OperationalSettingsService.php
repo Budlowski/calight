@@ -13,7 +13,7 @@ use Brick\Math\Exception\MathException;
 use PDO;
 
 /**
- * Globale Betriebseinstellungen (Einstellungen → Betrieb). Bewusst klein: feste, typisierte
+ * Globale Betriebseinstellungen (Einstellungen → Arbeitserfassung). Bewusst klein: feste, typisierte
  * Definitionen mit Standardwert; gespeichert in operational_settings (Text). Verwalten nur mit
  * operations.manage (Administratoren); lesen über values() durch die Fachdienste.
  *

@@ -53,6 +53,77 @@ final readonly class UserRepository
         return $statement->rowCount() === 1;
     }
 
+    /** Konto unabhängig vom Aktivstatus (ohne Passwort-Hash). @return array<string,mixed>|null */
+    public function findAccount(string $id): ?array
+    {
+        $statement = $this->pdo->prepare('SELECT u.id, u.username, u.display_name, u.role, u.active, u.preferred_interface, u.session_version, u.created_at, u.updated_at,
+                e.id AS employee_id, e.display_name AS employee_name, e.active AS employee_active
+            FROM users u LEFT JOIN employees e ON e.user_id = u.id WHERE u.id = :id');
+        $statement->execute(['id' => $id]);
+        $user = $statement->fetch();
+        return is_array($user) ? $user : null;
+    }
+
+    /** Alle Konten mit zugeordnetem Mitarbeiter (ohne Passwort-Hash). @return list<array<string,mixed>> */
+    public function accounts(): array
+    {
+        return $this->pdo->query('SELECT u.id, u.username, u.display_name, u.role, u.active, u.preferred_interface, u.created_at, u.updated_at,
+                e.id AS employee_id, e.display_name AS employee_name, e.active AS employee_active
+            FROM users u LEFT JOIN employees e ON e.user_id = u.id ORDER BY u.active DESC, u.display_name COLLATE NOCASE, u.username COLLATE NOCASE')->fetchAll();
+    }
+
+    public function activeAdministrators(): int
+    {
+        return (int) $this->pdo->query("SELECT COUNT(*) FROM users WHERE role = 'admin' AND active = 1")->fetchColumn();
+    }
+
+    /** @param array{username:string,display_name:string,role:string,active:int,preferred_interface:?string,updated_at:string} $values */
+    public function updateAccount(string $id, array $values): bool
+    {
+        $statement = $this->pdo->prepare('UPDATE users SET username = :username, display_name = :display_name, role = :role, active = :active,
+            preferred_interface = :preferred_interface, updated_at = :updated_at WHERE id = :id');
+        $statement->execute($values + ['id' => $id]);
+        return $statement->rowCount() === 1;
+    }
+
+    /** Neues Passwort (Hash) und neue Sitzungsversion: bestehende Sitzungen werden ungültig. */
+    public function updatePassword(string $id, string $passwordHash, string $now): int
+    {
+        $this->pdo->prepare('UPDATE users SET password_hash = :hash, session_version = session_version + 1, updated_at = :now WHERE id = :id')
+            ->execute(['hash' => $passwordHash, 'now' => $now, 'id' => $id]);
+        return $this->sessionVersion($id);
+    }
+
+    /** Bestehende Sitzungen beenden (z. B. bei Deaktivierung). */
+    public function invalidateSessions(string $id): int
+    {
+        $this->pdo->prepare('UPDATE users SET session_version = session_version + 1 WHERE id = :id')->execute(['id' => $id]);
+        return $this->sessionVersion($id);
+    }
+
+    private function sessionVersion(string $id): int
+    {
+        $statement = $this->pdo->prepare('SELECT session_version FROM users WHERE id = :id');
+        $statement->execute(['id' => $id]);
+        return (int) $statement->fetchColumn();
+    }
+
+    /** Protokoll sicherheitsrelevanter Kontoänderungen (nie Passwörter oder Hashes). */
+    public function addEvent(string $id, string $userId, ?string $actorId, string $action, string $details, string $now): void
+    {
+        $this->pdo->prepare('INSERT INTO user_account_events (id, user_id, actor_user_id, action, details, created_at) VALUES (:id, :user, :actor, :action, :details, :now)')
+            ->execute(['id' => $id, 'user' => $userId, 'actor' => $actorId, 'action' => $action, 'details' => $details, 'now' => $now]);
+    }
+
+    /** @return list<array<string,mixed>> */
+    public function events(string $userId, int $limit = 30): array
+    {
+        $statement = $this->pdo->prepare('SELECT ev.action, ev.details, ev.created_at, actor.display_name AS actor_name FROM user_account_events ev
+            LEFT JOIN users actor ON actor.id = ev.actor_user_id WHERE ev.user_id = :user ORDER BY ev.created_at DESC, ev.id DESC LIMIT ' . max(1, min(100, $limit)));
+        $statement->execute(['user' => $userId]);
+        return $statement->fetchAll();
+    }
+
     public function create(string $id, string $username, string $passwordHash, string $displayName, string $now,string $role='admin'): void
     {
         $statement = $this->pdo->prepare(

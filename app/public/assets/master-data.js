@@ -219,22 +219,30 @@
   }
   showArchived.addEventListener("change", renderAll);
 
-  // Bereiche als Reiter; der gewählte Bereich steht in der URL (#suppliers), damit Zurück funktioniert.
-  const tabs = [...root.querySelectorAll(".tab-button")];
+  // Bereiche über die gemeinsame Verwaltungsnavigation (partials/admin-nav.php); der gewählte
+  // Bereich steht in der URL (#suppliers), damit Direktlinks und Zurück funktionieren.
+  const tabs = [...root.querySelectorAll("[data-tab]")];
   function selectTab(scope, push = false) {
     if (!sections[scope]) scope = "cost-items";
     tabs.forEach((tab) => {
-      const active = tab.dataset.tab === scope;
-      tab.classList.toggle("active", active);
-      tab.setAttribute("aria-selected", String(active));
+      if (tab.dataset.tab === scope) tab.setAttribute("aria-current", "page");
+      else tab.removeAttribute("aria-current");
     });
+    const current = tabs.find((tab) => tab.dataset.tab === scope);
+    const label = root.querySelector("[data-admin-current]");
+    if (label && current) label.textContent = current.textContent;
+    root.querySelector(".admin-nav-compact")?.removeAttribute("open");
     root.querySelectorAll(".tab-panel").forEach((panel) => {
       panel.hidden = panel.dataset.panel !== scope;
       panel.classList.toggle("active", !panel.hidden);
     });
     if (push) history.replaceState(null, "", `#${scope}`);
   }
-  tabs.forEach((tab) => tab.addEventListener("click", () => selectTab(tab.dataset.tab, true)));
+  tabs.forEach((tab) => tab.addEventListener("click", (event) => {
+    event.preventDefault();
+    selectTab(tab.dataset.tab, true);
+  }));
+  addEventListener("hashchange", () => selectTab(location.hash.slice(1)));
   selectTab(location.hash.slice(1));
 
   // ---------------------------------------------------------------------------

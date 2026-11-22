@@ -27,9 +27,11 @@ final class AuthorizationPolicy
         if ($path === '/mobile/rapports' || str_starts_with($path, '/mobile/rapports/')) return ['workreports.read'];
         if ($path === '/mobile' || str_starts_with($path, '/mobile/')) return ['dashboard.read'];
         if (str_starts_with($path, '/api/users')) return ['users.manage'];
-        if ($path === '/settings/employees' || str_starts_with($path, '/api/employees')) return ['employees.manage', 'costs.read'];
-        // Betriebseinstellungen (Einstellungen → Betrieb): nur Administratoren.
-        if ($path === '/settings/operations' || str_starts_with($path, '/api/operational-settings')) return ['operations.manage'];
+        if ($path === '/settings/employees' || $path === '/master-data/employees' || str_starts_with($path, '/api/employees')) return ['employees.manage', 'costs.read'];
+        // Benutzerverwaltung: Benutzerkonten und Berechtigungsübersicht nur für Administratoren.
+        if ($path === '/settings/users' || $path === '/settings/permissions') return ['users.manage'];
+        // Betriebseinstellungen (Einstellungen → Arbeitserfassung): nur Administratoren.
+        if ($path === '/settings/operations' || $path === '/settings/work-tracking' || str_starts_with($path, '/api/operational-settings')) return ['operations.manage'];
         // Modulverwaltung (Einstellungen → Module): global für den Betrieb, nur Administratoren.
         if ($path === '/settings/modules' || $path === '/api/modules' || str_starts_with($path, '/api/modules/')) return ['operations.manage'];
         if (str_starts_with($path, '/daily-reports') || str_starts_with($path, '/api/daily-reports')) return [$write ? 'reports.write' : 'reports.read'];

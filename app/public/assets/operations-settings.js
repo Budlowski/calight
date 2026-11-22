@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  // Einstellungen → Betrieb: typisierte Betriebseinstellungen (Ja/Nein, Auswahl, Zahl) je Gruppe,
+  // Einstellungen → Arbeitserfassung: typisierte Betriebseinstellungen (Ja/Nein, Auswahl, Zahl) je Gruppe,
   // sofort gespeichert. Prüfung und Grenzen liegen auf dem Server.
   const root = document.querySelector("#operations-settings-app");
   if (!root) return;

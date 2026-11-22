@@ -1522,7 +1522,7 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 .report-assignment dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .report-assignment-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 @media (max-width: 560px) { .report-assignment { grid-template-columns: 1fr; } .report-assignment dd { margin-bottom: 6px; } }
-/* Einstellungen → Betrieb */
+/* Einstellungen → Arbeitserfassung */
 .operations-setting { align-items: flex-start; }
 .operations-setting span { display: grid; gap: 2px; }
 .operations-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: center; }
@@ -1574,3 +1574,32 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 .order-kpi-grid dd { margin: 2px 0 0; font-size: 1.15rem; font-weight: 700; }
 .order-kpi-grid small { color: var(--muted); }
 .link-button { padding: 0; border: 0; background: none; color: var(--primary); font: inherit; cursor: pointer; text-decoration: underline; }
+
+/* Verwaltung (Stammdaten, Einstellungen): gemeinsame vertikale Unternavigation (partials/admin-nav.php). */
+.admin-shell { display: grid; grid-template-columns: 210px minmax(0, 1fr); align-items: start; gap: var(--space-6); }
+.admin-shell > .admin-content { min-width: 0; }
+.admin-nav { position: sticky; top: 0; display: grid; gap: var(--space-4); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); background: #f9fbfc; }
+.admin-nav-group { display: grid; gap: 1px; }
+.admin-nav-label { padding: 0 var(--space-3) var(--space-1); color: var(--muted); font-size: var(--font-small); font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
+.admin-nav-link { display: block; padding: 6px var(--space-3); border-left: 3px solid transparent; border-radius: 0 var(--radius) var(--radius) 0; color: var(--text); text-decoration: none; }
+.admin-nav-link:hover { background: #edf2f6; }
+.admin-nav-link[aria-current="page"] { border-left-color: var(--primary); background: #e3eef6; color: var(--primary-dark); font-weight: 700; }
+.admin-nav-compact { display: none; }
+.admin-nav-compact > summary { display: flex; min-height: 40px; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); background: #f9fbfc; cursor: pointer; }
+.admin-nav-compact > nav { display: grid; gap: var(--space-3); margin-top: var(--space-2); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); background: #f9fbfc; }
+.admin-nav-compact .admin-nav-link { min-height: 40px; padding-top: 9px; }
+@media (max-width: 900px) {
+    .admin-shell { grid-template-columns: 1fr; gap: var(--space-3); }
+    .admin-shell > .admin-nav { display: none; }
+    .admin-nav-compact { display: block; }
+}
+.permission-matrix { width: 100%; border-collapse: collapse; }
+.permission-matrix th, .permission-matrix td { padding: 6px 8px; border-bottom: 1px solid #e5eaed; text-align: left; vertical-align: top; }
+.permission-matrix td.permission-role { width: 110px; text-align: center; }
+.permission-matrix .permission-group th { padding-top: var(--space-4); color: var(--muted); font-size: var(--font-small); text-transform: uppercase; }
+.permission-yes { color: var(--success); font-weight: 700; }
+.permission-no { color: var(--muted); }
+.user-event-list { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.employee-account { display: grid; gap: var(--space-2); margin: 0; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); }
+.employee-account legend { padding: 0 4px; font-weight: 700; }
+.user-events > summary { cursor: pointer; font-weight: 600; }

@@ -15,19 +15,18 @@
   form.addEventListener('change',()=>{dirty=true;});
   addEventListener('beforeunload',event=>{if(!dirty)return;event.preventDefault();event.returnValue='';});
   const tabs=[...root.querySelectorAll('[data-settings-tab]')],panels=[...root.querySelectorAll('[data-settings-panel]')];
+  // Bereiche über die gemeinsame Verwaltungsnavigation (partials/admin-nav.php), Auswahl im URL-Hash.
   const selectTab=name=>{
     if(!tabs.some(tab=>tab.dataset.settingsTab===name))name='company';
-    tabs.forEach(tab=>{const active=tab.dataset.settingsTab===name;tab.classList.toggle('active',active);tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;});
+    tabs.forEach(tab=>{if(tab.dataset.settingsTab===name)tab.setAttribute('aria-current','page');else tab.removeAttribute('aria-current');});
+    const current=tabs.find(tab=>tab.dataset.settingsTab===name),label=root.querySelector('[data-admin-current]');
+    if(label&&current)label.textContent=current.textContent;
+    root.querySelector('.admin-nav-compact')?.removeAttribute('open');
     panels.forEach(panel=>{const active=panel.dataset.settingsPanel===name;panel.classList.toggle('active',active);panel.hidden=!active;});
     history.replaceState(null,'',`#settings-${name}`);
   };
-  tabs.forEach(tab=>tab.addEventListener('click',()=>selectTab(tab.dataset.settingsTab)));
-  tabs.forEach((tab,index)=>tab.addEventListener('keydown',event=>{
-    if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
-    event.preventDefault();
-    const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;
-    selectTab(tabs[next].dataset.settingsTab);tabs[next].focus();
-  }));
+  tabs.forEach(tab=>tab.addEventListener('click',event=>{event.preventDefault();selectTab(tab.dataset.settingsTab);}));
+  addEventListener('hashchange',()=>selectTab(location.hash.replace('#settings-','')||'company'));
   selectTab(location.hash.replace('#settings-','')||'company');
   const updateConditionalFields=()=>{
     const duration=form.elements.validityMode.value==='duration';

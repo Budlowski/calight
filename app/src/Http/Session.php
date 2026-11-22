@@ -50,6 +50,8 @@ final class Session
             'displayName' => $user['display_name'],
             'role' => $user['role'],
             'preferredInterface' => $user['preferred_interface'] ?? null,
+            // Stand der Anmeldedaten bei der Anmeldung; ein abweichender Wert beendet die Sitzung.
+            'sessionVersion' => (int) ($user['session_version'] ?? 1),
         ];
         unset($_SESSION['csrf_token']);
     }
@@ -58,7 +60,17 @@ final class Session
     public static function refreshUser(array $user):void
     {
         if(!isset($_SESSION['user']))return;
-        $_SESSION['user']=['id'=>$user['id'],'username'=>$user['username'],'displayName'=>$user['display_name'],'role'=>$user['role'],'preferredInterface'=>$user['preferred_interface']??null];
+        // Die Sitzungsversion bleibt die der Anmeldung (Vergleich in Application::handle).
+        $_SESSION['user']=['id'=>$user['id'],'username'=>$user['username'],'displayName'=>$user['display_name'],'role'=>$user['role'],'preferredInterface'=>$user['preferred_interface']??null,
+            'sessionVersion'=>(int)($_SESSION['user']['sessionVersion']??1)];
+    }
+
+    /** Nach eigener Passwortänderung bleibt die aktuelle Sitzung gültig, andere Sitzungen nicht. */
+    public static function acceptSessionVersion(int $version): void
+    {
+        if (isset($_SESSION['user']) && is_array($_SESSION['user'])) {
+            $_SESSION['user']['sessionVersion'] = $version;
+        }
     }
 
     public static function logout(): void

@@ -60,10 +60,12 @@ final readonly class SettingsController
     {
         return $this->modules ?? throw new \RuntimeException('Modulverwaltung ist nicht konfiguriert.');
     }
-    /** Einstellungen → Betrieb (nur Administratoren; Recht operations.manage, Prüfung zusätzlich im Service). */
+    /** Einstellungen → Arbeitserfassung (nur Administratoren; Recht operations.manage, Prüfung zusätzlich im Service). */
     private function registerOperations(Router $router): void
     {
-        $router->add('GET', '/settings/operations', fn (): Response => $this->auth(fn () => $this->view->render('settings/operations')));
+        // Betriebseinstellungen der Arbeitserfassung (früher „Betrieb“); der frühere Pfad leitet weiter.
+        $router->add('GET', '/settings/work-tracking', fn (): Response => $this->auth(fn () => $this->view->render('settings/operations')));
+        $router->add('GET', '/settings/operations', fn (): Response => Response::redirect('/settings/work-tracking', 301));
         $router->add('GET', '/api/operational-settings', fn (): Response => $this->auth(fn () => Response::json(['data' => $this->operationsService()->all(Session::user() ?? [])]), true));
         $router->add('PUT', '/api/operational-settings', fn (Request $request): Response => $this->auth(function () use ($request): Response {
             if (!Session::verifyCsrf($request->headers['x-csrf-token'] ?? null)) {

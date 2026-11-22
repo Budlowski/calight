@@ -17,26 +17,19 @@ $toolbar = static function (string $scope, string $placeholder, string $newLabel
         . '</div>';
 };
 ?>
-<div id="master-data-app" class="overview-page" data-csrf="<?= $escape($csrfToken) ?>">
+<div id="master-data-app" class="overview-page admin-shell" data-csrf="<?= $escape($csrfToken) ?>">
+<?php $adminArea = 'master-data'; $adminActive = 'cost-items'; require __DIR__ . '/../partials/admin-nav.php'; ?>
+<div class="admin-content">
     <div class="page-heading">
         <div>
             <h1>Stammdaten</h1>
-            <p class="muted">Artikelstamm, Positionsstamm, Schlepptexte, Kategorien und Lieferanten zentral verwalten.</p>
+            <p class="muted">Kalkulationsgrundlagen, Organisation und Geschäftspartner zentral verwalten.</p>
         </div>
         <label class="check-inline"><input type="checkbox" id="show-archived"> Archivierte anzeigen</label>
     </div>
 
     <div id="master-message" class="notice" role="status" hidden></div>
 
-    <nav class="tabs" aria-label="Stammdatenbereiche">
-        <button class="tab-button" type="button" data-tab="cost-items">Artikelstamm</button>
-        <button class="tab-button" type="button" data-tab="services">Positionsstamm</button>
-        <button class="tab-button" type="button" data-tab="trailing-texts">Schlepptexte</button>
-        <button class="tab-button" type="button" data-tab="categories">Kategorien</button>
-        <button class="tab-button" type="button" data-tab="suppliers">Lieferanten</button>
-        <?php // Kostenstellen: gemeinsame Grundlage von Arbeitserfassung und Beschaffung. ?>
-        <?php if ($modules === null || $modules->costCentersEnabled()): ?><a class="tab-button" href="/master-data/cost-centers">Kostenstellen</a><?php endif; ?>
-    </nav>
 
     <section class="tab-panel" data-panel="cost-items" hidden>
         <?= $toolbar('cost-items', 'Artikelnummer, Bezeichnung oder Beschreibung durchsuchen', 'Artikel anlegen',
@@ -64,6 +57,7 @@ $toolbar = static function (string $scope, string $placeholder, string $newLabel
         <?= $toolbar('suppliers', 'Nummer, Name, Ort oder Kundennummer durchsuchen', 'Lieferant anlegen') ?>
         <div class="overview-results" data-list aria-live="polite"></div>
     </section>
+</div>
 </div>
 <input id="master-import-file" type="file" accept="application/json,.json" hidden>
 <script src="/assets/master-data.js?v=<?= $escape((string) filemtime(dirname(__DIR__, 2) . '/public/assets/master-data.js')) ?>" defer></script>

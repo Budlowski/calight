@@ -88,7 +88,9 @@ final readonly class Application
             $sessionUser=Session::user();
             if($sessionUser!==null){
                 $currentUser=$this->users->findActiveById((string)$sessionUser['id']);
-                if($currentUser===null){Session::logout();return str_starts_with($request->path,'/api/')?Response::json(['error'=>'Anmeldung erforderlich.'],401):Response::redirect('/login');}
+                // Deaktivierte Konten und Sitzungen vor einem administrativen Passwortwechsel bzw. einer
+                // Deaktivierung (session_version) werden sofort beendet.
+                if($currentUser===null||(int)($sessionUser['sessionVersion']??1)!==(int)($currentUser['session_version']??1)){Session::logout();return str_starts_with($request->path,'/api/')?Response::json(['error'=>'Anmeldung erforderlich.'],401):Response::redirect('/login');}
                 Session::refreshUser($currentUser);
             }
             $requiredPermissions=AuthorizationPolicy::required($request);

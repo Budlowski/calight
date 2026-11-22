@@ -368,6 +368,8 @@ Verbindliche Regeln:
 - Login regeneriert die Session-ID. Cookies sind `HttpOnly`, `SameSite=Lax` und bei `APP_SECURE_COOKIES=1` sicher.
 - Passwörter werden mit PHP `password_hash`/`password_verify` verwaltet; CLI-Mindestlänge ist acht Zeichen.
 - Das letzte aktive Administratorkonto darf nicht deaktiviert oder herabgestuft werden.
+- Benutzerkonten werden über `UserAccessService` verwaltet (Einstellungen → Benutzerkonten, `users.manage`): nie löschen, nur deaktivieren; eigene Rolle/eigenen Aktivstatus nicht ändern; Passwortwechsel und Deaktivierung erhöhen `users.session_version` und beenden damit bestehende Sitzungen (Prüfung in `Application::handle`); Änderungen in `user_account_events` protokollieren, nie Passwörter oder Hashes.
+- Mitarbeiter und Benutzerkonten bleiben getrennt (1:1 über `employees.user_id`, nie über Namen). Gemeinsame Anlage nur transaktional über `EmployeeService` mit `UserAccessService::createWithinTransaction`.
 - Zugangsdaten, Hashes und Sessions dürfen weder geloggt noch exportiert werden.
 
 ### CSRF, Validierung und SQL
@@ -413,6 +415,7 @@ Vor jeder Migration sind Upgrade-Pfad, Datenübernahme, Downtime/Locking, eindeu
 - `app/public/assets/modal.js`: globales natives `<dialog>` mit Fokusmanagement, Tastaturbedienung, Validierung und Dirty-Guard.
 - `app/public/assets/list-view.js`: persistenter Karten-/Tabellenumschalter und zugängliche Zeilen-/Kartennavigation.
 - `app/public/assets/ui.js`: Lucide-Icon-Dekoration, Aktionsmenüs, globale Löschbestätigung und `Strg/Cmd+S`.
+- `app/templates/partials/admin-nav.php`: gemeinsame vertikale Unternavigation für Stammdaten und Einstellungen (Gliederung, Rechte, Module zentral an dieser Stelle).
 - `app/templates/layout/mobile.php`, `app/public/assets/mobile.css`, `app/public/assets/mobile.js`: Layout und Hilfen des mobilen Frontends (siehe 4.19); nutzen `app.css` und die globalen Helfer weiter.
 - Lokale Lucide-SVGs liegen in `app/public/assets/icons/lucide`; keine CDN-Icons.
 

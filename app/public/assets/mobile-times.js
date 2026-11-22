@@ -767,7 +767,7 @@
       // Keine Zuordnung anhand von Namen: nur das Büro verknüpft Benutzer und Mitarbeiter.
       root.querySelectorAll(".mobile-segmented, .mobile-day-nav, [data-go-today]").forEach((element) => { element.hidden = true; });
       content.innerHTML = `<section class="mobile-card"><h2>Kein Mitarbeiter zugeordnet</h2>
-        <p class="mobile-card-text">Ihrem Benutzerkonto ist kein Mitarbeiter zugeordnet. Persönliche Arbeitszeiten, Abwesenheiten und Reisekosten können erst erfasst werden, wenn das Büro unter Einstellungen → Mitarbeiter Ihr Benutzerkonto verknüpft.</p></section>`;
+        <p class="mobile-card-text">Ihrem Benutzerkonto ist kein Mitarbeiter zugeordnet. Persönliche Arbeitszeiten, Abwesenheiten und Reisekosten können erst erfasst werden, wenn das Büro unter Stammdaten → Mitarbeiter Ihr Benutzerkonto verknüpft.</p></section>`;
       return;
     }
     await load();
