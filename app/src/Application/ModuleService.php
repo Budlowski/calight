@@ -30,37 +30,37 @@ final class ModuleService
     public const DEFINITIONS = [
         'core' => [
             'icon' => 'layout-dashboard', 'label' => 'Basissystem', 'implemented' => true,
-            'description' => 'Kunden, Projekte, Angebote, Kalkulation, Aufträge, Aufmaße, Dokumente, Stammdaten und Einstellungen.',
+            'description' => 'Kunden, Projekte, Angebote, Aufträge, Aufmaße, Dokumente und Stammdaten.',
         ],
         'work_tracking' => [
             'icon' => 'clock-3', 'label' => 'Arbeitserfassung', 'implemented' => true,
-            'description' => 'Zeiterfassung, Tagesberichte, Rapporte, Abwesenheiten, Reisekosten, Auslagen, Freigaben und Stundennachweise.',
+            'description' => 'Zeiterfassung, Tagesberichte, Rapporte, Abwesenheiten und Reisekosten.',
         ],
         'procurement' => [
             'icon' => 'shopping-cart', 'label' => 'Beschaffung', 'implemented' => true,
-            'description' => 'Bestellungen bei Lieferanten, Materialbedarf, Eingangsrechnungen und Kostenverteilung.',
+            'description' => 'Bestellungen bei Lieferanten, Materialbedarf und Eingangsrechnungen.',
             'note' => 'Lieferanten bleiben als gemeinsame Stammdaten (Artikelstamm) immer verfügbar.',
         ],
         'billing' => [
             'icon' => 'badge-euro', 'label' => 'Abrechnung', 'implemented' => false,
-            'description' => 'Abrechnungsaufstellungen, Teilrechnungen und externe Rechnungsreferenzen.',
+            'description' => 'Abrechnungsaufstellungen und Referenzen auf externe Rechnungen.',
         ],
         'job_costing' => [
             'icon' => 'chart-no-axes-column-increasing', 'label' => 'Nachkalkulation', 'implemented' => false,
-            'description' => 'Soll-/Ist-Vergleich, Personal- und Materialkosten, Wirtschaftlichkeit.',
+            'description' => 'Soll-/Ist-Vergleich von Aufträgen.',
             'note' => 'Nutzt vorhandene Daten aus Arbeitserfassung und Beschaffung; fehlende Quellen gelten nicht als null Kosten.',
         ],
         'contacts' => [
             'icon' => 'users', 'label' => 'Kontakte', 'implemented' => false,
-            'description' => 'Erweitertes Adressbuch und CardDAV. Kunden- und Lieferantenkontakte bleiben unabhängig davon verfügbar.',
+            'description' => 'Erweitertes Adressbuch mit CardDAV.',
         ],
         'calendar' => [
             'icon' => 'calendar-days', 'label' => 'Kalender', 'implemented' => false,
-            'description' => 'Terminverwaltung und CalDAV.',
+            'description' => 'Terminverwaltung mit CalDAV.',
         ],
         'lexware' => [
             'icon' => 'refresh-cw', 'label' => 'Lexware-Anbindung', 'implemented' => false,
-            'description' => 'Externer Datenaustausch mit Lexware.',
+            'description' => 'Datenaustausch mit Lexware.',
         ],
     ];
 

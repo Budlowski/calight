@@ -105,7 +105,7 @@
 
   // Standardablauf für Neuanlage-Dialoge: Validierung, Doppelklickschutz,
   // Fehlermeldung im Dialog und Warnung bei ungespeicherten Eingaben.
-  function createDialog({ title, form, submitLabel, discardMessage, initialFocus, submit, extraActions = [] }) {
+  function createDialog({ title, form, submitLabel, discardMessage, initialFocus, submit, extraActions = [], wide = false }) {
     const error = form.querySelector("[data-dialog-error]");
     let dirty = false;
     let saving = false;
@@ -136,6 +136,7 @@
       content: form,
       confirmClose: { isDirty: () => dirty, message: discardMessage },
       initialFocus,
+      wide,
       actions: [
         { label: "Abbrechen", value: null },
         ...extraActions.map((action) => ({ ...action, onClick: () => action.onClick(run) })),

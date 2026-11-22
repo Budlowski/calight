@@ -20,7 +20,7 @@
   };
   const row = (module) => `<li class="module-row${module.implemented ? "" : " is-planned"}">
       <span class="module-icon ui-icon icon-${esc(module.icon)}" aria-hidden="true"></span>
-      <div class="module-text"><strong>${esc(module.label)}</strong><small>${esc(module.description)}${module.note ? ` ${esc(module.note)}` : ""}</small></div>
+      <div class="module-text"><strong>${esc(module.label)}</strong><small>${esc(module.description)}</small></div>
       ${control(module)}</li>`;
   const render = (modules) => { box.innerHTML = `<ul class="module-rows card">${modules.map(row).join("")}</ul>`; };
 

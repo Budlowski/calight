@@ -14,7 +14,7 @@
         <span class="management-result-count" data-count></span>
     </div>
     <div class="overview-results" data-list aria-live="polite"><p class="empty-state">Benutzerkonten werden geladen …</p></div>
-    <p class="muted operations-note">Passwörter werden nur als Hash gespeichert und nie angezeigt. Ein Zurücksetzen des Passworts oder eine Deaktivierung beendet bestehende Sitzungen des Kontos sofort. Rechte der Rollen siehe <a href="/settings/permissions">Berechtigungen</a>.</p>
+    <p class="muted operations-note">Passwörter werden nur als Hash gespeichert und nie angezeigt. Ein Zurücksetzen des Passworts oder eine Deaktivierung beendet bestehende Sitzungen des Kontos sofort. Rechte der Rollen siehe <a href="/settings/permissions">Rollen &amp; Rechte</a>.</p>
 </div>
 </div>
 </div>

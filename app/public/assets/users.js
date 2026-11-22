@@ -19,7 +19,7 @@
   };
   let data = { users: [], employees: [], roles: {}, currentUserId: "" };
 
-  const field = (label, control, hint = "") => `<label><span class="field-label">${label}</span>${control}${hint ? `<small class="muted">${hint}</small>` : ""}</label>`;
+  const field = (label, control, hint = "", className = "") => `<label${className ? ` class="${className}"` : ""}><span class="field-label">${label}</span>${control}${hint ? `<small class="field-hint">${hint}</small>` : ""}</label>`;
   const required = (label) => `${label} <span aria-hidden="true">*</span>`;
   const options = (map, selected) => Object.entries(map).map(([value, label]) => `<option value="${esc(value)}"${value === (selected ?? "") ? " selected" : ""}>${esc(label)}</option>`).join("");
 
@@ -37,7 +37,7 @@
     list.innerHTML = rows.length ? `<div class="service-list management-list">${rows.map((user) => `
       <article class="service-list-item management-card ${user.active ? "" : "is-inactive"}">
         <div class="service-list-main">
-          <div class="management-card-head"><strong>${esc(user.displayName)}</strong><span class="status-badge">${esc(user.roleLabel)}</span>${user.active ? "" : '<span class="status-badge">Deaktiviert</span>'}${user.id === data.currentUserId ? '<span class="status-badge status-in_progress">Eigenes Konto</span>' : ""}</div>
+          <div class="management-card-head"><strong>${esc(user.displayName)}</strong><span class="management-card-badges"><span class="status-badge">${esc(user.roleLabel)}</span>${user.active ? "" : '<span class="status-badge">Deaktiviert</span>'}${user.id === data.currentUserId ? '<span class="status-badge status-in_progress">Eigenes Konto</span>' : ""}</span></div>
           <div class="management-card-facts">
             <span>Benutzername: ${esc(user.username)}</span>
             <span>${user.employee ? `Mitarbeiter: ${esc(user.employee.name)}${user.employee.active ? "" : " (inaktiv)"}` : "Kein Mitarbeiter zugeordnet"}</span>
@@ -54,27 +54,36 @@
     render();
   }
 
+  /**
+   * Formular „Benutzer anlegen/bearbeiten“: Stammdaten im zweispaltigen Raster, Mitarbeiter über
+   * die volle Breite, darunter abgesetzt Status und Sicherheit, am Ende das einklappbare Protokoll.
+   */
   function accountForm(user) {
     const self = user?.id === data.currentUserId;
     const form = document.createElement("form");
-    form.className = "form-stack";
+    form.className = "admin-form";
     form.noValidate = true;
     form.innerHTML = `
-      <div class="form-grid">
-        ${field(required("Benutzername"), `<input name="username" maxlength="64" autocomplete="off" autocapitalize="none" spellcheck="false" required value="${esc(user?.username || "")}">`, "3–64 Zeichen: Buchstaben, Ziffern, Punkt, Bindestrich, Unterstrich, @")}
-        ${field(required("Anzeigename"), `<input name="displayName" maxlength="150" required value="${esc(user?.displayName || "")}">`)}
-        ${field(required("Rolle"), `<select name="role"${self ? " disabled" : ""}>${options(data.roles, user?.role || "technician")}</select>`, self ? "Die eigene Rolle kann nicht geändert werden." : "")}
+      <div class="admin-form-grid">
+        ${field(required("Benutzername"), `<input name="username" maxlength="64" autocomplete="off" autocapitalize="none" spellcheck="false" required value="${esc(user?.username || "")}">`, "3–64 Zeichen: Buchstaben, Ziffern, . - _ @")}
+        ${field(required("Anzeigename"), `<input name="displayName" maxlength="150" required value="${esc(user?.displayName || "")}">`, "Erscheint in Berichten und Protokollen.")}
+        ${field(required("Rolle"), `<select name="role"${self ? " disabled" : ""}>${options(data.roles, user?.role || "technician")}</select>`, self ? "Die eigene Rolle kann nicht geändert werden." : "Rechte siehe Rollen &amp; Rechte.")}
         ${field("Bevorzugte Oberfläche", `<select name="preferredInterface">${options(INTERFACES, user?.preferredInterface || "")}</select>`, "Monteure verwenden immer die mobile Oberfläche.")}
-        ${field("Mitarbeiter", `<select name="employeeId">${employeeOptions(user)}</select>`, "Für persönliche Zeiterfassung erforderlich. Nur Mitarbeiter ohne Konto sind wählbar.")}
+        ${field("Mitarbeiter", `<select name="employeeId">${employeeOptions(user)}</select>`, "Für die persönliche Zeiterfassung erforderlich. Wählbar sind nur Mitarbeiter ohne Benutzerkonto.", "span-all")}
+        ${user ? "" : `
+          ${field(required("Passwort"), '<input name="password" type="password" minlength="8" autocomplete="new-password" required>', "Mindestens 8 Zeichen.")}
+          ${field(required("Passwort wiederholen"), '<input name="passwordRepeat" type="password" minlength="8" autocomplete="new-password" required>')}`}
       </div>
-      ${user ? "" : `<div class="form-grid">
-        ${field(required("Passwort"), '<input name="password" type="password" minlength="8" autocomplete="new-password" required>', "Mindestens 8 Zeichen")}
-        ${field(required("Passwort wiederholen"), '<input name="passwordRepeat" type="password" minlength="8" autocomplete="new-password" required>')}
-      </div>`}
-      <label class="check-inline"><input name="active" type="checkbox"${user && !user.active ? "" : " checked"}${self ? " disabled" : ""}> Konto aktiv${self ? " (eigenes Konto)" : ""}</label>
-      ${user?.employee && user.active && !user.employee.active ? '<p class="notice notice-warning">Der verknüpfte Mitarbeiter ist inaktiv; das Konto kann sich anmelden, aber keine eigenen Zeiten erfassen.</p>' : ""}
-      ${user ? '<details class="user-events"><summary>Protokoll</summary><ul class="user-event-list" data-events><li class="muted">Wird geladen …</li></ul></details>' : ""}
+      <section class="admin-form-section" aria-label="Status und Sicherheit">
+        <h3>Status und Sicherheit</h3>
+        <label class="check-inline"><input name="active" type="checkbox"${user && !user.active ? "" : " checked"}${self ? " disabled" : ""}> Konto aktiv</label>
+        <small class="field-hint">${self ? "Das eigene Konto kann nicht deaktiviert werden." : "Deaktivierte Konten können sich nicht anmelden; bestehende Sitzungen enden sofort. Konten werden nie gelöscht."}</small>
+        ${user ? `<div class="admin-form-row"><p class="field-hint">Ein neues Passwort beendet alle bestehenden Sitzungen dieses Kontos.</p><button class="button button-light" type="button" data-reset-password>Passwort zurücksetzen …</button></div>` : ""}
+        ${user?.employee && user.active && !user.employee.active ? '<p class="notice notice-warning">Der verknüpfte Mitarbeiter ist inaktiv; das Konto kann sich anmelden, aber keine eigenen Zeiten erfassen.</p>' : ""}
+      </section>
+      ${user ? '<details class="user-events"><summary>Änderungsprotokoll</summary><ul class="user-event-list" data-events><li class="muted">Wird geladen …</li></ul></details>' : ""}
       <p class="field-error" data-dialog-error hidden></p>`;
+    form.querySelector("[data-reset-password]")?.addEventListener("click", () => openPassword(user));
     return form;
   }
 
@@ -102,8 +111,7 @@
       submitLabel: user ? "Speichern" : "Anlegen",
       discardMessage: "Die Änderungen am Benutzerkonto verwerfen?",
       initialFocus: '[name="username"]',
-      // Erst nach dem Schließen dieses Dialogs öffnen (ein globaler Dialog zur Zeit).
-      extraActions: user ? [{ label: "Passwort zurücksetzen …", onClick: () => { setTimeout(() => openPassword(user), 0); return true; } }] : [],
+      wide: true,
       submit: async () => {
         const body = payload(form, user);
         if (!user) {
@@ -117,28 +125,42 @@
     });
   }
 
+  /** Eigener Dialog über dem Kontodialog (CalightModal.openOver): dessen Eingaben bleiben erhalten. */
   function openPassword(user) {
     const form = document.createElement("form");
-    form.className = "form-stack";
+    form.className = "admin-form";
     form.noValidate = true;
     form.innerHTML = `
-      <p>Neues Passwort für <strong>${esc(user.displayName)}</strong> (${esc(user.username)}). Alle bestehenden Sitzungen dieses Kontos werden beendet${user.id === data.currentUserId ? " – Ihre aktuelle Sitzung bleibt angemeldet" : ""}.</p>
-      ${field(required("Neues Passwort"), '<input name="password" type="password" minlength="8" autocomplete="new-password" required>', "Mindestens 8 Zeichen")}
-      ${field(required("Passwort wiederholen"), '<input name="passwordRepeat" type="password" minlength="8" autocomplete="new-password" required>')}
+      <p class="global-modal-summary">Neues Passwort für <strong>${esc(user.displayName)}</strong> (${esc(user.username)}). Alle bestehenden Sitzungen dieses Kontos werden beendet${user.id === data.currentUserId ? " – Ihre aktuelle Sitzung bleibt angemeldet" : ""}.</p>
+      <div class="admin-form-grid">
+        ${field(required("Neues Passwort"), '<input name="password" type="password" minlength="8" autocomplete="new-password" required>', "Mindestens 8 Zeichen.")}
+        ${field(required("Passwort wiederholen"), '<input name="passwordRepeat" type="password" minlength="8" autocomplete="new-password" required>')}
+      </div>
       <p class="field-error" data-dialog-error hidden></p>`;
-    Calight.createDialog({
+    const error = form.querySelector("[data-dialog-error]");
+    CalightModal.openOver({
       title: "Passwort zurücksetzen",
-      form,
-      submitLabel: "Passwort setzen",
-      discardMessage: "Das Zurücksetzen abbrechen?",
+      content: form,
       initialFocus: '[name="password"]',
-      submit: async () => {
-        if (form.elements.password.value !== form.elements.passwordRepeat.value) throw new Error("Die Passwörter stimmen nicht überein.");
-        await api(`/api/users/${encodeURIComponent(user.id)}/password`, { method: "POST", body: { password: form.elements.password.value } });
-        form.reset();
-        notify(message, "Passwort zurückgesetzt; bestehende Sitzungen wurden beendet.", "success");
-        await load();
-      },
+      actions: [
+        { label: "Abbrechen", value: null },
+        {
+          label: "Passwort setzen", primary: true, validate: true,
+          onClick: async () => {
+            error.hidden = true;
+            try {
+              if (form.elements.password.value !== form.elements.passwordRepeat.value) throw new Error("Die Passwörter stimmen nicht überein.");
+              await api(`/api/users/${encodeURIComponent(user.id)}/password`, { method: "POST", body: { password: form.elements.password.value } });
+              notify(message, "Passwort zurückgesetzt; bestehende Sitzungen wurden beendet.", "success");
+              return true;
+            } catch (exception) {
+              error.textContent = exception.message;
+              error.hidden = false;
+              return false;
+            }
+          },
+        },
+      ],
     });
   }
 

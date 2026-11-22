@@ -72,8 +72,11 @@
     closeOnOutside = true,
     confirmClose = null,
     initialFocus = null,
+    wide = false,
   }) {
     if (dialog.open) close(null);
+    // Breitere Variante für Verwaltungsformulare mit zweispaltigem Raster.
+    dialog.classList.toggle("is-wide", wide);
     previousFocus = document.activeElement;
     outsideCloses = closeOnOutside;
     closeGuard = confirmClose;

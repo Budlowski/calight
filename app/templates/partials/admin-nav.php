@@ -45,7 +45,7 @@ $groups = $adminArea === 'master-data'
         ],
         'Benutzerverwaltung' => [
             ['key' => 'users', 'label' => 'Benutzerkonten', 'href' => '/settings/users', 'visible' => $can('users.manage')],
-            ['key' => 'permissions', 'label' => 'Berechtigungen', 'href' => '/settings/permissions', 'visible' => $can('users.manage')],
+            ['key' => 'permissions', 'label' => 'Rollen & Rechte', 'href' => '/settings/permissions', 'visible' => $can('users.manage')],
         ],
         'Dokumente' => [
             ['key' => 'document', 'label' => 'Dokumentlayout', 'href' => '/settings#settings-document', 'settingsTab' => 'document', 'visible' => $can('settings.manage')],
