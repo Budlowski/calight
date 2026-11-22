@@ -27,17 +27,32 @@ if ($showShell): ?>
             <a class="brand" href="/dashboard">Calight</a>
         </div>
         <div class="user-area">
-            <span class="user-name"><?= $escape($currentUser['displayName']) ?></span>
-            <?php if (\App\Application\UserInterface::canSwitch($currentUser)): ?>
-            <form action="/interface" method="post">
+            <?php
+            // Benutzermenü wie in der mobilen Oberfläche: Name und Rolle, Oberflächenwechsel, Abmelden.
+            $roleLabel = \App\Security\RolePermissions::ROLES[$currentUser['role']] ?? (string) $currentUser['role'];
+            $canSwitchInterface = \App\Application\UserInterface::canSwitch($currentUser);
+            ?>
+            <details class="context-menu user-menu">
+                <summary class="user-menu-button" aria-label="Benutzermenü von <?= $escape($currentUser['displayName']) ?>">
+                    <span class="user-menu-initials" aria-hidden="true"><?= $escape(mb_strtoupper(mb_substr(trim((string) $currentUser['displayName']), 0, 1)) ?: '?') ?></span>
+                    <span class="user-name"><?= $escape($currentUser['displayName']) ?></span>
+                </summary>
+                <div class="context-menu-panel user-menu-panel">
+                    <span class="user-menu-identity"><strong><?= $escape($currentUser['displayName']) ?></strong><small><?= $escape($roleLabel) ?></small></span>
+                    <?php if ($canSwitchInterface): ?>
+                    <button type="submit" form="user-menu-switch-mobile" data-icon="layout-grid" title="Wird als bevorzugte Oberfläche gespeichert">Zur mobilen Ansicht</button>
+                    <?php endif; ?>
+                    <button type="submit" form="user-menu-logout">Abmelden</button>
+                </div>
+            </details>
+            <?php if ($canSwitchInterface): ?>
+            <form id="user-menu-switch-mobile" action="/interface" method="post" hidden>
                 <input type="hidden" name="_csrf" value="<?= $escape($csrfToken) ?>">
                 <input type="hidden" name="interface" value="mobile">
-                <button class="button button-secondary" type="submit" title="Zur mobilen Oberfläche wechseln (wird als bevorzugte Oberfläche gespeichert)">Mobile Ansicht</button>
             </form>
             <?php endif; ?>
-            <form action="/logout" method="post">
+            <form id="user-menu-logout" action="/logout" method="post" hidden>
                 <input type="hidden" name="_csrf" value="<?= $escape($csrfToken) ?>">
-                <button class="button button-secondary" type="submit">Abmelden</button>
             </form>
         </div>
     </header>
