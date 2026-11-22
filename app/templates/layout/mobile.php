@@ -18,9 +18,10 @@ $pageReadOnly = $pageModule !== null && !$moduleEnabled($pageModule);
 <html lang="de">
 <head>
     <meta charset="utf-8">
-    <?php // Ohne viewport-fit=cover: Mobile Browser melden beim Ein-/Ausblenden ihrer Leisten sonst einen
-    // unteren Sicherheitsabstand, der die untere Navigation sichtbar höher macht. ?>
-    <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
+    <?php // Ohne viewport-fit=cover und ohne dauerhaftes interactive-widget=resizes-content: Mobile Browser
+    // (u. a. Firefox für Android) verschieben die untere Navigation sonst beim Ein-/Ausblenden ihrer
+    // Leisten zusätzlich nach oben. resizes-content setzt mobile.js nur bei geöffnetem Formularblatt. ?>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#17324a">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">

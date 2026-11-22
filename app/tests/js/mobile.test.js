@@ -34,4 +34,8 @@ assert(!/caches\.open|cache\.put|\.addAll\(|indexedDB|localStorage/.test(worker)
 assert(worker.includes('request.mode !== "navigate"'), "service worker only answers page navigations");
 assert(!/onclick=/.test(worker), "offline page uses no inline script");
 
+const { viewportContent } = globalThis.CalightMobile;
+assert(viewportContent("width=device-width, initial-scale=1", true) === "width=device-width, initial-scale=1, interactive-widget=resizes-content", "sheet resizes content");
+assert(viewportContent("width=device-width, initial-scale=1, interactive-widget=resizes-content", false) === "width=device-width, initial-scale=1", "default without interactive-widget");
+
 console.log("mobile tests passed");

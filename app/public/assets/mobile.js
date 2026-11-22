@@ -48,10 +48,26 @@
       viewport.addEventListener("resize", update);
     }
 
+    // Formularblatt geöffnet: Tastatur verkleinert den Inhalt, damit „Speichern“ sichtbar bleibt.
+    // Sonst Standardverhalten, damit die untere Navigation beim Scrollen nicht springt.
+    const meta = documentObject.querySelector('meta[name="viewport"]');
+    if (meta && body && typeof windowObject.MutationObserver === "function") {
+      const base = meta.getAttribute("content") || "";
+      const sync = () => meta.setAttribute("content", viewportContent(base, body.classList.contains("mobile-sheet-open")));
+      new windowObject.MutationObserver(sync).observe(body, { attributes: true, attributeFilter: ["class"] });
+    }
+
     registerServiceWorker(windowObject.navigator, windowObject.isSecureContext === true);
   }
 
-  global.CalightMobile = { updateConnectionNotice, keyboardOpen, registerServiceWorker };
+  /** Viewport-Angabe mit oder ohne interactive-widget=resizes-content. */
+  function viewportContent(base, sheetOpen) {
+    const parts = base.split(",").map((part) => part.trim()).filter((part) => part !== "" && !part.startsWith("interactive-widget"));
+    if (sheetOpen) parts.push("interactive-widget=resizes-content");
+    return parts.join(", ");
+  }
+
+  global.CalightMobile = { updateConnectionNotice, keyboardOpen, registerServiceWorker, viewportContent };
   if (typeof document !== "undefined" && typeof window !== "undefined") {
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => init(document, window));
     else init(document, window);
