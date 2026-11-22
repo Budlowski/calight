@@ -18,7 +18,9 @@ $pageReadOnly = $pageModule !== null && !$moduleEnabled($pageModule);
 <html lang="de">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+    <?php // Ohne viewport-fit=cover: Mobile Browser melden beim Ein-/Ausblenden ihrer Leisten sonst einen
+    // unteren Sicherheitsabstand, der die untere Navigation sichtbar höher macht. ?>
+    <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
     <meta name="theme-color" content="#17324a">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
