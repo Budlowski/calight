@@ -1,31 +1,37 @@
 /*
  * Mobiles Monteurs-Frontend (/mobile/). Baut auf app.css auf (Variablen, Buttons, Status,
- * Kontextmenü) und ergänzt nur das eigene Layout: kompakter Kopf, Inhalt mit Dokument-Scrolling,
- * feste Navigation unten, Karten und Listen statt Tabellen. Safe Areas über env(safe-area-inset-*).
+ * Kontextmenü) und ergänzt nur das eigene Layout: kompakter Kopf, Navigation unten, Karten und
+ * Listen statt Tabellen. Safe Areas über env(safe-area-inset-*).
+ *
+ * App-Gerüst: Die Seite selbst scrollt nicht. body ist genau so hoch wie der sichtbare Bereich
+ * (100dvh), Kopf und Navigation sind normale Flex-Elemente, nur .mobile-main scrollt. So bleibt die
+ * untere Navigation unabhängig von ein-/ausblendenden Browserleisten (u. a. Firefox für Android).
  */
 .mobile-app {
     --mobile-header-height: 52px;
     --mobile-tabbar-height: 60px;
     --mobile-touch: 44px;
     --mobile-gutter: 16px;
-    display: block;
-    height: auto;
-    min-height: 100%;
-    overflow: visible;
+    display: flex;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
     font-size: 15px;
     -webkit-text-size-adjust: 100%;
 }
-html:has(.mobile-app) { height: auto; }
+html:has(.mobile-app) { height: 100%; overflow: hidden; }
 
 .mobile-skip-link { position: absolute; top: -100px; left: var(--mobile-gutter); z-index: 60; padding: 8px 12px; background: white; }
 .mobile-skip-link:focus { top: 8px; }
 
 /* Kopfbereich */
 .mobile-header {
-    position: sticky;
+    position: relative;
     z-index: 40;
-    top: 0;
     display: flex;
+    flex: 0 0 auto;
     min-height: calc(var(--mobile-header-height) + env(safe-area-inset-top));
     align-items: center;
     justify-content: space-between;
@@ -56,12 +62,17 @@ html:has(.mobile-app) { height: auto; }
 
 /* Inhalt */
 .mobile-main {
+    /* Einziger Scrollbereich; Inhalt auf breiten Bildschirmen mittig mit höchstens 760px. */
     width: 100%;
-    max-width: 760px;
-    margin: 0 auto;
-    padding: var(--space-5) calc(var(--mobile-gutter) + env(safe-area-inset-right)) calc(var(--mobile-tabbar-height) + env(safe-area-inset-bottom) + var(--space-6)) calc(var(--mobile-gutter) + env(safe-area-inset-left));
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    padding: var(--space-5) max(calc(var(--mobile-gutter) + env(safe-area-inset-right)), calc((100% - 760px) / 2 + var(--mobile-gutter))) var(--space-6) max(calc(var(--mobile-gutter) + env(safe-area-inset-left)), calc((100% - 760px) / 2 + var(--mobile-gutter)));
 }
-.mobile-offline { position: sticky; z-index: 35; top: calc(var(--mobile-header-height) + env(safe-area-inset-top)); margin: 0; }
+.mobile-offline { flex: 0 0 auto; margin: 0; border-radius: 0; }
 .mobile-page { display: grid; gap: var(--space-5); }
 .mobile-title { margin: 0; font-size: 24px; overflow-wrap: anywhere; }
 .mobile-subtitle { margin: calc(-1 * var(--space-4)) 0 0; color: var(--muted); }
@@ -305,15 +316,14 @@ button.mobile-list-item:active { background: #f5f9fc; }
 
 /* Navigation unten */
 .mobile-tabbar {
-    position: fixed;
+    /* Normales Flex-Element am Ende des Gerüsts (kein position: fixed). */
+    position: relative;
     z-index: 40;
-    right: 0;
-    bottom: 0;
-    left: 0;
     display: grid;
+    width: 100%;
+    flex: 0 0 auto;
     grid-auto-columns: minmax(0, 1fr);
     grid-auto-flow: column;
-    /* Feste Höhe: Leiste wächst nicht mit, wenn Browserleisten beim Scrollen ein-/ausblenden. */
     box-sizing: border-box;
     height: calc(var(--mobile-tabbar-height) + env(safe-area-inset-bottom));
     align-items: start;
@@ -349,7 +359,7 @@ button.mobile-list-item:active { background: #f5f9fc; }
 /* Tablet und Desktop: dieselbe Struktur, mehr Luft; Navigation bleibt unten erreichbar. */
 @media (min-width: 700px) {
     .mobile-quick-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .mobile-tabbar { right: 50%; left: auto; width: min(760px, 100%); transform: translateX(50%); border-right: 1px solid var(--border); border-left: 1px solid var(--border); border-radius: 10px 10px 0 0; }
+    .mobile-tabbar { width: min(760px, 100%); margin: 0 auto; border-right: 1px solid var(--border); border-left: 1px solid var(--border); border-radius: 10px 10px 0 0; }
     .mobile-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
