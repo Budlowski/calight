@@ -59,7 +59,7 @@
                 <div data-items></div>
                 <div class="work-report-billing-total" data-items-total-row hidden><span>Summe netto</span><strong data-items-total>–</strong></div>
             </div>
-            <div class="form-actions">
+            <div class="form-actions form-actions-end">
                 <span class="measurement-dirty-hint" data-dirty-hint hidden>Ungespeicherte Änderungen</span>
                 <button class="button button-light" type="button" data-edit-cancel>Abbrechen</button>
                 <button class="button" type="button" data-edit-save data-shortcut-save data-icon="save" title="Speichern (Strg+S)">Speichern</button>

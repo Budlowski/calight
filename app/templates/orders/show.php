@@ -45,7 +45,7 @@ $money=static function(?string $value):string{
                 <label>Auftragsbeschreibung (optional)<textarea name="description" maxlength="5000" rows="3"><?= $escape($order['description']) ?></textarea></label>
             </div>
             <p class="field-error" data-order-edit-error hidden></p>
-            <div class="form-actions"><button class="button" type="submit" data-icon="save">Speichern</button><button class="button button-light" type="button" data-cancel-order-edit>Abbrechen</button></div>
+            <div class="form-actions form-actions-end"><button class="button button-light" type="button" data-cancel-order-edit>Abbrechen</button><button class="button" type="submit" data-icon="save">Speichern</button></div>
         </form>
     </section>
 

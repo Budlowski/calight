@@ -1774,3 +1774,6 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 @media (max-width: 760px) {
     .system-purge-groups, .system-purge-steps { grid-template-columns: 1fr; }
 }
+
+/* Formularaktionen am Ende eines Bereichs: rechtsbündig, Abbrechen vor der Hauptaktion. */
+.form-actions-end { justify-content: flex-end; }

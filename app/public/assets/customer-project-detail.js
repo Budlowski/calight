@@ -110,7 +110,8 @@
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (saving || !form.reportValidity()) return;
-    const submit = form.querySelector('[type="submit"]');
+    // Speichern sitzt im Seitenkopf (form-Attribut) – wie auf den übrigen Detailseiten.
+    const submit = form.querySelector('[type="submit"]') || document.querySelector(`[type="submit"][form="${form.id}"]`) || { disabled: false };
     saving = true;
     submit.disabled = true;
     error.hidden = true;
