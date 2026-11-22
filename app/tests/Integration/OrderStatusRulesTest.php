@@ -61,7 +61,7 @@ final class OrderStatusRulesTest extends TestCase
         $this->assertSame([true, true, false, false], array_map([OrderWorkRules::class, 'acceptsNewWork'], ['open', 'in_progress', 'completed', 'invoiced']));
         $this->assertSame([true, true, true, false], array_map([OrderWorkRules::class, 'acceptsChanges'], ['open', 'in_progress', 'completed', 'invoiced']));
         $this->assertSame(OrderWorkRules::NEW_WORK_STATUSES, WorkReportService::ASSIGNABLE_ORDER_STATUSES, 'Rapporte nutzen die zentrale Regel.');
-        $this->assertSame(['completed' => 'in_progress', 'invoiced' => 'completed'], array_intersect_key(OrderWorkRules::REVERT, ['completed' => 1, 'invoiced' => 1]));
+        $this->assertSame(['invoiced' => 'completed', 'completed' => 'in_progress'], OrderWorkRules::REVERT, 'Rücknahme genau einen Schritt.');
         $this->assertTrue(!isset(OrderWorkRules::REVERT['in_progress']), 'Keine Rücknahme auf „Offen“.');
     }
 
