@@ -87,6 +87,19 @@ final class TimeTrackingTest extends TestCase
         });
     }
 
+    public function testWorkLocationIsStoredWithAssignmentKind(): void
+    {
+        $this->withEnvironment(function (array $env): void {
+            ['service' => $service, 'tech' => $tech] = $env;
+            $day = $service->createEntry(['date' => '2026-11-18', 'start' => '07:00', 'end' => '11:00', 'workLocation' => '  Baustelle Leipzig ', 'assignmentKind' => 'external'], $tech);
+            $entry = $day['entries'][0];
+            $this->assertSame(['Baustelle Leipzig', 'external'], [$entry['workLocation'], $entry['assignmentKind']], 'Einsatzort getrimmt, Einsatzart unverändert.');
+            $day = $service->updateEntry($entry['id'], ['version' => $entry['version'], 'date' => '2026-11-18', 'start' => '07:00', 'end' => '11:00', 'workLocation' => '', 'assignmentKind' => ''], $tech);
+            $this->assertSame(['', null], [$day['entries'][0]['workLocation'], $day['entries'][0]['assignmentKind']], 'Ohne Angabe bleibt beides leer.');
+            $this->assertThrows(DocumentValidationException::class, fn () => $service->createEntry(['date' => '2026-11-18', 'start' => '12:00', 'end' => '13:00', 'workLocation' => str_repeat('x', 201)], $tech));
+        });
+    }
+
     public function testBlocksAcrossMidnightAndEditing(): void
     {
         $this->withEnvironment(function (array $env): void {

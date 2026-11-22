@@ -114,6 +114,7 @@
       breakMinutes: untimed ? "" : String(values.breakMinutes ?? "").trim(),
       travelMinutes: String(values.travelMinutes ?? "").trim(),
       assignmentKind: values.assignmentKind || "",
+      workLocation: String(values.workLocation ?? "").trim(),
       notes: String(values.notes ?? "").trim(),
     };
     if (!fixedDuration) {
@@ -495,7 +496,7 @@
       ${fixed ? "" : `<div data-duration-fields>${field("Dauer", `<input type="text" name="duration" inputmode="decimal" placeholder="z. B. 7:30 oder 7,5" value="${esc(untimed ? durationText(entry?.netMinutes) : "")}">`, "Stunden:Minuten oder Dezimalstunden")}</div>`}
       ${field("Davon Reisezeit (Min.)", `<input type="number" name="travelMinutes" inputmode="numeric" min="0" step="1" value="${esc(entry?.travelMinutes || "")}" placeholder="0">`, "Reisezeit ist Teil der Arbeitszeit")}
       ${fixed ? "" : costTargetField()}
-      ${field("Einsatzart", `<select name="assignmentKind">${options(state.reference.assignments, entry?.assignmentKind || "", "Keine Angabe")}</select>`)}
+      ${Calight.workLocationFields({ workLocation: entry?.workLocation || "", assignmentKind: entry?.assignmentKind || "" })}
       ${field("Bemerkung", `<textarea name="notes" rows="2" maxlength="500">${esc(entry?.notes || "")}</textarea>`)}
       <input type="hidden" name="version" value="${esc(entry?.version ?? "")}">`;
     openSheet({
@@ -520,7 +521,7 @@
         const form = values();
         const target = global.Calight.parseCostTarget(form.costTarget);
         const untimedMode = (form.mode || "times") === "duration";
-        const payload = entryPayload({ ...form, ...target }, { untimed: untimedMode, fixedDuration: fixed });
+        const payload = entryPayload({ ...form, ...Calight.readWorkLocation(sheetForm), ...target }, { untimed: untimedMode, fixedDuration: fixed });
         return entry
           ? api(`/api/time-tracking/entries/${encodeURIComponent(entry.id)}`, { method: "PUT", body: payload })
           : api("/api/time-tracking/entries", { method: "POST", body: payload });

@@ -91,6 +91,7 @@
       `<span class="time-source">${esc(entry.sourceLabel)}</span>`,
       !manual && entry.reportActivity ? esc(entry.reportActivity) : "",
       context ? `<span class="time-context" title="${esc(context)}">${esc(context)}</span>` : manual ? "Ohne Zuordnung" : "",
+      entry.workLocation ? `<span>${esc(entry.workLocation)}</span>` : "",
       entry.assignmentKind ? `<span title="${esc(entry.assignmentLabel)}">${entry.assignmentKind === "external" ? "Auswärts" : "Erste Tätigkeitsstätte"}</span>` : "",
     ].filter(Boolean).join('<span aria-hidden="true"> · </span>');
     const editLabel = entry.durationFixed ? (entry.hasTimes ? "Uhrzeiten bearbeiten" : "Uhrzeiten ergänzen") : "Bearbeiten";
@@ -475,11 +476,13 @@
     const fixed = entry?.durationFixed ? entry.netMinutes : null;
     const timed = current.entries.filter((item) => item.hasTimes);
     const lastEnd = timed.length ? timed[timed.length - 1].end : "07:00";
-    // Einsatzart des vorigen Blocks vorschlagen (jederzeit änderbar).
-    const lastAssignment = current.entries.length ? current.entries[current.entries.length - 1].assignmentKind || "" : "";
+    // Einsatzort und -art des vorigen Blocks vorschlagen (jederzeit änderbar).
+    const lastEntry = current.entries.length ? current.entries[current.entries.length - 1] : null;
+    const lastAssignment = lastEntry?.assignmentKind || "";
     const values = {
       start: entry ? entry.start || "" : preset.start ?? (fixed === null ? lastEnd : ""), end: entry?.end ?? "", breakMinutes: entry?.breakMinutes ?? 0, travelMinutes: entry?.travelMinutes ?? 0,
       assignmentKind: entry ? entry.assignmentKind || "" : preset.assignmentKind ?? lastAssignment,
+      workLocation: entry ? entry.workLocation || "" : preset.workLocation ?? lastEntry?.workLocation ?? "",
       orderId: entry?.orderId ?? preset.orderId ?? "", costCenterId: entry?.costCenterId ?? preset.costCenterId ?? "", notes: entry?.notes ?? "",
       duration: entry && !entry.hasTimes && fixed === null ? hours(entry.netMinutes).replace(" h", "") : "",
     };
@@ -504,7 +507,7 @@
         ${fixed === null && !timesRequired ? `<label data-duration-field><span class="field-label">Dauer ohne Uhrzeiten</span><input name="duration" inputmode="decimal" placeholder="z. B. 1:30 oder 1,5" value="${esc(values.duration)}"></label>` : ""}
       </div>
       <p class="muted" data-net></p>
-      <label><span class="field-label">Einsatzart (optional)</span><select name="assignmentKind"><option value="">Keine Angabe</option>${Object.entries(reference.assignments).map(([key, label]) => `<option value="${key}"${key === values.assignmentKind ? " selected" : ""}>${esc(label)}</option>`).join("")}</select></label>
+      ${Calight.workLocationFields(values)}
       ${fixed === null ? `<label><span class="field-label">Auftrag / Kostenstelle (optional)</span><select name="costTarget"></select></label>` : ""}
       <label><span class="field-label">Bemerkung (optional)</span><input name="notes" maxlength="500" value="${esc(values.notes)}" placeholder="${fixed === null ? "z. B. Angebotsbearbeitung, Werkstatt" : "Ergänzung zur Zeiterfassung"}"></label>
       </div>
@@ -560,7 +563,7 @@
       const duration = form.elements.duration && !timesGiven ? parseDuration(form.elements.duration.value) : NaN;
       return {
         date: state.date, employeeId: state.employee, start: form.elements.start.value, end: form.elements.end.value,
-        breakMinutes: timesGiven ? form.elements.breakMinutes.value : 0, travelMinutes: form.elements.travelMinutes.value, assignmentKind: form.elements.assignmentKind.value,
+        breakMinutes: timesGiven ? form.elements.breakMinutes.value : 0, travelMinutes: form.elements.travelMinutes.value, ...Calight.readWorkLocation(form),
         ...Calight.parseCostTarget(form.elements.costTarget?.value ?? ""), notes: form.elements.notes.value.trim(),
         ...(Number.isNaN(duration) ? {} : { durationMinutes: duration }),
         ...(entry ? { version: entry.version } : {}),
@@ -593,7 +596,7 @@
         label: "Speichern und weiter",
         onClick: async (run) => {
           const next = kind === "work"
-            ? { start: form.elements.end.value, ...Calight.parseCostTarget(form.elements.costTarget.value), assignmentKind: form.elements.assignmentKind.value }
+            ? { start: form.elements.end.value, ...Calight.parseCostTarget(form.elements.costTarget.value), ...Calight.readWorkLocation(form) }
             : { kind: "absence" };
           if (!form.reportValidity()) return false;
           if (await run(save)) {

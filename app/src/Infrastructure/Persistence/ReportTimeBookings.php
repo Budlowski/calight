@@ -109,7 +109,7 @@ final readonly class ReportTimeBookings
         $key = static fn (array $entry): string => $entry['employee_id'] . '|' . $entry['work_date'] . '|' . $entry['net_minutes'];
         $candidates = [];
         foreach ($previous as $entry) {
-            if ($entry['start_time'] !== null || (int) $entry['travel_minutes'] > 0 || $entry['assignment_kind'] !== null) {
+            if ($entry['start_time'] !== null || (int) $entry['travel_minutes'] > 0 || $entry['assignment_kind'] !== null || ($entry['work_location'] ?? '') !== '') {
                 $candidates[$key($entry)][] = $entry;
             }
         }
@@ -123,9 +123,9 @@ final readonly class ReportTimeBookings
             }
             $source = $candidates[$match][0];
             $this->pdo->prepare('UPDATE time_entries SET start_time = :start, end_time = :end, ends_next_day = :next, break_minutes = :break, travel_minutes = :travel,
-                assignment_kind = :assignment, notes = :notes, updated_by_user_id = :user, updated_at = :now, version = version + 1 WHERE id = :id')
+                assignment_kind = :assignment, work_location = :location, notes = :notes, updated_by_user_id = :user, updated_at = :now, version = version + 1 WHERE id = :id')
                 ->execute(['start' => $source['start_time'], 'end' => $source['end_time'], 'next' => $source['ends_next_day'], 'break' => $source['break_minutes'],
-                    'travel' => $source['travel_minutes'], 'assignment' => $source['assignment_kind'], 'notes' => $source['notes'],
+                    'travel' => $source['travel_minutes'], 'assignment' => $source['assignment_kind'], 'location' => $source['work_location'], 'notes' => $source['notes'],
                     'user' => $userId, 'now' => $now, 'id' => $entries[0]['id']]);
         }
     }

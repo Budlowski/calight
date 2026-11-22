@@ -423,6 +423,26 @@
         materialRequests: () => "/material-requests",
       });
 
+  /**
+   * Einsatzort (Freitext) mit Schalter „Auswärtstätigkeit“ für Zeitbuchungen. Der Schalter setzt die
+   * bestehende Einsatzart (assignmentKind): an = external, aus = regular (Erste Tätigkeitsstätte),
+   * sofern ein Ort angegeben ist oder die Buchung schon so eingeordnet war – sonst „keine Angabe“.
+   */
+  function workLocationFields(values = {}, { labelClass = "field-label", optional = true } = {}) {
+    return `<div class="work-location-field">
+      <label><span class="${labelClass}">Einsatzort${optional ? " (optional)" : ""}</span><input name="workLocation" maxlength="200" autocomplete="off" value="${esc(values.workLocation || "")}" placeholder="z. B. Baustelle, Ort"></label>
+      <label class="work-location-switch"><input type="checkbox" role="switch" name="external"${values.assignmentKind === "external" ? " checked" : ""}><span>Auswärtstätigkeit</span></label>
+      <input type="hidden" name="previousAssignment" value="${esc(values.assignmentKind || "")}">
+    </div>`;
+  }
+  function readWorkLocation(form) {
+    const workLocation = String(form.elements.workLocation?.value ?? "").trim();
+    const external = Boolean(form.elements.external?.checked);
+    const previous = form.elements.previousAssignment?.value || "";
+    const assignmentKind = external ? "external" : (workLocation !== "" || previous === "regular" ? "regular" : "");
+    return { workLocation, assignmentKind };
+  }
+
   globalThis.Calight = Object.freeze({ ui, paths, moduleReadOnly, readOnly, esc, api, format, exact, collator, normalize, matches, notify, bindProjectToCustomer, createDialog, suggest, searchableSelect, suggestPlacement,
-    costTargetOptions, costTargetSelect, parseCostTarget });
+    costTargetOptions, costTargetSelect, parseCostTarget, workLocationFields, readWorkLocation });
 })();

@@ -1714,3 +1714,13 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 .user-menu-identity { display: grid; gap: 2px; padding: 10px 12px; border-bottom: 1px solid #e5eaed; }
 .user-menu-identity small { color: var(--muted); }
 @media (max-width: 640px) { .user-menu-button .user-name { display: none; } }
+
+/* Zeitbuchung: Einsatzort mit Schalter „Auswärtstätigkeit“ (Calight.workLocationFields). */
+.work-location-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--space-3); }
+.work-location-switch { display: inline-flex; min-height: 38px; align-items: center; gap: var(--space-2); font-weight: 600; white-space: nowrap; cursor: pointer; }
+.work-location-switch input[role="switch"] { position: relative; width: 36px; height: 20px; flex: 0 0 auto; margin: 0; border-radius: 999px; background: #c5d0da; appearance: none; cursor: pointer; transition: background .15s; }
+.work-location-switch input[role="switch"]::after { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: white; box-shadow: 0 1px 2px rgb(0 0 0 / 25%); content: ""; transition: transform .15s; }
+.work-location-switch input[role="switch"]:checked { background: var(--primary); }
+.work-location-switch input[role="switch"]:checked::after { transform: translateX(16px); }
+.work-location-switch input[role="switch"]:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+@media (max-width: 420px) { .work-location-field { grid-template-columns: 1fr; } }

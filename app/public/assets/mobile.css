@@ -356,3 +356,7 @@ button.mobile-list-item:active { background: #f5f9fc; }
     .mobile-tabbar { right: 50%; left: auto; width: min(760px, 100%); transform: translateX(50%); border-right: 1px solid var(--border); border-left: 1px solid var(--border); border-radius: 10px 10px 0 0; }
     .mobile-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+/* Einsatzort im mobilen Erfassungsformular wie die übrigen Felder. */
+.mobile-app .work-location-field > label:first-child { display: grid; gap: var(--space-2); font-weight: 600; }
+.mobile-app .work-location-switch { min-height: var(--mobile-touch); }

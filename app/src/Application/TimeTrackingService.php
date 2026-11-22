@@ -248,6 +248,7 @@ final readonly class TimeTrackingService
                 'travelMinutes' => (int) $entry['travel_minutes'], 'periodNetMinutes' => $net, 'periodTravelMinutes' => $travel,
                 'activity' => $entry['activity'], 'activityLabel' => self::ACTIVITIES[$entry['activity']] ?? $entry['activity'],
                 'assignmentKind' => $entry['assignment_kind'], 'assignmentLabel' => $entry['assignment_kind'] !== null ? self::ASSIGNMENTS[$entry['assignment_kind']] ?? '' : '',
+                'workLocation' => (string) ($entry['work_location'] ?? ''),
                 'orderNumber' => $entry['order_number'], 'costCenterNumber' => $entry['cost_center_number'], 'notes' => $entry['notes'], 'hasTimes' => $entry['start_time'] !== null,
             ] + self::source($entry);
         }
@@ -795,6 +796,7 @@ final readonly class TimeTrackingService
             // Kostenziel: Auftrag ODER allgemeine Kostenstelle (nur manuelle Zeitblöcke).
             'cost_center_id' => $this->costCenter($input['costCenterId'] ?? '', $order, $existing['cost_center_id'] ?? null),
             'assignment_kind' => $this->assignment($input),
+            'work_location' => $this->text($input['workLocation'] ?? '', 200, 'Einsatzort'),
             'notes' => $this->text($input['notes'] ?? '', 500, 'Bemerkung'),
         ];
     }
@@ -814,6 +816,7 @@ final readonly class TimeTrackingService
         return $timing + [
             'travel_minutes' => $this->travel($input, $net),
             'assignment_kind' => $this->assignment($input),
+            'work_location' => $this->text($input['workLocation'] ?? '', 200, 'Einsatzort'),
             'notes' => $this->text($input['notes'] ?? '', 500, 'Bemerkung'),
         ];
     }
@@ -932,6 +935,7 @@ final readonly class TimeTrackingService
             'endsNextDay' => (bool) $entry['ends_next_day'], 'breakMinutes' => (int) $entry['break_minutes'], 'netMinutes' => (int) $entry['net_minutes'],
             'travelMinutes' => (int) $entry['travel_minutes'], 'workMinutes' => (int) $entry['net_minutes'] - (int) $entry['travel_minutes'],
             'assignmentKind' => $entry['assignment_kind'], 'assignmentLabel' => $entry['assignment_kind'] !== null ? (self::ASSIGNMENTS[$entry['assignment_kind']] ?? '') : null,
+            'workLocation' => (string) ($entry['work_location'] ?? ''),
             'activity' => $entry['activity'], 'activityLabel' => self::ACTIVITIES[$entry['activity']] ?? $entry['activity'],
             'orderId' => $entry['order_id'], 'orderNumber' => $entry['order_number'], 'orderTitle' => $entry['order_title'], 'notes' => $entry['notes'],
             'costCenterId' => $entry['cost_center_id'], 'costCenterNumber' => $entry['cost_center_number'], 'costCenterName' => $entry['cost_center_name'],
