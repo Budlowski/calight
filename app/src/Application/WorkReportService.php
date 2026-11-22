@@ -78,7 +78,9 @@ final readonly class WorkReportService
         return [
             'customers' => array_map(static fn (array $row): array => ['id' => $row['id'], 'customerNumber' => $row['customer_number'], 'name' => $row['name']], $this->reports->activeCustomers()),
             'orders' => array_map(static fn (array $order): array => ['id' => $order['id'], 'orderNumber' => $order['order_number'], 'title' => $order['title'], 'customerId' => $order['customer_id']], $orders),
-            'employees' => array_map(static fn (array $row): array => ['id' => $row['id'], 'name' => $row['display_name']], $this->reports->activeEmployees()),
+            'employees' => array_map(static fn (array $row): array => ['id' => $row['id'], 'name' => $row['display_name']], $employees = $this->reports->activeEmployees()),
+            // Eigener Mitarbeiter (nur über employees.user_id) für die Vorbelegung neuer Stunden.
+            'ownEmployeeId' => array_values(array_filter($employees, static fn (array $row): bool => (string) ($row['user_id'] ?? '') === (string) ($actor['id'] ?? '')))[0]['id'] ?? null,
             'laborGroups' => array_map(static fn (array $row): array => ['id' => $row['id'], 'name' => $row['name'], 'unit' => $row['unit']], $this->reports->catalog('', 'labor', 200)),
         ];
     }

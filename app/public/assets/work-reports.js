@@ -4,7 +4,7 @@
 
   const { esc, api, format, notify } = Calight;
   const STATUS_LABELS = { draft: "Entwurf", submitted: "Eingereicht", processed: "Bearbeitet" };
-  const href = (report) => `/work-reports/${encodeURIComponent(report.id)}`;
+  const href = (report) => Calight.paths.workReport(report.id);
   const statusBadge = (report) => `<span class="status-badge status-work-${esc(report.status)}">${STATUS_LABELS[report.status] || esc(report.status)}</span>`;
   const confirmationBadge = (report) => (report.confirmationStatus === "confirmed" ? '<span class="status-badge status-work-confirmed">Bestätigt</span>' : "");
   const number = (report) => report.reportNumber || "Entwurf";
@@ -20,7 +20,58 @@
   }
   const createForOrder = (orderId) => create({ orderId });
 
-  globalThis.CalightWorkReports = Object.freeze({ create, createForOrder, statusBadge, confirmationBadge, number, href, orderLabel });
+  // Gemeinsamer Anlegedialog (Büro-Übersicht und mobile Übersicht): Kunden und Aufträge mit den
+  // Freigaberegeln des Dienstes.
+  let orders = [];
+  let customers = [];
+  let reference = null;
+  async function loadReference() {
+    if (reference) return reference;
+    reference = await api("/api/work-reports/reference-data");
+    orders = reference.orders;
+    customers = reference.customers;
+    return reference;
+  }
+
+  const customerOption = (customer, selected = "") => `<option value="${esc(customer.id)}"${customer.id === selected ? " selected" : ""}>${esc(customer.customerNumber || "Ohne Nr.")} · ${esc(customer.name)}</option>`;
+
+  /** Anlegen: zuerst Kunde (Pflicht), dann optional ein Auftrag dieses Kunden. */
+  async function newReport({ orderId = "", customerId = "" } = {}) {
+    await loadReference();
+    const preselectedOrder = orders.find((order) => order.id === orderId);
+    const preselectedCustomer = preselectedOrder?.customerId || customerId;
+    const form = document.createElement("form");
+    form.className = "form-stack";
+    form.noValidate = true;
+    form.innerHTML = `
+      <label><span class="field-label">Kunde <span aria-hidden="true">*</span></span>
+        <select name="customerId" required><option value="">Kunde auswählen …</option>${customers.map((customer) => customerOption(customer, preselectedCustomer)).join("")}</select></label>
+      <label><span class="field-label">Auftrag (optional)</span>
+        <select name="orderId"><option value="">Ohne Auftrag</option></select></label>
+      <p class="muted">Ein Rapport kann auch ohne Auftrag angelegt werden. Das Büro kann ihn später einem Auftrag des Kunden zuordnen.</p>
+      <p class="field-error" data-dialog-error hidden></p>`;
+    const syncOrders = () => {
+      const customerId = form.elements.customerId.value;
+      const available = orders.filter((order) => order.customerId === customerId);
+      form.elements.orderId.innerHTML = '<option value="">Ohne Auftrag</option>' + available
+        .map((order) => `<option value="${esc(order.id)}"${order.id === preselectedOrder?.id ? " selected" : ""}>${esc(order.orderNumber)} · ${esc(order.title)}</option>`)
+        .join("");
+      form.elements.orderId.disabled = available.length === 0;
+    };
+    form.elements.customerId.addEventListener("change", syncOrders);
+    syncOrders();
+    Calight.searchableSelect(form.elements.customerId, { placeholder: "Kundennummer oder Name eingeben …" });
+    Calight.createDialog({
+      title: "Rapport anlegen",
+      form,
+      submitLabel: "Anlegen",
+      discardMessage: "Das Anlegen abbrechen?",
+      initialFocus: ".suggest-select input",
+      submit: () => create({ customerId: form.elements.customerId.value, orderId: form.elements.orderId.value }),
+    });
+  }
+
+  globalThis.CalightWorkReports = Object.freeze({ create, createForOrder, openCreateDialog: newReport, statusBadge, confirmationBadge, number, href, orderLabel });
 
   // Auftragsdetailseite: „Rapport anlegen“.
   document.querySelectorAll("[data-create-work-report]").forEach((button) => button.addEventListener("click", async () => {
@@ -40,8 +91,6 @@
   const orderFilter = root.querySelector("[data-order-filter]");
   const customerFilter = root.querySelector("[data-customer-filter]");
   const canProcess = root.dataset.canProcess === "1";
-  let orders = [];
-  let customers = [];
 
   const renderCard = (report) => `
     <article class="overview-card" tabindex="0" data-href="${href(report)}">
@@ -113,47 +162,8 @@
     renderCard,
   });
 
-  const customerOption = (customer, selected = "") => `<option value="${esc(customer.id)}"${customer.id === selected ? " selected" : ""}>${esc(customer.customerNumber || "Ohne Nr.")} · ${esc(customer.name)}</option>`;
-
-  /** Anlegen: zuerst Kunde (Pflicht), dann optional ein Auftrag dieses Kunden. */
-  function newReport() {
-    const preselectedOrder = orders.find((order) => order.id === orderFilter.value);
-    const preselectedCustomer = preselectedOrder?.customerId || customerFilter.value;
-    const form = document.createElement("form");
-    form.className = "form-stack";
-    form.noValidate = true;
-    form.innerHTML = `
-      <label><span class="field-label">Kunde <span aria-hidden="true">*</span></span>
-        <select name="customerId" required><option value="">Kunde auswählen …</option>${customers.map((customer) => customerOption(customer, preselectedCustomer)).join("")}</select></label>
-      <label><span class="field-label">Auftrag (optional)</span>
-        <select name="orderId"><option value="">Ohne Auftrag</option></select></label>
-      <p class="muted">Ein Rapport kann auch ohne Auftrag angelegt werden. Das Büro kann ihn später einem Auftrag des Kunden zuordnen.</p>
-      <p class="field-error" data-dialog-error hidden></p>`;
-    const syncOrders = () => {
-      const customerId = form.elements.customerId.value;
-      const available = orders.filter((order) => order.customerId === customerId);
-      form.elements.orderId.innerHTML = '<option value="">Ohne Auftrag</option>' + available
-        .map((order) => `<option value="${esc(order.id)}"${order.id === preselectedOrder?.id ? " selected" : ""}>${esc(order.orderNumber)} · ${esc(order.title)}</option>`)
-        .join("");
-      form.elements.orderId.disabled = available.length === 0;
-    };
-    form.elements.customerId.addEventListener("change", syncOrders);
-    syncOrders();
-    Calight.searchableSelect(form.elements.customerId, { placeholder: "Kundennummer oder Name eingeben …" });
-    Calight.createDialog({
-      title: "Rapport anlegen",
-      form,
-      submitLabel: "Anlegen",
-      discardMessage: "Das Anlegen abbrechen?",
-      initialFocus: ".suggest-select input",
-      submit: () => create({ customerId: form.elements.customerId.value, orderId: form.elements.orderId.value }),
-    });
-  }
-
   async function init() {
-    const reference = await api("/api/work-reports/reference-data");
-    orders = reference.orders;
-    customers = reference.customers;
+    await loadReference();
     orderFilter.innerHTML = '<option value="">Alle Aufträge</option>' + orders
       .map((order) => `<option value="${esc(order.id)}">${esc(order.orderNumber)} · ${esc(order.title)}</option>`)
       .join("");
@@ -161,6 +171,6 @@
     list.start();
   }
 
-  root.querySelector("[data-new]")?.addEventListener("click", newReport);
+  root.querySelector("[data-new]")?.addEventListener("click", () => newReport({ orderId: orderFilter.value, customerId: customerFilter.value }).catch((exception) => notify(message, exception.message)));
   init().catch((exception) => notify(message, exception.message));
 })();

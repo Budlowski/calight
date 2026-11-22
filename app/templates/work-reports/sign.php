@@ -4,7 +4,8 @@ $title = 'Leistungsnachweis bestätigen';
 $hours = static fn (string $value): string => str_replace('.', ',', str_contains($value, '.') ? rtrim(rtrim($value, '0'), '.') : $value);
 $date = static fn (?string $value): string => $value ? (new DateTimeImmutable($value))->format('d.m.Y') : '';
 ?>
-<div id="work-report-sign" class="sign-page" data-id="<?= $escape($report['id']) ?>" data-csrf="<?= $escape($csrfToken) ?>"
+<?php $returnUrl = (string) ($returnUrl ?? '/work-reports/' . rawurlencode((string) $report['id'])); ?>
+<div id="work-report-sign" class="sign-page" data-id="<?= $escape($report['id']) ?>" data-csrf="<?= $escape($csrfToken) ?>" data-return="<?= $escape($returnUrl) ?>"
      data-version="<?= $escape((string) $report['version']) ?>" data-hash="<?= $escape((string) $report['submittedSha256']) ?>">
     <header class="sign-header">
         <span class="sign-company"><?= $escape($companyName !== '' ? $companyName : 'Leistungsnachweis') ?></span>
@@ -68,7 +69,7 @@ $date = static fn (?string $value): string => $value ? (new DateTimeImmutable($v
             <button class="button button-light" type="button" data-clear data-icon="refresh-cw">Unterschrift löschen</button>
             <button class="button" type="submit" data-submit data-icon="clipboard-check">Bestätigen und unterschreiben</button>
         </div>
-        <a class="sign-cancel" href="/work-reports/<?= $escape(rawurlencode((string) $report['id'])) ?>">Abbrechen</a>
+        <a class="sign-cancel" href="<?= $escape($returnUrl) ?>">Abbrechen</a>
     </form>
 </div>
 <script src="/assets/work-report-sign.js?v=<?= $escape((string) filemtime(dirname(__DIR__, 2) . '/public/assets/work-report-sign.js')) ?>" defer></script>

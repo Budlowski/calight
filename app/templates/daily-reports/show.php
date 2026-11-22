@@ -1,17 +1,22 @@
-<?php $title='Tagesbericht';$contentClass='content-wide'; ?>
+<?php $title='Tagesbericht';$contentClass='content-wide';
+// Gleicher Editor in Büro- und mobiler Oberfläche ($mobile): mobil ohne Brotkrümel und ohne Büroaktionen.
+$mobile=(bool)($mobile??false); ?>
 <div id="daily-report-detail" class="detail-page" data-id="<?= $escape($reportId) ?>" data-csrf="<?= $escape($csrfToken) ?>">
-    <nav class="breadcrumb" aria-label="Brotkrümelnavigation"><ol><li><a href="/daily-reports">Tagesberichte</a></li><li data-order-crumb hidden></li><li aria-current="page" data-current-crumb>Tagesbericht</li></ol></nav>
+    <?php if($mobile): ?><nav class="mobile-back" aria-label="Zurück"><a href="/mobile/daily-reports">‹ Tagesberichte</a></nav><div hidden><span data-order-crumb></span><span data-current-crumb></span></div>
+    <?php else: ?><nav class="breadcrumb" aria-label="Brotkrümelnavigation"><ol><li><a href="/daily-reports">Tagesberichte</a></li><li data-order-crumb hidden></li><li aria-current="page" data-current-crumb>Tagesbericht</li></ol></nav><?php endif; ?>
     <div class="page-heading">
         <div><h1 data-title>Tagesbericht</h1><p class="muted" data-meta>Bericht wird geladen …</p></div>
         <div class="order-detail-actions report-head-actions">
             <span class="status-badge" data-status hidden></span>
             <button class="button" type="submit" form="daily-report-form" data-save data-icon="save" hidden>Speichern</button>
             <button class="button button-light" type="button" data-action="submit" data-icon="file-up" hidden>Einreichen</button>
-            <button class="button" type="button" data-action="approve" data-icon="clipboard-check" hidden>Festschreiben</button>
+            <?php if(!$mobile): ?><button class="button" type="button" data-action="approve" data-icon="clipboard-check" hidden>Festschreiben</button><?php endif; ?>
             <a class="button button-light" href="/api/daily-reports/<?= $escape(rawurlencode($reportId)) ?>/pdf" target="_blank" rel="noopener" data-pdf data-icon="file-down">PDF</a>
+            <?php if(!$mobile): // Büroaufgaben (Festschreiben, Zurückgeben, Wieder öffnen, Stornieren) nur in der Büroansicht. ?>
             <button class="button button-light" type="button" data-action="return" data-icon="undo-2" hidden>Zurückgeben</button>
             <button class="button button-light" type="button" data-action="reopen" data-icon="undo-2" hidden>Wieder öffnen</button>
             <button class="button button-danger-light" type="button" data-action="cancel" data-icon="trash" hidden>Stornieren</button>
+            <?php endif; ?>
             <button class="button button-danger-light" type="button" data-delete data-icon="trash" hidden>Löschen</button>
         </div>
     </div>

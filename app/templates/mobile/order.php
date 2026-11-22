@@ -10,7 +10,7 @@ $quantity = static function (string $value): string {
 $relatedSections = [
     ['key' => 'dailyReports', 'title' => 'Tagesberichte', 'empty' => 'Noch keine Tagesberichte.',
         'items' => $detail['dailyReports']['items'] ?? null, 'total' => $detail['dailyReports']['total'] ?? 0,
-        'more' => '/daily-reports?order=' . rawurlencode((string) $order['id'])],
+        'more' => '/mobile/daily-reports?order=' . rawurlencode((string) $order['id'])],
     ['key' => 'workReports', 'title' => 'Rapporte', 'empty' => 'Noch keine Rapporte.', 'items' => $detail['workReports'], 'total' => count($detail['workReports'] ?? []), 'more' => null],
     ['key' => 'materialRequests', 'title' => 'Offener Materialbedarf', 'empty' => 'Kein offener Materialbedarf.', 'items' => $detail['materialRequests'], 'total' => count($detail['materialRequests'] ?? []),
         'more' => '/material-requests?order=' . rawurlencode((string) $order['id']) . '&status=all'],

@@ -93,8 +93,8 @@ final readonly class MobileWorkspace
         };
         $timeEntry = $work && $this->hasActiveEmployee($actor);
         $add($timeEntry, 'Arbeitszeit', 'clock-3', '/mobile/times?form=entry', 'Zeit erfassen');
-        $add($work && $this->can($actor, 'reports.write'), 'Tagesbericht', 'calendar-days', '/daily-reports', 'Berichte erfassen');
-        $add($work && $this->can($actor, 'workreports.write'), 'Rapport', 'clipboard-check', '/work-reports', 'Regieleistungen');
+        $add($work && $this->can($actor, 'reports.write'), 'Tagesbericht', 'calendar-days', '/mobile/daily-reports', 'Berichte erfassen');
+        $add($work && $this->can($actor, 'workreports.write'), 'Rapport', 'clipboard-check', '/mobile/rapports', 'Regieleistungen');
         $add($procurement && $this->can($actor, 'reports.write'), 'Materialbedarf', 'package', '/material-requests', 'Material anfordern');
         $add($this->can($actor, 'measurements.write'), 'Aufmaß', 'ruler', '/measurements', 'Mengen erfassen');
         $add($timeEntry, 'Abwesenheit', 'calendar-days', '/mobile/times?form=absence', 'Urlaub, Krankheit …');
@@ -196,7 +196,7 @@ final readonly class MobileWorkspace
                 if ($own($report, 'created_by_user_id')) {
                     $items[] = ['type' => 'Tagesbericht', 'label' => (string) ($report['title'] ?: 'Tagesbericht vom ' . self::germanDate((string) $report['report_date'])),
                         'detail' => self::join([$report['order_number'] ?? null, $report['customer_name'] ?? null]),
-                        'status' => (string) $report['status_label'], 'url' => '/daily-reports/' . rawurlencode((string) $report['id'])];
+                        'status' => (string) $report['status_label'], 'url' => '/mobile/daily-reports/' . rawurlencode((string) $report['id'])];
                 }
             }
         }
@@ -205,7 +205,7 @@ final readonly class MobileWorkspace
                 if ($own($report, 'createdByUserId')) {
                     $items[] = ['type' => 'Rapport', 'label' => 'Rapportentwurf vom ' . self::germanDate((string) $report['workDate']),
                         'detail' => self::join([$report['orderNumber'] ?? null, $report['customerName'] ?? null]),
-                        'status' => self::WORK_REPORT_STATUS['draft'], 'url' => '/work-reports/' . rawurlencode((string) $report['id'])];
+                        'status' => self::WORK_REPORT_STATUS['draft'], 'url' => '/mobile/rapports/' . rawurlencode((string) $report['id'])];
                 }
             }
         }
@@ -294,7 +294,7 @@ final readonly class MobileWorkspace
                 'date' => (string) $report['report_date'],
                 'detail' => (string) ($report['employee_names'] ?? ''),
                 'status' => (string) $report['status_label'],
-                'url' => '/daily-reports/' . rawurlencode((string) $report['id']),
+                'url' => '/mobile/daily-reports/' . rawurlencode((string) $report['id']),
             ], $page['items'])];
             if (!$workEnabled && $dailyReports['total'] === 0) {
                 $dailyReports = null;
@@ -308,7 +308,7 @@ final readonly class MobileWorkspace
                 'date' => (string) $report['workDate'],
                 'detail' => (string) $report['creatorName'],
                 'status' => self::WORK_REPORT_STATUS[$report['status']] ?? (string) $report['status'],
-                'url' => '/work-reports/' . rawurlencode((string) $report['id']),
+                'url' => '/mobile/rapports/' . rawurlencode((string) $report['id']),
             ], $rows);
             if (!$workEnabled && $workReports === []) {
                 $workReports = null;
@@ -393,10 +393,10 @@ final readonly class MobileWorkspace
             $actions[] = ['label' => 'Arbeitszeit erfassen', 'icon' => 'clock-3', 'url' => '/mobile/times?form=entry&order=' . $encoded];
         }
         if ($work && $this->can($actor, 'reports.write')) {
-            $actions[] = ['label' => 'Tagesbericht anlegen', 'icon' => 'calendar-days', 'url' => '/daily-reports?create_for=' . $encoded];
+            $actions[] = ['label' => 'Tagesbericht anlegen', 'icon' => 'calendar-days', 'url' => '/mobile/daily-reports?create_for=' . $encoded];
         }
         if ($work && $this->can($actor, 'workreports.write')) {
-            $actions[] = ['label' => 'Rapport anlegen', 'icon' => 'clipboard-check', 'url' => '/orders/' . $encoded . '#execution'];
+            $actions[] = ['label' => 'Rapport anlegen', 'icon' => 'clipboard-check', 'url' => '/mobile/rapports?create_for=' . $encoded];
         }
         if ($procurement && $this->can($actor, 'reports.write')) {
             $actions[] = ['label' => 'Material anfordern', 'icon' => 'package', 'url' => '/orders/' . $encoded . '#material'];
@@ -510,6 +510,116 @@ final readonly class MobileWorkspace
             'mobile' => trim((string) $contact['mobile']),
             'email' => trim((string) $contact['email']),
         ], $context['contacts'] ?? []);
+    }
+
+    // -------------------------------------------------------------------------
+    // Tagesberichte und Rapporte (Übersichten; Bearbeitung über die bestehenden Editoren)
+    // -------------------------------------------------------------------------
+
+    /** Statusfilter der mobilen Tagesberichtsliste (Werte des bestehenden Listenfilters). */
+    public const DAILY_REPORT_FILTERS = ['all' => 'Alle', 'open' => 'Offen', 'submitted' => 'Eingereicht', 'approved' => 'Festgeschrieben', 'cancelled' => 'Storniert'];
+    /** Statusfilter der mobilen Rapportliste. */
+    public const WORK_REPORT_FILTERS = ['all' => 'Alle', 'draft' => 'Entwurf', 'submitted' => 'Eingereicht', 'processed' => 'Bearbeitet'];
+
+    /**
+     * Tagesberichte mit den Sichtbarkeitsregeln des Dienstes (Techniker: eigene und fremde an
+     * freigegebenen Aufträgen); ohne Kosten.
+     *
+     * @param array<string,mixed> $parameters q, status, page
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
+    public function dailyReports(array $parameters, array $actor): array
+    {
+        $this->require($actor, 'reports.read');
+        $filter = $this->listFilter($parameters, self::DAILY_REPORT_FILTERS);
+        $query = $this->listQuery($parameters, 'date');
+        if ($filter !== 'all') {
+            $query['status'] = $filter;
+        }
+        $page = $this->dailyReports?->page($query, $actor) ?? ['items' => [], 'total' => 0, 'page' => 1, 'pageCount' => 1];
+        return $this->listResult($page, $query, $filter, static fn (array $report): array => [
+            'id' => $report['id'],
+            'url' => '/mobile/daily-reports/' . rawurlencode((string) $report['id']),
+            'date' => (string) $report['report_date'],
+            'title' => (string) ($report['title'] ?: ($report['order_title'] ?? '') ?: 'Tagesbericht'),
+            'customerName' => (string) ($report['customer_name'] ?? ''),
+            'target' => (string) ($report['order_number'] ?? $report['cost_center_number'] ?? ''),
+            'targetLabel' => $report['order_number'] !== null ? 'Auftrag' : ($report['cost_center_number'] !== null ? 'Kostenstelle' : 'Ohne Zuordnung'),
+            'detail' => (string) ($report['employee_names'] ?? ''),
+            'hours' => (string) $report['total_hours'],
+            'status' => (string) $report['status'],
+            'statusLabel' => (string) $report['status_label'],
+        ]);
+    }
+
+    /**
+     * Rapporte mit den Sichtbarkeitsregeln des Dienstes; ohne Preise und Summen.
+     *
+     * @param array<string,mixed> $parameters q, status, page
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
+    public function workReports(array $parameters, array $actor): array
+    {
+        $this->require($actor, 'workreports.read');
+        $filter = $this->listFilter($parameters, self::WORK_REPORT_FILTERS);
+        $query = $this->listQuery($parameters, 'updated');
+        if ($filter !== 'all') {
+            $query['status'] = $filter;
+        }
+        $page = $this->workReports?->page($query, $actor) ?? ['items' => [], 'total' => 0, 'page' => 1, 'pageCount' => 1];
+        return $this->listResult($page, $query, $filter, static fn (array $report): array => [
+            'id' => $report['id'],
+            'url' => '/mobile/rapports/' . rawurlencode((string) $report['id']),
+            'date' => (string) $report['workDate'],
+            'title' => (string) ($report['reportNumber'] ?: 'Entwurf ohne Nummer'),
+            'customerName' => (string) $report['customerName'],
+            'target' => (string) ($report['orderNumber'] ?? ''),
+            'targetLabel' => $report['orderId'] !== null ? 'Auftrag' : 'Ohne Auftrag',
+            'detail' => self::join([$report['creatorName'], $report['correctedNumber'] ? 'Korrektur zu ' . $report['correctedNumber'] : null,
+                $report['supersededById'] ? 'ersetzt' : null, $report['confirmationStatus'] === 'confirmed' ? 'vom Kunden bestätigt' : null]),
+            'hours' => (string) $report['totalHours'],
+            'status' => (string) $report['status'],
+            'statusLabel' => self::WORK_REPORT_STATUS[$report['status']] ?? (string) $report['status'],
+        ]);
+    }
+
+    /** @param array<string,mixed> $parameters @param array<string,string> $filters */
+    private function listFilter(array $parameters, array $filters): string
+    {
+        $filter = (string) ($parameters['status'] ?? 'all');
+        return isset($filters[$filter]) ? $filter : 'all';
+    }
+
+    /** @param array<string,mixed> $parameters @return array<string,string> */
+    private function listQuery(array $parameters, string $sort): array
+    {
+        return [
+            'q' => mb_substr(trim((string) ($parameters['q'] ?? '')), 0, 100),
+            'page' => (string) max(1, (int) ($parameters['page'] ?? 1)),
+            'per_page' => '25',
+            'sort' => $sort,
+        ] + (preg_match('/^[A-Za-z0-9-]{1,64}$/', (string) ($parameters['order'] ?? '')) === 1 ? ['order' => (string) $parameters['order']] : []);
+    }
+
+    /**
+     * @param array<string,mixed> $page
+     * @param array<string,string> $query
+     * @param callable(array<string,mixed>):array<string,mixed> $map
+     * @return array<string,mixed>
+     */
+    private function listResult(array $page, array $query, string $filter, callable $map): array
+    {
+        return [
+            'items' => array_map($map, $page['items']),
+            'total' => (int) $page['total'],
+            'page' => (int) $page['page'],
+            'pageCount' => (int) $page['pageCount'],
+            'q' => $query['q'],
+            'status' => $filter,
+            'order' => $query['order'] ?? '',
+        ];
     }
 
     // -------------------------------------------------------------------------

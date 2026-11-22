@@ -34,7 +34,7 @@ $pageReadOnly = $pageModule !== null && !$moduleEnabled($pageModule);
     <script src="<?= $escape($asset('modal.js')) ?>" defer></script>
     <script src="<?= $escape($asset('mobile.js')) ?>" defer></script>
 </head>
-<body class="mobile-app"<?= $currentUser !== null ? ' data-user-id="' . $escape((string) $currentUser['id']) . '"' : '' ?><?= $pageReadOnly ? ' data-module-readonly="1"' : '' ?>>
+<body class="mobile-app" data-ui="mobile"<?= $currentUser !== null ? ' data-user-id="' . $escape((string) $currentUser['id']) . '"' : '' ?><?= $pageReadOnly ? ' data-module-readonly="1"' : '' ?>>
     <a class="mobile-skip-link" href="#mobile-main">Zum Inhalt springen</a>
     <header class="mobile-header">
         <a class="mobile-brand" href="/mobile/">Calight</a>

@@ -394,6 +394,28 @@
     return copy;
   }
 
-  globalThis.Calight = Object.freeze({ moduleReadOnly, readOnly, esc, api, format, exact, collator, normalize, matches, notify, bindProjectToCustomer, createDialog, suggest, searchableSelect, suggestPlacement,
+  // Oberfläche der aktuellen Seite (Büro oder mobiles Frontend, siehe layout/mobile.php). Geteilte
+  // Editoren erzeugen ihre Links über paths, damit sie in beiden Oberflächen bleiben.
+  const ui = typeof document !== "undefined" && document.body?.dataset.ui === "mobile" ? "mobile" : "office";
+  const segment = (id) => encodeURIComponent(String(id));
+  const paths = Object.freeze(ui === "mobile"
+    ? {
+        dailyReports: () => "/mobile/daily-reports",
+        dailyReport: (id) => `/mobile/daily-reports/${segment(id)}`,
+        workReports: () => "/mobile/rapports",
+        workReport: (id) => `/mobile/rapports/${segment(id)}`,
+        workReportSign: (id) => `/mobile/rapports/${segment(id)}/sign`,
+        order: (id) => `/mobile/orders/${segment(id)}`,
+      }
+    : {
+        dailyReports: () => "/daily-reports",
+        dailyReport: (id) => `/daily-reports/${segment(id)}`,
+        workReports: () => "/work-reports",
+        workReport: (id) => `/work-reports/${segment(id)}`,
+        workReportSign: (id) => `/work-reports/${segment(id)}/sign`,
+        order: (id) => `/orders/${segment(id)}`,
+      });
+
+  globalThis.Calight = Object.freeze({ ui, paths, moduleReadOnly, readOnly, esc, api, format, exact, collator, normalize, matches, notify, bindProjectToCustomer, createDialog, suggest, searchableSelect, suggestPlacement,
     costTargetOptions, costTargetSelect, parseCostTarget });
 })();

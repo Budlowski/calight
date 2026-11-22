@@ -20,6 +20,7 @@
 
   let report;
   let employees = [];
+  let ownEmployeeId = "";
   let referenceOrders = [];
   let referenceTargets = [];
   let dirty = false;
@@ -44,6 +45,13 @@
     summary.textContent = `${hoursText(total)} ${total === 1 ? "Stunde" : "Stunden"} erfasst`;
   }
 
+  /** Neue Stundenposition: eigener Mitarbeiter, solange er noch keine Position hat (Kollegen frei wählbar). */
+  function defaultEmployee() {
+    if (!ownEmployeeId) return "";
+    const used = [...entriesBox.querySelectorAll('[data-field="employeeId"]')].some((select) => select.value === ownEmployeeId);
+    return used ? "" : ownEmployeeId;
+  }
+
   function addEntry(entry = {}) {
     const row = document.createElement("div");
     row.className = "report-time-row";
@@ -52,7 +60,7 @@
       ? `Kostensatz ${format.number(entry.hourly_cost_rate_snapshot, 2)} €/h · ${format.money(entry.labor_cost)}`
       : "";
     row.innerHTML = `
-      <label><span class="field-label">Mitarbeiter <span aria-hidden="true">*</span></span><select data-field="employeeId" required>${employeeOptions(entry.employee_id || (employees.length === 1 ? employees[0].id : ""), entry.employee_name || "")}</select></label>
+      <label><span class="field-label">Mitarbeiter <span aria-hidden="true">*</span></span><select data-field="employeeId" required>${employeeOptions(entry.employee_id || (entry.id ? "" : defaultEmployee()) || (employees.length === 1 ? employees[0].id : ""), entry.employee_name || "")}</select></label>
       <label><span class="field-label">Arbeitsdatum <span aria-hidden="true">*</span></span><input data-field="workDate" type="date" value="${esc(entry.work_date || form.elements.reportDate.value)}" required></label>
       <label><span class="field-label">Dauer (h) <span aria-hidden="true">*</span></span><input data-field="durationHours" inputmode="decimal" value="${esc(entry.duration_hours ? String(Number(entry.duration_hours)).replace(".", ",") : "")}" required></label>
       <label class="report-description"><span class="field-label">Tätigkeit (optional)</span><input data-field="description" maxlength="1000" value="${esc(entry.description || "")}"></label>
@@ -150,7 +158,7 @@
     root.querySelector("[data-title]").textContent = report.title || `Tagesbericht vom ${reportDate}`;
     const assignment = report.order_id ? report.order_number : report.cost_center_id ? report.cost_center_number : "Ohne Zuordnung";
     root.querySelector("[data-meta]").textContent = [assignment, report.customer_name, report.project_name, `erstellt von ${report.creator_name}`].filter(Boolean).join(" · ");
-    root.querySelector("[data-order-crumb]").innerHTML = report.order_id ? `<a href="/orders/${encodeURIComponent(report.order_id)}">${esc(report.order_number)}</a>` : "";
+    root.querySelector("[data-order-crumb]").innerHTML = report.order_id ? `<a href="${Calight.paths.order(report.order_id)}">${esc(report.order_number)}</a>` : "";
     root.querySelector("[data-order-crumb]").hidden = !report.order_id;
     root.querySelector("[data-current-crumb]").textContent = reportDate;
     document.title = `Tagesbericht ${reportDate} · ${assignment}`;
@@ -171,7 +179,7 @@
     // Primär das Kostenziel, danach Kunde und Projekt als optionale Kontextangaben.
     const lines = [
       `<dt>Auftrag / Kostenstelle</dt><dd>${report.order_id
-        ? `<a href="/orders/${encodeURIComponent(report.order_id)}">${esc(report.order_number)} · ${esc(report.order_title)}</a>${assigned}`
+        ? `<a href="${Calight.paths.order(report.order_id)}">${esc(report.order_number)} · ${esc(report.order_title)}</a>${assigned}`
         : report.cost_center_id ? `${esc(report.cost_center_number)} · ${esc(report.cost_center_name)} <small class="muted">Kostenstelle</small>${assigned}`
           : '<span class="muted">Ohne Zuordnung</span>'}</dd>`,
       report.customer_id ? `<dt>Kunde</dt><dd>${esc(report.customer_name)}${report.customer_number ? ` <span class="muted">(${esc(report.customer_number)})</span>` : ""}</dd>` : "",
@@ -335,6 +343,7 @@
     ]);
     report = Calight.readOnly(current);
     employees = reference.employees;
+    ownEmployeeId = reference.ownEmployeeId || "";
     referenceOrders = reference.orders || [];
     referenceTargets = reference.costTargets || [];
     form.elements.reportDate.value = report.report_date || "";
@@ -407,7 +416,7 @@
     try {
       await api(reportUrl(), { method: "DELETE", body: { version: report.version } });
       dirty = false;
-      location.assign("/daily-reports");
+      location.assign(Calight.paths.dailyReports());
     } catch (exception) {
       remove.disabled = false;
       notify(message, exception.message);

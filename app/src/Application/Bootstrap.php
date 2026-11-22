@@ -138,7 +138,7 @@ final readonly class Bootstrap
             new TimeTrackingController($view,$timeTracking,$timeApprovals),
             new CostCenterController($view,new CostCenterService($this->pdo,new CostCenterRepository($this->pdo),dirname(__DIR__,2).'/config/cost-center-template.json')),
             $modules,
-            new MobileController($view,$mobileWorkspace,$userRepository,$root.'/public'),
+            new MobileController($view,$mobileWorkspace,$userRepository,$root.'/public',$workReportService,$modules,$documentSettingsRepository),
             new UserInterface($this->config->mobileHost),
         );
     }

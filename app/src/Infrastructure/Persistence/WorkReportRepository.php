@@ -351,7 +351,7 @@ final readonly class WorkReportRepository
     /** @return list<array{id:string,display_name:string}> aktive Mitarbeiter ohne Kostensätze */
     public function activeEmployees(): array
     {
-        return $this->pdo->query('SELECT id, display_name FROM employees WHERE active = 1 ORDER BY display_name COLLATE NOCASE, id')->fetchAll();
+        return $this->pdo->query('SELECT id, display_name, user_id FROM employees WHERE active = 1 ORDER BY display_name COLLATE NOCASE, id')->fetchAll();
     }
 
     /** @return array<string,mixed>|null */

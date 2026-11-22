@@ -164,7 +164,7 @@
     // Ist nur ein Mitarbeiter verfügbar oder der Benutzer selbst als Mitarbeiter erkennbar, vorbelegen.
     // Datum vorbelegen: Datum der vorherigen Position, sonst heute.
     const previous = labor[labor.length - 1];
-    labor.push({ workDate: previous?.workDate || today(), employeeId: reference.employees.length === 1 ? reference.employees[0].id : "", workerName: "", hours: "", laborItemId: "", activity: "" });
+    labor.push({ workDate: previous?.workDate || today(), employeeId: (reference.ownEmployeeId && !labor.some((row) => row.employeeId === reference.ownEmployeeId) ? reference.ownEmployeeId : "") || (reference.employees.length === 1 ? reference.employees[0].id : ""), workerName: "", hours: "", laborItemId: "", activity: "" });
     setDirty("proof", true);
     renderLabor();
     laborBox.querySelector(".work-report-labor-row:last-child select")?.focus();
@@ -193,7 +193,8 @@
   // Kaufmännische Bearbeitung
   // ---------------------------------------------------------------------------
   function renderBilling() {
-    billingSection.hidden = !report.canProcess || report.status === "draft";
+    // Kaufmännische Bearbeitung nur in der Büroansicht (mobil keine Bürofreigaben).
+    billingSection.hidden = Calight.ui === "mobile" || !report.canProcess || report.status === "draft";
     if (billingSection.hidden) return;
     const editable = editableBilling();
     root.querySelector("[data-billing-tools]").hidden = !editable;
@@ -329,9 +330,9 @@
     const orderCrumb = root.querySelector("[data-order-crumb]");
     orderCrumb.hidden = !report.orderId;
     root.querySelector("[data-orders-crumb]").hidden = !report.orderId;
-    orderCrumb.innerHTML = report.orderId ? `<a href="/orders/${encodeURIComponent(report.orderId)}">${esc(report.orderNumber)}</a>` : "";
+    orderCrumb.innerHTML = report.orderId ? `<a href="${Calight.paths.order(report.orderId)}">${esc(report.orderNumber)}</a>` : "";
     root.querySelector("[data-order]").innerHTML = report.orderId
-      ? `<a href="/orders/${encodeURIComponent(report.orderId)}">${esc(report.orderNumber)} · ${esc(report.orderTitle)}</a>${report.orderAssignedAt
+      ? `<a href="${Calight.paths.order(report.orderId)}">${esc(report.orderNumber)} · ${esc(report.orderTitle)}</a>${report.orderAssignedAt
         ? `<small class="muted">nachträglich zugeordnet von ${esc(report.orderAssignedByName)} am ${format.dateTime(report.orderAssignedAt)}</small>` : ""}`
       : '<span class="muted">Ohne Auftrag (eigenständiger Rapport)</span>';
     root.querySelector("[data-customer]").textContent = report.customerName;
@@ -339,7 +340,7 @@
     document.title = `Rapport ${number} · ${report.customerName}`;
     const details = [
       report.correctedNumber ? `Korrektur zu ${esc(report.correctedNumber)}` : "",
-      report.supersededById ? `<strong class="time-conflict-text">ersetzt durch <a href="/work-reports/${encodeURIComponent(report.supersededById)}">${esc(report.supersededByNumber)}</a> – zählt nicht mehr</strong>` : "",
+      report.supersededById ? `<strong class="time-conflict-text">ersetzt durch <a href="${Calight.paths.workReport(report.supersededById)}">${esc(report.supersededByNumber)}</a> – zählt nicht mehr</strong>` : "",
       report.correctionCount ? `${report.correctionCount} Korrektur${report.correctionCount === 1 ? "" : "en"} vorhanden` : "",
       report.submittedAt ? `eingereicht von ${esc(report.submittedByName)} am ${format.dateTime(report.submittedAt)}` : `erstellt von ${esc(report.creatorName)}`,
       report.processedAt ? `bearbeitet von ${esc(report.processedByName)}` : "",
@@ -358,14 +359,16 @@
       more.push('<button type="button" data-action="delete" data-icon="trash">Entwurf löschen</button>');
     }
     actions.push(`<a class="button button-light" href="/api/work-reports/${encodeURIComponent(report.id)}/pdf" data-icon="file-down">${report.status === "draft" ? "PDF-Vorschau" : "PDF"}</a>`);
-    if (report.canSign) actions.push(`<a class="button" href="/work-reports/${encodeURIComponent(report.id)}/sign" data-icon="square-pen">Unterschrift</a>`);
+    if (report.canSign) actions.push(`<a class="button" href="${Calight.paths.workReportSign(report.id)}" data-icon="square-pen">Unterschrift</a>`);
     const confirmation = [];
-    if (report.canUploadConfirmation) confirmation.push('<button type="button" data-action="upload-confirmation" data-icon="file-up">Rücklauf hochladen …</button>');
-    if (report.canUploadConfirmation && !report.confirmationRequestedAt) confirmation.push('<button type="button" data-action="request-confirmation" data-icon="clipboard-list">Als versendet markieren</button>');
+    // Mobil keine Büroaufgaben (Rücklauf, Versandvermerk, Auftragszuordnung, kaufmännische Bearbeitung).
+    const office = Calight.ui !== "mobile";
+    if (office && report.canUploadConfirmation) confirmation.push('<button type="button" data-action="upload-confirmation" data-icon="file-up">Rücklauf hochladen …</button>');
+    if (office && report.canUploadConfirmation && !report.confirmationRequestedAt) confirmation.push('<button type="button" data-action="request-confirmation" data-icon="clipboard-list">Als versendet markieren</button>');
     if (report.canConfirm) confirmation.push('<button type="button" data-action="confirm" data-icon="square-pen">Manuell dokumentieren …</button>');
     actions.push(menu("Bestätigung", "clipboard-check", confirmation));
     if (report.canCorrect) more.push('<button type="button" data-action="correct" data-icon="copy">Korrekturrapport anlegen</button>');
-    if (report.canAssignOrder) more.push('<button type="button" data-action="assign-order" data-icon="clipboard-list">Auftrag zuordnen …</button>');
+    if (office && report.canAssignOrder) more.push('<button type="button" data-action="assign-order" data-icon="clipboard-list">Auftrag zuordnen …</button>');
     actions.push(menu("Weitere Aktionen", "menu", more));
     root.querySelector("[data-actions]").innerHTML = actions.join("");
 
@@ -547,7 +550,7 @@
       if (!ok) return;
       await api(`/api/work-reports/${encodeURIComponent(report.id)}`, { method: "DELETE", body: { version: report.version } });
       setDirty("proof", false);
-      location.assign(report.orderId ? `/orders/${encodeURIComponent(report.orderId)}` : "/work-reports");
+      location.assign(report.orderId ? Calight.paths.order(report.orderId) : Calight.paths.workReports());
     },
     async process() {
       if (billingDirty && !(await saveBilling({ silent: true }))) return;
@@ -628,7 +631,7 @@
       const ok = await confirmDialog("Korrektur anlegen", "<p>Es wird ein neuer Rapportentwurf mit dem eingereichten Stand angelegt. Der ursprüngliche Rapport und eine eventuelle Kundenbestätigung bleiben unverändert erhalten.</p>", "Korrektur anlegen");
       if (!ok) return;
       const created = await api("/api/work-reports", { method: "POST", body: { correctionOf: report.id } });
-      location.assign(`/work-reports/${encodeURIComponent(created.id)}`);
+      location.assign(Calight.paths.workReport(created.id));
     },
   };
 

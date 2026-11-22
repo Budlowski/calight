@@ -1,5 +1,11 @@
-<?php $title = 'Rapport'; $contentClass = 'content-wide'; ?>
+<?php $title = 'Rapport'; $contentClass = 'content-wide';
+// Gleicher Editor in Büro- und mobiler Oberfläche ($mobile); kaufmännische Bearbeitung blendet das Skript mobil aus.
+$mobile = (bool) ($mobile ?? false); ?>
 <div id="work-report-detail" class="record-detail-page" data-id="<?= $escape($reportId) ?>" data-csrf="<?= $escape($csrfToken) ?>">
+    <?php if ($mobile): ?>
+    <nav class="mobile-back" aria-label="Zurück"><a href="/mobile/rapports">‹ Rapporte</a></nav>
+    <div hidden><span data-orders-crumb></span><span data-order-crumb></span><span data-current-crumb></span></div>
+    <?php else: ?>
     <nav class="breadcrumb" aria-label="Brotkrümelnavigation">
         <ol>
             <li data-orders-crumb><a href="/orders">Aufträge</a></li>
@@ -8,6 +14,7 @@
             <li aria-current="page" data-current-crumb>Rapport</li>
         </ol>
     </nav>
+    <?php endif; ?>
 
     <section class="card order-header-card">
         <div class="page-heading order-detail-heading">

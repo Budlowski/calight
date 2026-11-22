@@ -72,7 +72,9 @@ final readonly class DailyReportService
         $projects=array_map(static fn(array $row):array=>['id'=>$row['id'],'projectNumber'=>$row['project_number'],'name'=>$row['name'],'customerId'=>$row['customer_id']],$this->reports->projectsForSelection());
         // Gemeinsames Suchfeld „Auftrag / Kostenstelle“ (Aufträge mit denselben Freigaberegeln).
         $costTargets=(new CostTargets($this->pdo))->options(array_map(static fn(array $o):array=>['id'=>$o['id'],'orderNumber'=>$o['order_number'],'title'=>$o['title']],$orders));
-        return['orders'=>$orders,'costTargets'=>$costTargets,'customers'=>$customers,'projects'=>$projects,'employees'=>$this->visibleEmployees($employees,$actor),'filterEmployees'=>$this->visibleEmployees($filterEmployees,$actor)];
+        return['orders'=>$orders,'costTargets'=>$costTargets,'customers'=>$customers,'projects'=>$projects,'employees'=>$this->visibleEmployees($employees,$actor),'filterEmployees'=>$this->visibleEmployees($filterEmployees,$actor),
+            // Eigener aktiver Mitarbeiter (nur über employees.user_id) für die Vorbelegung neuer Stundenpositionen.
+            'ownEmployeeId'=>array_values(array_filter($employees,static fn(array $e):bool=>(string)$e['user_id']===(string)($actor['id']??'')))[0]['id']??null];
     }
 
     /** @param array<string,mixed> $actor @return list<array<string,mixed>> */

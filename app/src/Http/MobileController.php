@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Http;
 
 use App\Application\MobileWorkspace;
+use App\Application\ModuleService;
+use App\Application\WorkReportService;
+use App\Infrastructure\Persistence\DocumentSettingsRepository;
 use App\Application\UserInterface;
 use App\Domain\Order\OrderValidationException;
 use App\Infrastructure\Persistence\UserRepository;
@@ -28,6 +31,9 @@ final readonly class MobileController
         private MobileWorkspace $workspace,
         private UserRepository $users,
         private string $publicDirectory,
+        private ?WorkReportService $workReports = null,
+        private ?ModuleService $modules = null,
+        private ?DocumentSettingsRepository $documentSettings = null,
     ) {
     }
 
@@ -67,6 +73,30 @@ final readonly class MobileController
                 'order' => preg_match('/^[A-Za-z0-9-]{1,64}$/', (string) ($request->query['order'] ?? '')) === 1 ? (string) $request->query['order'] : '',
             ],
         ])));
+        // Tagesberichte und Rapporte: mobile Übersichten; die Editoren sind dieselben wie in der
+        // Büroansicht (Templates und Skripte), nur im mobilen Layout und mit mobilen Links.
+        $router->add('GET', '/mobile/daily-reports', fn (Request $request): Response => $this->page(fn (array $actor): Response => $this->render('mobile/reports', [
+            'title' => 'Tagesberichte', 'heading' => 'Tagesberichte', 'navigation' => 'more', 'kind' => 'daily',
+            'list' => $this->workspace->dailyReports($request->query, $actor),
+            'filters' => MobileWorkspace::DAILY_REPORT_FILTERS,
+            'canCreate' => $this->workEnabled() && Session::can('reports.write'),
+            'createFor' => $this->createFor($request),
+        ])));
+        $router->add('GET', '/mobile/daily-reports/{id}', fn (Request $request, array $parameters): Response => $this->page(fn (): Response => $this->render('daily-reports/show', [
+            'navigation' => 'more', 'reportId' => (string) $parameters['id'], 'mobile' => true,
+        ])));
+        $router->add('GET', '/mobile/rapports', fn (Request $request): Response => $this->page(fn (array $actor): Response => $this->render('mobile/reports', [
+            'title' => 'Rapporte', 'heading' => 'Rapporte', 'navigation' => 'more', 'kind' => 'work',
+            'list' => $this->workspace->workReports($request->query, $actor),
+            'filters' => MobileWorkspace::WORK_REPORT_FILTERS,
+            'canCreate' => $this->workEnabled() && Session::can('workreports.write'),
+            'createFor' => $this->createFor($request),
+        ])));
+        $router->add('GET', '/mobile/rapports/{id}', fn (Request $request, array $parameters): Response => $this->page(fn (): Response => $this->render('work-reports/show', [
+            'navigation' => 'more', 'reportId' => (string) $parameters['id'], 'mobile' => true,
+        ])));
+        $router->add('GET', '/mobile/rapports/{id}/sign', fn (Request $request, array $parameters): Response => $this->page(fn (array $actor): Response => $this->signPage((string) $parameters['id'], $actor)));
+
         $router->add('GET', '/mobile/more', fn (): Response => $this->page(fn (array $actor): Response => $this->render('mobile/more', [
             'title' => 'Mehr',
             'navigation' => 'more',
@@ -164,6 +194,48 @@ final readonly class MobileController
             'Cache-Control' => 'no-cache',
             'Service-Worker-Allowed' => UserInterface::MOBILE_HOME,
         ]);
+    }
+
+    /**
+     * Kundenansicht zur Unterschrift: bestehendes Template und Skript (ohne Navigation und Preise),
+     * gebunden an die eingereichte Fassung (Prüfsumme). Rückkehr in die mobile Rapportansicht.
+     *
+     * @param array<string,mixed> $actor
+     */
+    private function signPage(string $id, array $actor): Response
+    {
+        $back = '/mobile/rapports/' . rawurlencode($id);
+        if (!$this->workEnabled()) {
+            return $this->render('mobile/error', ['title' => 'Unterschrift nicht möglich', 'navigation' => 'more',
+                'message' => ModuleService::disabledMessage('work_tracking'), 'backUrl' => $back, 'backLabel' => 'Zum Rapport'], 409);
+        }
+        if ($this->workReports === null) {
+            return Response::redirect($back);
+        }
+        $report = $this->workReports->detail($id, $actor);
+        if (!$report['canSign']) {
+            return Response::redirect($back);
+        }
+        $settings = $this->documentSettings?->get() ?? [];
+        $response = $this->view->render('work-reports/sign', [
+            'report' => $report,
+            'companyName' => trim((string) ($settings['companyName'] ?? '') . ' ' . (string) ($settings['legalForm'] ?? '')),
+            'bareLayout' => true,
+            'returnUrl' => $back,
+        ]);
+        return new Response($response->body, $response->status, $response->headers + ['Cache-Control' => 'no-store']);
+    }
+
+    private function workEnabled(): bool
+    {
+        return $this->modules === null || $this->modules->isEnabled('work_tracking');
+    }
+
+    /** Auftrag für den Anlegedialog (Einstieg aus der Auftragsdetailseite), nur als ID-Format geprüft. */
+    private function createFor(Request $request): string
+    {
+        $value = (string) ($request->query['create_for'] ?? '');
+        return preg_match('/^[A-Za-z0-9-]{1,64}$/', $value) === 1 ? $value : '';
     }
 
     private function today(): string

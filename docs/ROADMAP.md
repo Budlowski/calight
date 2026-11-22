@@ -28,7 +28,7 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 | 3.4.1.1 | Bestellverwaltung als Vorgang: AB, Lieferungen, Belege, Zahlungen, Lieferantenanschrift | Implementiert (`0030`); Phase 3.4.1 damit abgeschlossen |
 | 3.4.2 | Zentrale Dokumentenübersicht und geschäftsbezogene Anhänge | Implementiert (`0031`) |
 | 3.4.3 | Zeiterfassung: Arbeits- und Reisezeiten, Einsatz, Kilometer und Auslagen | Abgeschlossen (`0032`, Korrekturen `0033`, `0034`); zentrale Stundenbasis `0037`, Bereinigung `0038` |
-| 3.4.4 | Monteurs-Interface (mobile Oberfläche für Zeiterfassung, Berichte, Rapporte) | Phase 1 implementiert (`0046`): mobiles Frontend unter `/mobile/`; Phase 2 implementiert (ohne Migration): vollständige persönliche Zeiterfassung mobil, Schutz verkaufsseitiger Werte für Monteure (`commercial.read`); mobile Berichts-, Rapport-, Material- und Aufmaßformulare folgen |
+| 3.4.4 | Monteurs-Interface (mobile Oberfläche für Zeiterfassung, Berichte, Rapporte) | Phase 1 implementiert (`0046`): mobiles Frontend unter `/mobile/`; Phase 2 implementiert (ohne Migration): vollständige persönliche Zeiterfassung mobil, Schutz verkaufsseitiger Werte für Monteure (`commercial.read`); Phase 3 implementiert (ohne Migration): Tagesberichte und Rapporte mobil inkl. Kundenunterschrift; mobile Material- und Aufmaßformulare folgen |
 | 3.5 | Nachkalkulation und Soll-Ist-Vergleich | Geplant |
 | 3.6 | Abrechnungstracking, ohne Rechnungsstellung | Geplant |
 | 3.7 | Lieferscheine mit PDF-Ausgabe (Liefernachweise) | Geplant |
@@ -480,7 +480,17 @@ Mobile, auf das Wesentliche reduzierte Oberfläche für Monteure: Zeiterfassung 
 - Umsetzung ausschließlich als Client der bestehenden API `/api/time-tracking/*` (`assets/mobile-times.js`); Berechnung, Validierung, Sperren und Pauschalen bleiben serverseitig.
 - **Kaufmännischer Schutz:** neues Recht `commercial.read` (Büro, Administratoren). Ohne dieses Recht entfernt `ConfidentialDataFilter::salesValues` Einzelpreise, Auftrags- und Nachtragssummen, Aufmaßbeträge und die vollständige Auftragsgrundlage aus `/api/orders`, der Auftragsdetailseite und allen Aufmaß-Antworten; Sortierung nach Summe ist dann nicht möglich, das Aufmaß-PDF (Kundendokument mit Preisen) nur mit `commercial.read`. Leistungsbeschreibungen, Mengen, Einsatzorte und Kontaktdaten bleiben sichtbar.
 
-- **Bewusst noch nicht:** mobile Formulare für Tagesberichte, Rapporte mit Unterschrift, Material und Aufmaß (vorübergehend öffnen diese Einstiege die bestehenden responsiven Seiten), Offline-Erfassung/IndexedDB/Synchronisation, Push, native Apps, Mitarbeiterzuordnung zu Aufträgen und Einsatzplanung.
+### Phase 3 – mobile Tagesberichte und Rapporte (implementiert, ohne Migration)
+
+- Übersichten `/mobile/daily-reports` und `/mobile/rapports` (serverseitige Suche, Statusfilter, Seiten, optional je Auftrag) mit Datum, Bezeichnung bzw. Nummer, Kunde, Auftrag/Kostenstelle, Stunden und Status; Datensatzrechte aus `DailyReportService::page` bzw. `WorkReportService::page`, ohne Kosten und Preise (`MobileWorkspace::dailyReports/workReports`).
+- Anlegen über die gemeinsamen Anlegedialoge der Fachmodule (`CalightDailyReports.create`, `CalightWorkReports.openCreateDialog`) – dieselben wie in der Büroansicht; aus dem Auftrag mit vorbelegtem Auftrag (`?create_for=<auftrag>`).
+- Bearbeiten unter `/mobile/daily-reports/{id}` und `/mobile/rapports/{id}` mit **denselben Editoren** (Templates `daily-reports/show`, `work-reports/show`, Skripte `daily-report-detail.js`, `work-report-detail.js`, `material-requests.js`) im mobilen Layout: alle berechtigten Funktionen (Zuordnung, Kunde/Projekt, Stunden mehrerer Mitarbeiter mit Datum und Tätigkeit, Material, Fotos/Anhänge per Kamera oder Datei, Materialbedarf bei aktiver Beschaffung, Speichern, Einreichen, PDF-Vorschau, archivierte Fassungen, Korrekturrapport, Kundenbestätigung). Links erzeugen die Editoren über `Calight.paths`, sodass sie in der jeweiligen Oberfläche bleiben. Stunden-/Materialpositionen erscheinen mobil als Karten.
+- Neue Stundenpositionen werden mit dem eigenen Mitarbeiter vorbelegt, solange er noch keine Position hat (`ownEmployeeId` in den Referenzdaten, nur über `employees.user_id`); weitere Mitarbeiter bleiben frei wählbar.
+- Mobil ausgeblendet (Büroaufgaben): Festschreiben, Zurückgeben, Wieder öffnen, Stornieren von Tagesberichten; kaufmännische Bearbeitung, Rücklauf-Upload, Versandvermerk und nachträgliche Auftragszuordnung von Rapporten.
+- Kundenunterschrift `/mobile/rapports/{id}/sign`: bestehendes Template und Skript (ohne Navigation und Preise, an `submittedSha256` gebunden), Rückkehr in den mobilen Rapport. Bei deaktivierter Arbeitserfassung erscheint ein Hinweis, die Unterschrift ist gesperrt (zusätzlich lehnt der Server Schreibzugriffe ab).
+- Lebenszyklen, zentrale Stundenbuchungen, Sperren, automatische Regieauftragsanlage und Korrekturlogik bleiben unverändert in den Diensten.
+
+- **Bewusst noch nicht:** mobile Formulare für Material und Aufmaß (vorübergehend öffnen diese Einstiege die bestehenden responsiven Seiten), Offline-Erfassung/IndexedDB/Synchronisation, Push, native Apps, Mitarbeiterzuordnung zu Aufträgen und Einsatzplanung.
 
 ## Phase 3.5 – Nachkalkulation
 

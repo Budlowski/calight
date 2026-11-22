@@ -245,6 +245,45 @@ button.mobile-list-item:active { background: #f5f9fc; }
 .mobile-fieldset legend { padding: 0 4px; font-weight: 600; }
 .mobile-file-button { min-height: var(--mobile-touch); flex: 1 1 140px; cursor: pointer; }
 
+/* Tagesberichte und Rapporte: Listen und gemeinsame Editoren im mobilen Layout */
+.mobile-title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.mobile-title-row .button { min-height: var(--mobile-touch); }
+.mobile-list-side { display: grid; flex: 0 0 auto; justify-items: end; gap: var(--space-2); }
+.mobile-doc-draft, .mobile-doc-open { background: var(--status-neutral-bg); color: var(--status-neutral-fg); }
+.mobile-doc-submitted { background: var(--status-info-bg); color: var(--status-info-fg); }
+.mobile-doc-approved, .mobile-doc-processed { background: var(--status-success-bg); color: var(--status-success-fg); }
+.mobile-doc-reopened { background: var(--status-warning-bg); color: var(--status-warning-fg); }
+.mobile-doc-cancelled { background: #faecea; color: #711d14; text-decoration: line-through; }
+
+.mobile-app .detail-page, .mobile-app .record-detail-page { display: grid; gap: var(--space-5); }
+.mobile-app .detail-page > .page-heading, .mobile-app .order-detail-heading { display: grid; gap: var(--space-4); }
+.mobile-app .detail-page h1, .mobile-app .record-detail-page h1 { font-size: 22px; overflow-wrap: anywhere; }
+.mobile-app .card { padding: var(--space-5); border-radius: 8px; }
+.mobile-app .report-head-actions, .mobile-app .work-report-header-actions .order-detail-actions { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: var(--space-3); }
+.mobile-app .report-head-actions > .button, .mobile-app .work-report-header-actions .order-detail-actions > .button,
+.mobile-app .work-report-header-actions .context-menu > summary { min-height: var(--mobile-touch); flex: 1 1 140px; }
+.mobile-app .work-report-header-actions .context-menu { flex: 1 1 140px; }
+.mobile-app .work-report-header-actions .context-menu > summary { width: 100%; justify-content: center; }
+.mobile-app .context-menu-panel > a, .mobile-app .context-menu-panel > button { min-height: var(--mobile-touch); }
+.mobile-app .project-facts { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
+.mobile-app .detail-page input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.mobile-app .detail-page select, .mobile-app .detail-page textarea,
+.mobile-app .record-detail-page input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.mobile-app .record-detail-page select, .mobile-app .record-detail-page textarea { width: 100%; min-height: var(--mobile-touch); font-size: 16px; }
+.mobile-app .report-head-grid, .mobile-app .work-report-head-grid { grid-template-columns: 1fr; }
+.mobile-app .step-section-heading { flex-wrap: wrap; }
+.mobile-app .step-section-actions { width: 100%; margin-left: 0; }
+.mobile-app .step-section-actions > .button, .mobile-app .step-section-actions > label.button { min-height: var(--mobile-touch); flex: 1 1 140px; }
+
+/* Stunden- und Materialpositionen als kompakte Karten */
+.mobile-app .report-time-row, .mobile-app .work-report-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); padding: var(--space-4); border-radius: 8px; }
+.mobile-app .report-time-row > label:first-child, .mobile-app .report-time-row .report-description,
+.mobile-app .work-report-row > label:has([data-field="description"]), .mobile-app .work-report-row > label:has([data-field="activity"]),
+.mobile-app .work-report-row > label:has([data-field="employeeId"]), .mobile-app .work-report-row > label:has([data-field="workerName"]) { grid-column: 1 / -1; }
+.mobile-app .report-time-row [data-remove-entry], .mobile-app .work-report-row-actions { grid-column: 1 / -1; justify-self: end; }
+.mobile-app .work-report-row-actions .icon-button, .mobile-app .report-time-row .icon-button { width: var(--mobile-touch); height: var(--mobile-touch); }
+.mobile-app .work-report-row + .work-report-row, .mobile-app .report-time-row + .report-time-row { margin-top: var(--space-3); }
+
 /* Navigation unten */
 .mobile-tabbar {
     position: fixed;

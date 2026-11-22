@@ -16,6 +16,12 @@
   let strokes = [];
   let current = null;
   let saving = false;
+  // Arbeitserfassung deaktiviert: Unterschrift gesperrt (der Server lehnt sie ebenfalls ab).
+  if (globalThis.Calight?.moduleReadOnly) {
+    submit.disabled = true;
+    error.textContent = "Die Arbeitserfassung ist deaktiviert. Unterschriften können erst nach der Aktivierung erfasst werden.";
+    error.hidden = false;
+  }
 
   // Zeichenfläche an Anzeigegröße und Pixeldichte anpassen; vorhandene Striche neu zeichnen.
   function resize() {
@@ -119,7 +125,7 @@
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    if (saving) return;
+    if (saving || globalThis.Calight?.moduleReadOnly) return;
     error.hidden = true;
     if (!form.reportValidity()) return;
     if (inkPoints() < 8) {
@@ -138,7 +144,8 @@
           image: exportJpeg(),
         },
       });
-      location.assign(`/work-reports/${encodeURIComponent(root.dataset.id)}?signed=1`);
+      // Zurück in die Oberfläche, aus der die Unterschrift geöffnet wurde (Büro oder mobil).
+      location.assign(`${root.dataset.return || `/work-reports/${encodeURIComponent(root.dataset.id)}`}?signed=1`);
     } catch (exception) {
       showError(exception.message);
       saving = false;
