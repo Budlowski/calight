@@ -204,8 +204,9 @@ Keine zweite Nummernlogik in einem Controller oder Frontend anlegen.
 - Ein Angebotsauftrag kann nur aus einer angenommenen normalen Angebotsrevision entstehen. Dieselbe Revision darf nicht doppelt beauftragt werden.
 - Die Auftragsgrundlage wird als unveränderliches `basis_json` mit SHA-256-Prüfsumme gespeichert. Angebots-, Stamm- oder Kundendatenänderungen dürfen sie nicht verändern.
 - Direkte Regieaufträge benötigen einen Kunden, aber weder Angebot noch Projekt. Für sie keine fiktive ursprüngliche Auftragssumme erzeugen.
-- Auftragsstatus folgen ausschließlich `open → in_progress → completed → invoiced` (Offen → In Bearbeitung → Abgeschlossen → Abgerechnet).
-- Statuswechsel werden transaktional in `order_status_history` protokolliert.
+- Auftragsstatus folgen vorwärts ausschließlich `open → in_progress → completed → invoiced` (Offen → In Bearbeitung → Abgeschlossen → Abgerechnet). Vor „Abgeschlossen“/„Abgerechnet“ werden offene Vorgänge (Rapporte, Tagesberichte, Aufmaß- und Bestellentwürfe, offene Materialanforderungen) angezeigt und müssen ausdrücklich bestätigt werden; nichts wird automatisch abgeschlossen oder storniert. Rücknahme nur um einen Schritt (`invoiced → completed`, `completed → in_progress`), nur Administratoren, mit Begründung (Migration `0051`).
+- Statuswechsel werden transaktional in `order_status_history` protokolliert (Benutzer, Art `create`/`advance`/`revert`, Begründung, bestätigte offene Vorgänge).
+- **Zentrale Statusregeln ausschließlich über `Application\OrderWorkRules`:** neue Leistungen (manuelle Zeitbuchung auf einen Auftrag, neuer bzw. neu zugeordneter Tagesbericht oder Rapport, neues Aufmaß, neue Materialanforderung) nur bei `open`/`in_progress` (`acceptsNewWork`); bestehende Entwürfe einreichen, Korrekturrapporte/Aufmaßkorrekturen und die nachträgliche Zuordnung eingereichter Rapporte zusätzlich bei `completed`, nie bei `invoiced` (`acceptsChanges`); kaufmännische Nachbearbeitung (Bestellungen, Lieferungen, Rechnungen, Gutschriften, Zahlungen, Kostenverteilungen) unabhängig vom Status. Keine eigenen Statuslisten in Modulen.
 - Auftragsbezeichnung und optionale Beschreibung dürfen separat bearbeitet werden; Nummer, Herkunft und Snapshots bleiben unverändert.
 - `invoiced` bedeutet nachgehaltenen Geschäftsstatus, nicht eigene Rechnungsstellung durch Calight.
 

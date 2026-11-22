@@ -17,7 +17,7 @@
   showTab(location.hash.slice(1)||'overview');
   const request=async(url,options)=>{
     const response=await fetch(url,options),result=await response.json();
-    if(!response.ok)throw new Error((result.details||[result.error]).filter(Boolean).join(' ')||'Aktion fehlgeschlagen.');
+    if(!response.ok){const error=new Error((result.details||[result.error]).filter(Boolean).join(' ')||'Aktion fehlgeschlagen.');error.status=response.status;error.result=result;throw error;}
     return result.data??result;
   };
   const setEditOpen=(open)=>{
@@ -51,17 +51,43 @@
     }catch(error){editError.textContent=error.message;editError.hidden=false;}
     finally{submit.disabled=false;}
   });
+  const statusUrl=`/api/orders/${encodeURIComponent(root.dataset.id)}/status`;
+  const jsonHeaders={'Content-Type':'application/json','X-CSRF-Token':root.dataset.csrf};
+  const showError=async message=>{await CalightModal.open({title:'Statuswechsel fehlgeschlagen',content:message,actions:[{label:'Schließen',primary:true}]});};
+  // Statuswechsel vorwärts: offene Vorgänge (409) werden angezeigt und nur nach ausdrücklicher Bestätigung übergangen.
   root.querySelector('[data-next-status]')?.addEventListener('click',async event=>{
     const button=event.currentTarget,next=button.dataset.nextStatus,nextLabel=button.dataset.nextStatusLabel;
     if(!await CalightModal.confirm({title:'Auftragsstatus ändern',content:`Den Auftrag auf „${nextLabel}“ setzen? Der Wechsel wird dauerhaft im Statusverlauf gespeichert.`,confirmLabel:`${nextLabel} setzen`}))return;
     button.disabled=true;
+    const send=confirmOpen=>request(statusUrl,{method:'PATCH',headers:jsonHeaders,body:JSON.stringify({expectedStatus:root.dataset.status,status:next,confirmOpen})});
     try{
-      await request(`/api/orders/${encodeURIComponent(root.dataset.id)}/status`,{method:'PATCH',headers:{'Content-Type':'application/json','X-CSRF-Token':root.dataset.csrf},body:JSON.stringify({expectedStatus:root.dataset.status,status:next})});
+      await send(false);
       location.reload();
     }catch(error){
+      if(error.status===409&&error.result?.requiresConfirmation){
+        const content=document.createElement('div');
+        content.innerHTML=`<p>Zu diesem Auftrag gibt es noch offene Vorgänge. Sie werden <strong>nicht</strong> automatisch abgeschlossen oder storniert.</p><ul>${error.result.openItems.map(item=>`<li>${Calight.esc(item.count)} × ${Calight.esc(item.label)}</li>`).join('')}</ul><p>Nach dem Wechsel sind keine neuen Leistungen mehr möglich.</p>`;
+        if(await CalightModal.confirm({title:`Trotzdem auf „${nextLabel}“ setzen?`,content,confirmLabel:'Trotzdem setzen',danger:true})){
+          try{await send(true);location.reload();return;}catch(retry){await showError(retry.message);}
+        }
+      }else{
+        await showError(error.message);
+      }
       button.disabled=false;
-      await CalightModal.open({title:'Statuswechsel fehlgeschlagen',content:error.message,actions:[{label:'Schließen',primary:true}]});
     }
+  });
+  // Rücknahme um einen Schritt: nur Administratoren (Server prüft), Begründung Pflicht.
+  root.querySelector('[data-revert-status]')?.addEventListener('click',async event=>{
+    const button=event.currentTarget,label=button.dataset.revertStatusLabel;
+    const form=document.createElement('form');
+    form.className='form-stack';
+    form.innerHTML=`<p>Der Auftrag wird auf „${Calight.esc(label)}“ zurückgesetzt. Die Rücknahme wird mit Begründung im Statusverlauf dokumentiert; bestehende Vorgänge bleiben unverändert.</p><label><span class="field-label">Begründung <span aria-hidden="true">*</span></span><textarea name="reason" rows="3" maxlength="500" required></textarea></label>`;
+    let done=false;
+    await CalightModal.open({title:'Status zurücknehmen',content:form,initialFocus:'[name="reason"]',actions:[{label:'Abbrechen',value:false},{label:'Zurücknehmen',value:true,primary:true,validate:true,onClick:async()=>{
+      try{await request(`${statusUrl}/revert`,{method:'POST',headers:jsonHeaders,body:JSON.stringify({expectedStatus:root.dataset.status,reason:form.elements.reason.value.trim()})});done=true;return undefined;}
+      catch(error){Calight.notify(form.querySelector('[data-error]')||(()=>{const n=document.createElement('div');n.dataset.error='';form.append(n);return n;})(),error.message);return false;}
+    }}]});
+    if(done)location.reload();
   });
   root.querySelector('[data-create-change-order]')?.addEventListener('click',async event=>{
     const button=event.currentTarget;

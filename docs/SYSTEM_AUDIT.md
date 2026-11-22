@@ -35,7 +35,7 @@ Kennzeichnung der Befunde:
 
 Schweregrade: kritisch / hoch / mittel / niedrig. Aufwand: XS (< 1 h), S (≤ ½ Tag), M (1–2 Tage), L (> 2 Tage).
 
-### F-01 – Uneinheitliche Regel „Auftrag nimmt neue Leistungen an“ · Fachlogik · **hoch** · nachgewiesen
+### F-01 – Uneinheitliche Regel „Auftrag nimmt neue Leistungen an“ · Fachlogik · **hoch** · nachgewiesen · **umgesetzt** (Paket 1, `OrderWorkRules`; Laufzeittests auf OMV ausstehend)
 - **Dateien:**
   - `TimeTrackingService.php:1186`: Zeiterfassung lehnt abgerechnete Aufträge ab.
   - `WorkReportService.php:51/422` (`ASSIGNABLE_ORDER_STATUSES = ['open','in_progress']`): Rapporte nur bei offenen und laufenden Aufträgen.
@@ -44,7 +44,7 @@ Schweregrade: kritisch / hoch / mittel / niedrig. Aufwand: XS (< 1 h), S (≤ ½
 - **Auswirkung:** Nachträgliche Leistungen, Mengen und Kosten auf abgerechneten Aufträgen bleiben unbemerkt. Die Nachkalkulation wird widersprüchlich.
 - **Lösung:** Eine zentrale Regel, z. B. `OrderRepository::acceptsNewWork(status)` bzw. ein Teil der `OrderVisibility`-Abfragen, in allen Modulen verwenden. Fachlich festlegen, ob „abgeschlossen“ noch Korrekturen zulässt. **M**
 
-### F-02 – Auftragsstatus nur vorwärts, ohne Prüfung offener Vorgänge · Fachlogik · **mittel** · nachgewiesen
+### F-02 – Auftragsstatus nur vorwärts, ohne Prüfung offener Vorgänge · Fachlogik · **mittel** · nachgewiesen · **umgesetzt** (Paket 1, Migration `0051`; Laufzeittests auf OMV ausstehend)
 - **Dateien:** `OrderService::changeStatus` mit `$allowed = ['open'=>'in_progress','in_progress'=>'completed','completed'=>'invoiced']`.
 - **Nachweis:** Es gibt keinen Rückweg und keine Prüfung auf offene Rapporte, Tagesberichtsentwürfe, nicht abgeschlossene Aufmaße oder offene Bestellungen.
 - **Auswirkung:** Ein versehentlich auf „abgerechnet“ gesetzter Auftrag lässt sich nur per Datenbank korrigieren. Offene Vorgänge bleiben unbemerkt.

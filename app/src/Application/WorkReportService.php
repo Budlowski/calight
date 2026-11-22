@@ -48,7 +48,8 @@ final readonly class WorkReportService
     public const BILLING_TYPES = ['labor' => 'Arbeitsstunden', 'material' => 'Material', 'travel' => 'Anfahrt/Fahrtkosten', 'external' => 'Fremdleistung', 'flat' => 'Pauschale', 'other' => 'Sonstige Leistung'];
     private const MAX_ROWS = 100;
     /** Auftragsstatus, denen neue Rapporte zugeordnet werden dürfen (abgeschlossene/abgerechnete sind gesperrt). */
-    public const ASSIGNABLE_ORDER_STATUSES = ['open', 'in_progress'];
+    /** Zuordnung neuer Rapporte (zentrale Regel OrderWorkRules::NEW_WORK_STATUSES). */
+    public const ASSIGNABLE_ORDER_STATUSES = OrderWorkRules::NEW_WORK_STATUSES;
     private const MAX_SIGNATURE_BYTES = 600 * 1024;
     public const MAX_EVIDENCE_BYTES = 15 * 1024 * 1024;
     /** Zulässige Rücklaufdokumente, am Inhalt erkannt. */
@@ -143,6 +144,10 @@ final readonly class WorkReportService
             $order = $this->accessibleOrder($orderId, $actor);
             if ($customerId !== '' && $customerId !== (string) $order['customer_id']) {
                 throw new OrderValidationException(['Der Auftrag gehört nicht zum ausgewählten Kunden.']);
+            }
+            // Neuer Rapport = neue Leistung (OrderWorkRules).
+            if (!OrderWorkRules::acceptsNewWork((string) $order['status'])) {
+                throw new OrderValidationException([OrderWorkRules::newWorkMessage($order)]);
             }
             $customerId = (string) $order['customer_id'];
         }
@@ -419,8 +424,10 @@ final readonly class WorkReportService
         if ((string) $order['customer_id'] !== (string) $report['customer_id']) {
             throw new OrderValidationException(['Der Auftrag gehört nicht zum Kunden des Rapports.']);
         }
-        if (!in_array($order['status'], self::ASSIGNABLE_ORDER_STATUSES, true)) {
-            throw new OrderValidationException(['Der Auftrag ' . $order['order_number'] . ' ist abgeschlossen oder abgerechnet und nimmt keine neuen Rapporte auf.']);
+        // Neue Zuordnung: nur Aufträge, die neue Leistungen annehmen. Bereits zugeordnete Entwürfe und
+        // Korrekturen (ohne erneute Freigabeprüfung) auch bei abgeschlossenen, nie bei abgerechneten Aufträgen.
+        if ($checkAccess ? !OrderWorkRules::acceptsNewWork((string) $order['status']) : !OrderWorkRules::acceptsChanges((string) $order['status'])) {
+            throw new OrderValidationException([$checkAccess ? OrderWorkRules::newWorkMessage($order) : OrderWorkRules::changesMessage($order)]);
         }
         return $order;
     }
@@ -559,6 +566,10 @@ final readonly class WorkReportService
         }
         if ((string) $order['customer_id'] !== (string) $report['customer_id']) {
             throw new OrderValidationException(['Der Auftrag gehört nicht zum Kunden des Rapports.']);
+        }
+        // Nachträgliche Zuordnung eines bestehenden Nachweises: auch abgeschlossene, nie abgerechnete Aufträge.
+        if (!OrderWorkRules::acceptsChanges((string) $order['status'])) {
+            throw new OrderValidationException([OrderWorkRules::changesMessage($order)]);
         }
         $this->pdo->exec('BEGIN IMMEDIATE');
         try {

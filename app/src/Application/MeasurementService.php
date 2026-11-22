@@ -128,6 +128,11 @@ final readonly class MeasurementService
             $orderId = (string) $corrected['order_id'];
         }
         $order = $this->accessibleOrder($orderId, $actor);
+        // Neues Aufmaß nur bei Aufträgen, die neue Leistungen annehmen; Korrekturen abgeschlossener
+        // Aufmaße auch bei abgeschlossenen, nie bei abgerechneten Aufträgen (OrderWorkRules).
+        if ($corrected === null ? !OrderWorkRules::acceptsNewWork((string) $order['status']) : !OrderWorkRules::acceptsChanges((string) $order['status'])) {
+            throw new OrderValidationException([$corrected === null ? OrderWorkRules::newWorkMessage($order) : OrderWorkRules::changesMessage($order)]);
+        }
         if ($this->positionMap($this->sources($order)) === []) {
             throw new OrderValidationException(['Für diesen Auftrag gibt es keine verbindlichen Leistungspositionen. Direkte Regieaufträge werden über Rapporte abgerechnet; Aufmaße sind erst mit angenommenen Nachträgen möglich.']);
         }

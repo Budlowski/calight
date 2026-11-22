@@ -355,6 +355,7 @@ final readonly class MobileWorkspace
                 'description' => $order['description'],
                 'status' => $order['status'],
                 'statusLabel' => self::ORDER_STATUS[$order['status']] ?? $order['status'],
+                'acceptsNewWork' => OrderWorkRules::acceptsNewWork((string) $order['status']),
                 'type' => $order['orderType'] === 'offer' ? 'Angebotsauftrag' : 'Regieauftrag',
                 'orderDate' => $order['orderDate'],
                 'customerName' => $order['customerName'],
@@ -371,7 +372,8 @@ final readonly class MobileWorkspace
             'materialRequests' => $materialRequests,
             'measurements' => $measurements,
             'documents' => $documents,
-            'actions' => $this->orderActions($id, $actor, $services !== []),
+            // Abgeschlossene/abgerechnete Aufträge: keine Erfassungseinstiege (OrderWorkRules, Server prüft zusätzlich).
+            'actions' => OrderWorkRules::acceptsNewWork((string) $order['status']) ? $this->orderActions($id, $actor, $services !== []) : [],
         ];
     }
 

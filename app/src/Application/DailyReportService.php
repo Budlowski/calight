@@ -75,7 +75,8 @@ final readonly class DailyReportService
         $customers=array_map(static fn(array $row):array=>['id'=>$row['id'],'customerNumber'=>$row['customer_number'],'name'=>$row['name']],$this->reports->activeCustomers());
         $projects=array_map(static fn(array $row):array=>['id'=>$row['id'],'projectNumber'=>$row['project_number'],'name'=>$row['name'],'customerId'=>$row['customer_id']],$this->reports->projectsForSelection());
         // Gemeinsames Suchfeld „Auftrag / Kostenstelle“ (Aufträge mit denselben Freigaberegeln).
-        $costTargets=(new CostTargets($this->pdo))->options(array_map(static fn(array $o):array=>['id'=>$o['id'],'orderNumber'=>$o['order_number'],'title'=>$o['title']],$orders));
+        // Auswahl für neue Zuordnungen: nur Aufträge, die neue Leistungen annehmen (OrderWorkRules); die Auftragsliste bleibt vollständig (Filter).
+        $costTargets=(new CostTargets($this->pdo))->options(array_map(static fn(array $o):array=>['id'=>$o['id'],'orderNumber'=>$o['order_number'],'title'=>$o['title']],array_values(array_filter($orders,static fn(array $o):bool=>OrderWorkRules::acceptsNewWork((string)$o['status'])))));
         return['orders'=>$orders,'costTargets'=>$costTargets,'customers'=>$customers,'projects'=>$projects,'employees'=>$this->visibleEmployees($employees,$actor),'filterEmployees'=>$this->visibleEmployees($filterEmployees,$actor),
             // Eigener aktiver Mitarbeiter (nur über employees.user_id) für die Vorbelegung neuer Stundenpositionen.
             'ownEmployeeId'=>array_values(array_filter($employees,static fn(array $e):bool=>(string)$e['user_id']===(string)($actor['id']??'')))[0]['id']??null];
@@ -186,6 +187,8 @@ final readonly class DailyReportService
         $costCenterId=$this->costCenter($input['costCenterId']??'',$orderId!==''?$orderId:null,null);
         if($orderId!==''){
             $order=$this->orders->find($orderId);if($order===null)throw new DailyReportValidationException(['Auftrag wurde nicht gefunden.']);$this->assertOrderAccess($order,$actor);
+            // Neuer Bericht = neue Leistung: nur Aufträge, die neue Leistungen annehmen (OrderWorkRules).
+            if(!OrderWorkRules::acceptsNewWork((string)$order['status']))throw new DailyReportValidationException([OrderWorkRules::newWorkMessage($order)]);
             if($customerId!==''&&$customerId!==(string)$order['customer_id'])throw new DailyReportValidationException(['Der Auftrag gehört nicht zum ausgewählten Kunden.']);
             $orderProject=$order['project_id']!==null?(string)$order['project_id']:null;
             if($projectId!==''&&$projectId!==$orderProject)throw new DailyReportValidationException(['Das Projekt passt nicht zum ausgewählten Auftrag.']);
@@ -217,6 +220,8 @@ final readonly class DailyReportService
         $costCenterId=$this->costCenter($input['costCenterId']??'',$orderId!==''?$orderId:null,$report['cost_center_id']!==null?(string)$report['cost_center_id']:null);
         if($orderId!==''){
             $order=$this->orders->find($orderId);if($order===null)throw new DailyReportValidationException(['Auftrag wurde nicht gefunden.']);
+            // Neue Zuordnung zu einem anderen Auftrag nur, wenn dieser neue Leistungen annimmt.
+            if($orderId!==(string)($report['order_id']??'')&&!OrderWorkRules::acceptsNewWork((string)$order['status']))throw new DailyReportValidationException([OrderWorkRules::newWorkMessage($order)]);
             // Ohne Kunde übernimmt der Bericht den Auftragskunden; ein anderer Kunde wäre ein Widerspruch.
             if($report['customer_id']!==null&&(string)$order['customer_id']!==(string)$report['customer_id'])throw new DailyReportValidationException(['Der Auftrag gehört nicht zum Kunden des Berichts.']);
             $reportProject=$report['order_id']===null?$report['project_id']:null;
@@ -400,6 +405,13 @@ final readonly class DailyReportService
     public function submit(string $id, array $input, array $actor): array
     {
         $report = $this->editableReport($id, $actor);
+        // Bestehende Entwürfe/Korrekturen: auch bei abgeschlossenen, nie bei abgerechneten Aufträgen (OrderWorkRules).
+        if ($report['order_id'] !== null) {
+            $order = $this->orders->find((string) $report['order_id']);
+            if ($order !== null && !OrderWorkRules::acceptsChanges((string) $order['status'])) {
+                throw new DailyReportValidationException([OrderWorkRules::changesMessage($order)]);
+            }
+        }
         return $this->transition($report, $input, $actor, ['draft', 'reopened'], 'submitted', 'submit', false);
     }
 

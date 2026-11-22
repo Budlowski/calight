@@ -63,8 +63,25 @@ final readonly class OrderRepository
 
  /** @param array<string,mixed> $d */ public function insert(array $d):void{$s=$this->pdo->prepare('INSERT INTO orders(id,order_number,customer_id,project_id,source_offer_id,order_type,title,description,order_date,status,basis_json,basis_sha256,original_net_total,created_at,updated_at) VALUES(:id,:order_number,:customer_id,:project_id,:source_offer_id,:order_type,:title,:description,:order_date,:status,:basis_json,:basis_sha256,:original_net_total,:created_at,:updated_at)');$s->execute($d);}
  public function updateDetails(string $id,string $expectedUpdatedAt,string $title,string $description,string $updatedAt):bool{$s=$this->pdo->prepare('UPDATE orders SET title=:title,description=:description,updated_at=:updated_at WHERE id=:id AND updated_at=:expected_updated_at');$s->execute(['title'=>$title,'description'=>$description,'updated_at'=>$updatedAt,'id'=>$id,'expected_updated_at'=>$expectedUpdatedAt]);return$s->rowCount()===1;}
- public function changeStatus(string $id,string $from,string $to,string $historyId,string $at):bool{$s=$this->pdo->prepare('UPDATE orders SET status=:to,updated_at=:at WHERE id=:id AND status=:from');$s->execute(['to'=>$to,'at'=>$at,'id'=>$id,'from'=>$from]);if($s->rowCount()!==1)return false;$this->addHistory($id,$from,$to,$historyId,$at);return true;}
- public function addHistory(string $id,?string $from,string $to,string $historyId,string $at):void{$h=$this->pdo->prepare('INSERT INTO order_status_history(id,order_id,previous_status,new_status,changed_at) VALUES(:hid,:id,:from,:to,:at)');$h->execute(['hid'=>$historyId,'id'=>$id,'from'=>$from,'to'=>$to,'at'=>$at]);}
+    /** Statuswechsel mit Verlaufseintrag (Art, Benutzer, Begründung, bestätigte offene Vorgänge; Migration 0051). Optimistisch über den erwarteten Status. */
+    public function changeStatus(string $id, string $from, string $to, string $historyId, string $at, ?string $userId = null, string $kind = 'advance', string $reason = '', string $openItemsJson = '[]'): bool
+    {
+        $s = $this->pdo->prepare('UPDATE orders SET status=:to,updated_at=:at WHERE id=:id AND status=:from');
+        $s->execute(['to' => $to, 'at' => $at, 'id' => $id, 'from' => $from]);
+        if ($s->rowCount() !== 1) {
+            return false;
+        }
+        $this->addHistory($id, $from, $to, $historyId, $at, $userId, $kind, $reason, $openItemsJson);
+        return true;
+    }
+
+    public function addHistory(string $id, ?string $from, string $to, string $historyId, string $at, ?string $userId = null, ?string $kind = null, string $reason = '', string $openItemsJson = '[]'): void
+    {
+        $h = $this->pdo->prepare('INSERT INTO order_status_history(id,order_id,previous_status,new_status,changed_at,changed_by_user_id,change_kind,reason,open_items_json)
+            VALUES(:hid,:id,:from,:to,:at,:user,:kind,:reason,:items)');
+        $h->execute(['hid' => $historyId, 'id' => $id, 'from' => $from, 'to' => $to, 'at' => $at, 'user' => $userId,
+            'kind' => $kind ?? ($from === null ? 'create' : 'advance'), 'reason' => $reason, 'items' => $openItemsJson]);
+    }
 
     /**
      * Ausführungsbezogener Kontext eines Auftrags: Baustellenadresse und Ansprechpartner des
@@ -152,7 +169,7 @@ final readonly class OrderRepository
         return $id === false ? null : (string) $id;
     }
 
- /** @return list<array<string,mixed>> */ public function history(string $id):array{$s=$this->pdo->prepare('SELECT * FROM order_status_history WHERE order_id=:id ORDER BY changed_at DESC');$s->execute(['id'=>$id]);return$s->fetchAll();}
+ /** @return list<array<string,mixed>> */ public function history(string $id):array{$s=$this->pdo->prepare('SELECT h.*, u.display_name AS changed_by_name FROM order_status_history h LEFT JOIN users u ON u.id = h.changed_by_user_id WHERE h.order_id=:id ORDER BY h.changed_at DESC, h.rowid DESC');$s->execute(['id'=>$id]);return$s->fetchAll();}
  /** @return list<array<string,mixed>> */ public function changeOrders(string $orderId):array{$s=$this->pdo->prepare("SELECT o.*,COALESCE(o.offer_number,root.offer_number) effective_offer_number,accepted.offer_revision_id accepted_revision_id,accepted.net_total accepted_net_total,accepted.accepted_at,accepted_revision.revision_number accepted_revision_number FROM offers o LEFT JOIN offers root ON root.id=COALESCE(o.revision_root_id,o.id) LEFT JOIN order_addenda accepted ON accepted.revision_root_id=COALESCE(o.revision_root_id,o.id) LEFT JOIN offers accepted_revision ON accepted_revision.id=accepted.offer_revision_id WHERE o.order_id=:order_id AND o.document_type='change_order' AND NOT EXISTS(SELECT 1 FROM offers newer WHERE COALESCE(newer.revision_root_id,newer.id)=COALESCE(o.revision_root_id,o.id) AND newer.revision_number>o.revision_number) ORDER BY o.created_at DESC");$s->execute(['order_id'=>$orderId]);return$s->fetchAll();}
  /** @return list<array<string,mixed>> */ public function acceptedAddenda(string $orderId):array{$s=$this->pdo->prepare('SELECT * FROM order_addenda WHERE order_id=:id ORDER BY accepted_at');$s->execute(['id'=>$orderId]);return$s->fetchAll();}
  /** @param array<string,mixed> $data */ public function addAcceptedAddendum(array $data):void{$s=$this->pdo->prepare('INSERT INTO order_addenda(id,order_id,offer_revision_id,revision_root_id,basis_json,basis_sha256,net_total,accepted_at) VALUES(:id,:order_id,:offer_revision_id,:revision_root_id,:basis_json,:basis_sha256,:net_total,:accepted_at)');$s->execute($data);}

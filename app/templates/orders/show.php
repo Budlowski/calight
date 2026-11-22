@@ -5,7 +5,11 @@ $canWriteOrders=\App\Http\Session::can('orders.write');
 $canWriteReports=\App\Http\Session::can('reports.write');
 $labels=['open'=>'Offen','in_progress'=>'In Bearbeitung','completed'=>'Abgeschlossen','invoiced'=>'Abgerechnet'];
 $offerLabels=['draft'=>'Entwurf','submitted'=>'Abgegeben','commissioned'=>'Angenommen','rejected'=>'Abgelehnt'];
-$next=['open'=>'in_progress','in_progress'=>'completed','completed'=>'invoiced'];
+// Statusregeln zentral (OrderWorkRules): neue Leistungen nur bei offen/in Bearbeitung, Rücknahme nur Administratoren.
+$next=\App\Application\OrderWorkRules::FORWARD;
+$revert=\App\Application\OrderWorkRules::REVERT;
+$acceptsNewWork=(bool)($order['acceptsNewWork']??true);
+$isAdmin=(\App\Http\Session::user()['role']??'')==='admin';
 $money=static function(?string $value):string{
     if($value===null)return '–';
     $negative=str_starts_with($value,'-');$unsigned=ltrim($value,'+-');[$whole,$fraction]=array_pad(explode('.',$unsigned,2),2,'');
@@ -25,8 +29,10 @@ $money=static function(?string $value):string{
             <div class="order-detail-actions">
                 <?php if($canWriteOrders): ?><button class="button button-light" type="button" data-edit-order data-icon="square-pen">Bearbeiten</button><?php endif; ?>
                 <?php if($canWriteOrders&&isset($next[$order['status']])): ?><button class="button" type="button" data-next-status="<?= $escape($next[$order['status']]) ?>" data-next-status-label="<?= $escape($labels[$next[$order['status']]]) ?>" data-icon="refresh-cw"><?= $escape($labels[$next[$order['status']]]) ?> setzen</button><?php endif; ?>
+                <?php if($canWriteOrders&&$isAdmin&&isset($revert[$order['status']])): ?><button class="button button-light" type="button" data-revert-status="<?= $escape($revert[$order['status']]) ?>" data-revert-status-label="<?= $escape($labels[$revert[$order['status']]]) ?>" data-icon="undo-2">Zurück auf „<?= $escape($labels[$revert[$order['status']]]) ?>“</button><?php endif; ?>
             </div>
         </div>
+        <?php if(!$acceptsNewWork): ?><p class="notice notice-warning order-status-notice" role="status">Dieser Auftrag ist <?= $escape(mb_strtolower($labels[$order['status']])) ?>. Neue Zeitbuchungen, Tagesberichte, Rapporte, Aufmaße und Materialanforderungen sind nicht mehr möglich. Bestehende Entwürfe und Korrekturen <?= $order['status']==='invoiced'?'sind gesperrt':'bleiben möglich' ?>; Lieferantenrechnungen, Gutschriften, Lieferungen und Kostenkorrekturen bleiben zulässig.</p><?php endif; ?>
         <dl class="project-facts">
             <div><dt>Kunde</dt><dd><?= $escape($order['customerName']) ?></dd></div>
             <div><dt>Projekt</dt><dd><?= $escape($order['projectName']??'Ohne Projekt') ?></dd></div>
@@ -103,7 +109,7 @@ $openMaterial=count($materialRequests??[]);
         </form>
     </section>
     <?php endif; ?>
-    <section class="card order-history-card"><div class="section-heading"><div><h2>Statusverlauf</h2><span class="muted">Neuester Eintrag zuerst</span></div></div><div class="order-status-history"><?php foreach($order['history'] as $history): ?><div class="order-status-entry"><span class="status-badge status-<?= $escape($history['new_status']) ?>"><?= $escape($labels[$history['new_status']]??$history['new_status']) ?></span><span><?= $history['previous_status']===null?'Auftrag angelegt':$escape(($labels[$history['previous_status']]??$history['previous_status']).' → '.($labels[$history['new_status']]??$history['new_status'])) ?></span><time datetime="<?= $escape($history['changed_at']) ?>"><?= $escape((new DateTimeImmutable($history['changed_at']))->format('d.m.Y H:i')) ?></time></div><?php endforeach; ?></div></section>
+    <section class="card order-history-card"><div class="section-heading"><div><h2>Statusverlauf</h2><span class="muted">Neuester Eintrag zuerst</span></div></div><div class="order-status-history"><?php foreach($order['history'] as $history): ?><div class="order-status-entry"><span class="status-badge status-<?= $escape($history['new_status']) ?>"><?= $escape($labels[$history['new_status']]??$history['new_status']) ?></span><span><?= $history['previous_status']===null?'Auftrag angelegt':$escape(($labels[$history['previous_status']]??$history['previous_status']).' → '.($labels[$history['new_status']]??$history['new_status'])) ?><?= ($history['change_kind']??'')==='revert'?' <strong>(Rücknahme)</strong>':'' ?><?= ($history['changed_by_name']??null)!==null?' · '.$escape((string)$history['changed_by_name']):'' ?><?php if(($history['reason']??'')!==''): ?><br><small class="muted">Begründung: <?= $escape((string)$history['reason']) ?></small><?php endif; ?><?php $confirmed=json_decode((string)($history['open_items_json']??'[]'),true); if(is_array($confirmed)&&$confirmed!==[]): ?><br><small class="muted">Bestätigt trotz offener Vorgänge: <?= $escape(implode(', ',array_map(static fn(array $i):string=>$i['count'].' × '.$i['label'],$confirmed))) ?></small><?php endif; ?></span><time datetime="<?= $escape($history['changed_at']) ?>"><?= $escape((new DateTimeImmutable($history['changed_at']))->format('d.m.Y H:i')) ?></time></div><?php endforeach; ?></div></section>
     </div>
 
     <div class="tab-panel order-panel" id="order-panel-services" role="tabpanel" data-order-panel="services" hidden>
@@ -134,7 +140,7 @@ $openMaterial=count($materialRequests??[]);
         </dl>
     </section>
     <section class="card order-daily-reports">
-        <div class="section-heading"><div><h2>Tagesberichte</h2><span class="muted"><?= $escape((string)($dailyReportTotal??count($dailyReports??[]))) ?> Berichte · <?= $escape($hours($orderHours['bySource']['daily_report']??'0')) ?> Tagesberichtstunden</span></div><?php if($workTracking&&$canWriteReports): ?><a class="button" data-icon="plus" href="/daily-reports?create_for=<?= $escape(rawurlencode((string)$order['id'])) ?>">Bericht anlegen</a><?php endif; ?></div>
+        <div class="section-heading"><div><h2>Tagesberichte</h2><span class="muted"><?= $escape((string)($dailyReportTotal??count($dailyReports??[]))) ?> Berichte · <?= $escape($hours($orderHours['bySource']['daily_report']??'0')) ?> Tagesberichtstunden</span></div><?php if($workTracking&&$canWriteReports&&$acceptsNewWork): ?><a class="button" data-icon="plus" href="/daily-reports?create_for=<?= $escape(rawurlencode((string)$order['id'])) ?>">Bericht anlegen</a><?php endif; ?></div>
         <?php if(($dailyReports??[])===[]): ?><p class="empty-state">Noch keine Tagesberichte vorhanden.</p><?php else: ?><div class="offer-detail-list"><?php foreach($dailyReports as $report): ?><div class="offer-detail-row order-report-row"><a class="offer-detail-main" href="/daily-reports/<?= $escape(rawurlencode((string)$report['id'])) ?>"><strong><?= $escape($report['title']?:'Tagesbericht vom '.(new DateTimeImmutable($report['report_date']))->format('d.m.Y')) ?></strong><small><?= $escape($report['employee_names']?:'Keine Arbeitszeiten') ?></small></a><span><?= $escape(number_format((float)$report['total_hours'],3,',','.')) ?> h</span><time datetime="<?= $escape($report['report_date']) ?>"><?= $escape((new DateTimeImmutable($report['report_date']))->format('d.m.Y')) ?></time><a class="table-action" data-icon="eye" href="/daily-reports/<?= $escape(rawurlencode((string)$report['id'])) ?>">Ansehen</a></div><?php endforeach; ?></div><?php if(($dailyReportTotal??0)>count($dailyReports)): ?><p class="order-report-more"><a href="/daily-reports?order=<?= $escape(rawurlencode((string)$order['id'])) ?>">Alle <?= $escape((string)$dailyReportTotal) ?> Tagesberichte anzeigen</a></p><?php endif; ?><?php endif; ?>
     </section>
 
@@ -142,7 +148,7 @@ $openMaterial=count($materialRequests??[]);
     <section class="card order-work-reports">
         <div class="section-heading">
             <div><h2>Rapporte</h2><span class="muted">Leistungsnachweise für Regiearbeiten · <?= $escape((string) count($workReports)) ?> Rapporte</span></div>
-            <?php if ($workTracking && \App\Http\Session::can('workreports.write')): ?><button class="button" type="button" data-create-work-report="<?= $escape($order['id']) ?>" data-icon="plus">Rapport anlegen</button><?php endif; ?>
+            <?php if ($workTracking && $acceptsNewWork && \App\Http\Session::can('workreports.write')): ?><button class="button" type="button" data-create-work-report="<?= $escape($order['id']) ?>" data-icon="plus">Rapport anlegen</button><?php endif; ?>
         </div>
         <div class="notice" data-work-report-message role="status" hidden></div>
         <?php if ($workReports === []): ?><p class="empty-state">Noch keine Rapporte vorhanden.</p><?php else: ?>
@@ -164,7 +170,7 @@ $openMaterial=count($materialRequests??[]);
 <?php if($showMaterial): ?>
     <div class="tab-panel order-panel" id="order-panel-material" role="tabpanel" data-order-panel="material" hidden>
     <section class="card order-material-requests" data-order-material data-order-id="<?= $escape($order['id']) ?>" data-order-label="<?= $escape($order['orderNumber'].' · '.$order['title']) ?>">
-        <div class="section-heading"><div><h2>Materialanforderungen</h2><span class="muted">Offener Materialbedarf zu diesem Auftrag</span></div><div class="order-detail-actions"><a class="button button-light" href="/material-requests?order=<?= $escape(rawurlencode((string)$order['id'])) ?>&amp;status=all">Alle anzeigen</a><?php if($procurement&&\App\Http\Session::can('reports.write')): ?><button class="button" type="button" data-add-material data-icon="plus">Material anfordern</button><?php endif; ?></div></div>
+        <div class="section-heading"><div><h2>Materialanforderungen</h2><span class="muted">Offener Materialbedarf zu diesem Auftrag</span></div><div class="order-detail-actions"><a class="button button-light" href="/material-requests?order=<?= $escape(rawurlencode((string)$order['id'])) ?>&amp;status=all">Alle anzeigen</a><?php if($procurement&&$acceptsNewWork&&\App\Http\Session::can('reports.write')): ?><button class="button" type="button" data-add-material data-icon="plus">Material anfordern</button><?php endif; ?></div></div>
         <div class="notice" data-material-message role="status" hidden></div>
         <div data-material-requests></div>
         <script type="application/json" data-material-json><?= json_encode($materialRequests ?? [], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR) ?></script>
@@ -192,7 +198,7 @@ $openMaterial=count($materialRequests??[]);
     <section class="card order-measurements">
         <div class="section-heading">
             <div><h2>Aufmaße</h2><span class="muted"><?php if ($mo['measurable']): ?><?= $escape((string) $mo['progress']['started']) ?> von <?= $escape((string) $mo['progress']['positions']) ?> Positionen begonnen · <?= $escape((string) $mo['progress']['complete']) ?> vollständig<?= $mo['progress']['overrun'] > 0 ? ' · ' . $escape((string) $mo['progress']['overrun']) . ' über der vereinbarten Menge' : '' ?><?= ($commercial??true) ? ' · ' . $escape($money($mo['completedNetTotal'])) . ' netto abgeschlossen' : '' ?><?php else: ?>Keine verbindlichen Leistungspositionen (direkter Regieauftrag ohne angenommenen Nachtrag)<?php endif; ?></span></div>
-            <?php if ($mo['measurable'] && \App\Http\Session::can('measurements.write')): ?><button class="button" type="button" data-create-measurement="<?= $escape($order['id']) ?>" data-icon="plus">Aufmaß anlegen</button><?php endif; ?>
+            <?php if ($mo['measurable'] && $acceptsNewWork && \App\Http\Session::can('measurements.write')): ?><button class="button" type="button" data-create-measurement="<?= $escape($order['id']) ?>" data-icon="plus">Aufmaß anlegen</button><?php endif; ?>
         </div>
         <div class="notice" data-measurement-message role="status" hidden></div>
         <?php if ($mo['measurements'] === []): ?><p class="empty-state">Noch keine Aufmaße vorhanden.</p><?php else: ?>

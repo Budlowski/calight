@@ -283,7 +283,8 @@ final readonly class TimeTrackingRepository
     /** Auswählbare Aufträge (Monteur: nur für ihn sichtbare, OrderVisibility). @return list<array<string,mixed>> */
     public function orders(?string $technicianId): array
     {
-        $sql = "SELECT o.id, o.order_number, o.title, o.status FROM orders o WHERE o.status <> 'invoiced'"
+        // Auswahl für neue Buchungen: nur Aufträge, die neue Leistungen annehmen (OrderWorkRules).
+        $sql = "SELECT o.id, o.order_number, o.title, o.status FROM orders o WHERE o.status IN ('" . implode("', '", \App\Application\OrderWorkRules::NEW_WORK_STATUSES) . "')"
             . ($technicianId !== null ? ' AND ' . OrderVisibility::condition('o', 'time_visibility') : '');
         $statement = $this->pdo->prepare($sql . ' ORDER BY o.order_number DESC LIMIT 500');
         $statement->execute($technicianId !== null ? ['time_visibility' => $technicianId] : []);

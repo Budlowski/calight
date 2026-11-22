@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 namespace App\Application;
+use App\Domain\Order\OrderOpenItemsException;
 use App\Domain\Order\OrderValidationException;
 use App\Http\AccessDeniedException;
 use App\Infrastructure\Persistence\NumberRangeRepository;
@@ -77,7 +78,7 @@ final readonly class OrderService
  }
  /** Einsatzort und Ansprechpartner eines Auftrags (ohne kaufmännische Werte). @return array<string,mixed> */
  public function executionContext(string $id):array{return$this->orders->executionContext($id);}
- /** @return array<string,mixed> */ public function detail(string $id):array{$r=$this->orders->find($id);if(!$r)throw new OrderValidationException(['Auftrag wurde nicht gefunden.']);$result=$this->map($r);$result['history']=$this->orders->history($id);$result['basis']=$r['basis_json']!==null?json_decode((string)$r['basis_json'],true):null;$result['changeOrders']=$this->changeOrders($id);$accepted=$this->orders->acceptedAddenda($id);$addendaTotal=BigDecimal::zero();foreach($accepted as $item)$addendaTotal=$addendaTotal->plus((string)$item['net_total']);$result['originalNetTotal']=$result['basis']['calculation']['netTotal']??null;$result['acceptedAddendaNetTotal']=(string)$addendaTotal->toScale(2);$result['currentContractNetTotal']=$result['originalNetTotal']!==null?(string)BigDecimal::of((string)$result['originalNetTotal'])->plus($addendaTotal)->toScale(2):($accepted!==[]?(string)$addendaTotal->toScale(2):null);return$result;}
+ /** @return array<string,mixed> */ public function detail(string $id):array{$r=$this->orders->find($id);if(!$r)throw new OrderValidationException(['Auftrag wurde nicht gefunden.']);$result=$this->map($r);$result['history']=$this->orders->history($id);$result['acceptsNewWork']=OrderWorkRules::acceptsNewWork((string)$r['status']);$result['acceptsChanges']=OrderWorkRules::acceptsChanges((string)$r['status']);$result['basis']=$r['basis_json']!==null?json_decode((string)$r['basis_json'],true):null;$result['changeOrders']=$this->changeOrders($id);$accepted=$this->orders->acceptedAddenda($id);$addendaTotal=BigDecimal::zero();foreach($accepted as $item)$addendaTotal=$addendaTotal->plus((string)$item['net_total']);$result['originalNetTotal']=$result['basis']['calculation']['netTotal']??null;$result['acceptedAddendaNetTotal']=(string)$addendaTotal->toScale(2);$result['currentContractNetTotal']=$result['originalNetTotal']!==null?(string)BigDecimal::of((string)$result['originalNetTotal'])->plus($addendaTotal)->toScale(2):($accepted!==[]?(string)$addendaTotal->toScale(2):null);return$result;}
  /** @param array<string,mixed> $input */ public function createRegie(array $input):array{return$this->create('regie',$input,null,null);}
  /** @param array<string,mixed> $input @return array<string,mixed> */ public function updateDetails(string $id,array $input):array
  {
@@ -162,7 +163,43 @@ final readonly class OrderService
    $this->orders->addHistory($id,null,'open',Uuid::v4(),$now);if($own)$this->pdo->commit();return$this->detail($id);
   }catch(Throwable $e){if($own&&$this->pdo->inTransaction())$this->pdo->rollBack();if(str_contains(strtolower($e->getMessage()),'unique'))throw new OrderValidationException(['Aus dieser Angebotsrevision wurde bereits ein Auftrag erstellt.']);throw$e;}
  }
- public function changeStatus(string $id,string $expected,string $next):array{$allowed=['open'=>'in_progress','in_progress'=>'completed','completed'=>'invoiced'];if(($allowed[$expected]??null)!==$next)throw new OrderValidationException(['Dieser Statuswechsel ist nicht zulässig.']);$this->pdo->exec('BEGIN IMMEDIATE');try{if(!$this->orders->changeStatus($id,$expected,$next,Uuid::v4(),Clock::now()))throw new OrderValidationException(['Der Auftragsstatus wurde zwischenzeitlich geändert.']);$this->pdo->commit();return$this->detail($id);}catch(Throwable $e){if($this->pdo->inTransaction())$this->pdo->rollBack();throw$e;}}
+ /**
+  * Statuswechsel vorwärts (Offen → In Bearbeitung → Abgeschlossen → Abgerechnet). Vor „Abgeschlossen“ und
+  * „Abgerechnet“ werden offene Vorgänge geprüft; ohne $confirmOpen bricht der Wechsel mit
+  * OrderOpenItemsException ab (Controller: HTTP 409). Abhängige Vorgänge werden nie automatisch
+  * abgeschlossen oder storniert.
+  *
+  * @param array<string,mixed> $actor
+  */
+ public function changeStatus(string $id,string $expected,string $next,bool $confirmOpen=false,array $actor=[]):array{
+  if((OrderWorkRules::FORWARD[$expected]??null)!==$next)throw new OrderValidationException(['Dieser Statuswechsel ist nicht zulässig.']);
+  $this->pdo->exec('BEGIN IMMEDIATE');
+  try{
+   $items=in_array($next,OrderWorkRules::CHECK_OPEN_ITEMS,true)?OrderWorkRules::openItems($this->pdo,$id):[];
+   if($items!==[]&&!$confirmOpen)throw new OrderOpenItemsException($items);
+   if(!$this->orders->changeStatus($id,$expected,$next,Uuid::v4(),Clock::now(),isset($actor['id'])?(string)$actor['id']:null,'advance','',json_encode($items,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)))throw new OrderValidationException(['Der Auftragsstatus wurde zwischenzeitlich geändert.']);
+   $this->pdo->commit();return$this->detail($id);
+  }catch(Throwable $e){if($this->pdo->inTransaction())$this->pdo->rollBack();throw$e;}
+ }
+
+ /**
+  * Rücknahme um genau einen Schritt (Abgerechnet → Abgeschlossen, Abgeschlossen → In Bearbeitung), nur durch
+  * Administratoren und mit Begründung; Eintrag im Statusverlauf (change_kind = revert).
+  *
+  * @param array<string,mixed> $actor
+  */
+ public function revertStatus(string $id,string $expected,string $reason,array $actor):array{
+  if(($actor['role']??'')!=='admin')throw new AccessDeniedException('orders.status.revert');
+  $previous=OrderWorkRules::REVERT[$expected]??null;
+  if($previous===null)throw new OrderValidationException(['Dieser Status kann nicht zurückgenommen werden.']);
+  $reason=trim($reason);
+  if($reason===''||mb_strlen($reason)>500)throw new OrderValidationException(['Bitte eine Begründung (höchstens 500 Zeichen) angeben.']);
+  $this->pdo->exec('BEGIN IMMEDIATE');
+  try{
+   if(!$this->orders->changeStatus($id,$expected,$previous,Uuid::v4(),Clock::now(),(string)$actor['id'],'revert',$reason))throw new OrderValidationException(['Der Auftragsstatus wurde zwischenzeitlich geändert.']);
+   $this->pdo->commit();return$this->detail($id);
+  }catch(Throwable $e){if($this->pdo->inTransaction())$this->pdo->rollBack();throw$e;}
+ }
  /** @return list<array<string,mixed>> */ private function changeOrders(string $orderId):array{$items=[];foreach($this->orders->changeOrders($orderId) as $row){$loaded=$this->offerService->loadDraft((string)$row['id']);$items[]=['id'=>$row['id'],'title'=>$loaded['offer']['title'],'offerNumber'=>$row['effective_offer_number'],'revision'=>(int)$row['revision_number'],'status'=>$row['status'],'netTotal'=>$loaded['offer']['calculation']['netTotal']??'0.00','accepted'=>$row['accepted_revision_id']!==null,'acceptedRevision'=>$row['accepted_revision_number']!==null?(int)$row['accepted_revision_number']:null,'acceptedNetTotal'=>$row['accepted_net_total'],'acceptedAt'=>$row['accepted_at']];}return$items;}
  private function exists(string $table,string $id):bool{return$this->row($table,$id)!==null;} private function row(string $table,string $id):?array{$s=$this->pdo->prepare("SELECT * FROM {$table} WHERE id=:id");$s->execute(['id'=>$id]);$r=$s->fetch();return is_array($r)?$r:null;}
  /** @param array<string,mixed> $r @return array<string,mixed> */ private function map(array $r):array{return['id'=>$r['id'],'orderNumber'=>$r['order_number'],'customerId'=>$r['customer_id'],'customerName'=>$r['customer_name']??'','customerNumber'=>$r['customer_number']??null,'projectId'=>$r['project_id'],'projectName'=>$r['project_name']??null,'projectNumber'=>$r['project_number']??null,'sourceOfferId'=>$r['source_offer_id'],'sourceOfferNumber'=>$r['source_offer_number']??null,'sourceRevision'=>(int)($r['source_revision']??0),'orderType'=>$r['order_type'],'title'=>$r['title'],'description'=>$r['description'],'orderDate'=>$r['order_date'],'status'=>$r['status'],'updatedAt'=>$r['updated_at']];}

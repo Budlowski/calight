@@ -1182,9 +1182,13 @@ final readonly class TimeTrackingService
             return $id;
         }
         $order = $this->times->order($id) ?? throw new DocumentValidationException(['Der Auftrag wurde nicht gefunden.']);
-        // Neu wählbar nur nicht abgerechnete; Monteure zusätzlich nur für sie sichtbare Aufträge (OrderVisibility).
-        if ($order['status'] === 'invoiced' || (!$this->releasedAll($actor) && !$this->times->orderVisible($id, $actor))) {
+        // Neu wählbar nur Aufträge, die neue Leistungen annehmen (OrderWorkRules); bestehende Buchungen
+        // behalten ihren Auftrag. Monteure zusätzlich nur für sie sichtbare Aufträge (OrderVisibility).
+        if (!$this->releasedAll($actor) && !$this->times->orderVisible($id, $actor)) {
             throw new DocumentValidationException(['Dieser Auftrag steht für die Zeiterfassung nicht zur Verfügung.']);
+        }
+        if (!OrderWorkRules::acceptsNewWork((string) $order['status'])) {
+            throw new DocumentValidationException([OrderWorkRules::newWorkMessage($order)]);
         }
         return $id;
     }

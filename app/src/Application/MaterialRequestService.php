@@ -117,6 +117,10 @@ final readonly class MaterialRequestService
             if ($reportId === '') {
                 $this->assertOrderAccess((string) $order['id'], $actor);
             }
+            // Neue Materialanforderung = neue Leistung: nur Aufträge, die neue Leistungen annehmen.
+            if (!OrderWorkRules::acceptsNewWork((string) $order['status'])) {
+                throw new DailyReportValidationException([OrderWorkRules::newWorkMessage($order)]);
+            }
             $customerId = (string) $order['customer_id'];
         } elseif (!$fromReport) {
             // Ohne Tagesbericht bleibt der Auftrag Pflicht; es wird nie ein Auftrag oder Kunde angelegt.

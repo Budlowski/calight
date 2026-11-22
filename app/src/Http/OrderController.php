@@ -8,6 +8,7 @@ use App\Application\MeasurementService;
 use App\Application\WorkReportService;
 use App\Application\PurchaseOrderService;
 use App\Application\ModuleService;
+use App\Domain\Order\OrderOpenItemsException;
 use App\Domain\Order\OrderValidationException;
 use App\Security\ConfidentialDataFilter;
 use App\View\View;
@@ -28,7 +29,10 @@ final readonly class OrderController
   $r->add('GET','/api/orders/{id}/employees',fn(Request $q,array $p):Response=>$this->api(fn()=>Response::json(['data'=>$this->service->employees($p['id'],Session::user()??[])])));
   $r->add('POST','/api/orders/{id}/employees',fn(Request $q,array $p):Response=>$this->mutation($q,fn($d)=>$this->service->assignEmployee($p['id'],(string)($d['employeeId']??''),true,Session::user()??[])));
   $r->add('DELETE','/api/orders/{id}/employees/{employee}',fn(Request $q,array $p):Response=>$this->mutation($q,fn()=>$this->service->assignEmployee($p['id'],(string)$p['employee'],false,Session::user()??[])));
-  $r->add('PATCH','/api/orders/{id}/status',fn(Request $q,array $p):Response=>$this->mutation($q,fn($d)=>$this->service->changeStatus($p['id'],(string)($d['expectedStatus']??''),(string)($d['status']??''))));
+  // Statuswechsel: offene Vorgänge → 409 mit openItems, erneuter Aufruf mit confirmOpen=true (Systemaudit F-02).
+  $r->add('PATCH','/api/orders/{id}/status',function(Request $q,array $p):Response{try{return$this->mutation($q,fn($d)=>$this->service->changeStatus($p['id'],(string)($d['expectedStatus']??''),(string)($d['status']??''),($d['confirmOpen']??false)===true,Session::user()??[]));}catch(OrderOpenItemsException $e){return Response::json(['error'=>$e->getMessage(),'openItems'=>$e->items,'requiresConfirmation'=>true],409);}});
+  // Rücknahme um einen Schritt: nur Administratoren (Prüfung im Service), Begründung Pflicht.
+  $r->add('POST','/api/orders/{id}/status/revert',fn(Request $q,array $p):Response=>$this->mutation($q,fn($d)=>$this->service->revertStatus($p['id'],(string)($d['expectedStatus']??''),(string)($d['reason']??''),Session::user()??[])));
  }
  /**
   * Auftragsdetail als zentrale Arbeitsoberfläche. Bereiche abgeschalteter Module erscheinen nur,

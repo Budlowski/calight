@@ -32,6 +32,9 @@ $relatedSections = [
         <?php if (trim((string) $order['description']) !== ''): ?><p class="mobile-description"><?= nl2br($escape($order['description'])) ?></p><?php endif; ?>
     </header>
 
+    <?php if (!($order['acceptsNewWork'] ?? true)): ?>
+    <p class="notice notice-warning" role="status">Dieser Auftrag ist <?= $escape(mb_strtolower($order['statusLabel'])) ?>. Neue Zeiten, Berichte, Rapporte, Aufmaße und Materialanforderungen sind nicht mehr möglich.</p>
+    <?php endif; ?>
     <?php if ($detail['actions'] !== []): ?>
     <section aria-labelledby="mobile-order-actions-heading">
         <h2 class="mobile-section-title" id="mobile-order-actions-heading">Erfassen zu diesem Auftrag</h2>
