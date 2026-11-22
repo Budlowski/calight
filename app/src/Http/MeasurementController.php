@@ -39,6 +39,11 @@ final readonly class MeasurementController
             $document = ($this->pdf ?? throw new \RuntimeException('PDF-Ausgabe ist nicht konfiguriert.'))->pdf($parameters['id'], $this->actor());
             return FileResponse::pdf($document['pdf'], $document['fileName']);
         });
+        // Aufmaßnachweis ohne Preise: für alle mit Leserecht (auch Monteure); bewertetes PDF nur mit commercial.read.
+        $router->add('GET', '/api/measurements/{id}/proof-pdf', function (Request $request, array $parameters): Response {
+            $document = ($this->pdf ?? throw new \RuntimeException('PDF-Ausgabe ist nicht konfiguriert.'))->proof($parameters['id'], $this->actor());
+            return FileResponse::pdf($document['pdf'], $document['fileName']);
+        });
         $router->add('POST', '/api/measurements/{id}/complete', fn (Request $request, array $parameters): Response => $this->complete($request, $parameters['id']));
     }
 

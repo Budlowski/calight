@@ -42,14 +42,34 @@ final readonly class MeasurementPdfService
         return ['pdf' => $document['pdf'], 'fileName' => $document['fileName']];
     }
 
-    /** @param array<string,mixed> $measurement */
-    public function render(array $measurement, ?string $watermark): string
+    /**
+     * Aufmaßnachweis ohne Preise (auch für Monteure): gleiche Darstellung von Kopf, Positionen und
+     * Mengen, aber ohne Summenteil und Bewertungshinweis. Abgeschlossene Aufmaße werden je Stand
+     * archiviert (eigener Prüfwert, unabhängig vom bewerteten PDF); Entwürfe nur mit Wasserzeichen.
+     *
+     * @param array<string,mixed> $actor
+     * @return array{pdf:string,fileName:string}
+     */
+    public function proof(string $id, array $actor): array
+    {
+        $measurement = $this->measurements->detail($id, $actor);
+        if ($measurement['status'] !== 'completed') {
+            return ['pdf' => $this->render($measurement, 'ENTWURF', false), 'fileName' => 'Aufmassnachweis_Entwurf.pdf'];
+        }
+        $state = hash('sha256', 'proof|' . $measurement['id'] . '|' . $measurement['measurementNumber'] . '|' . $measurement['completedAt']);
+        $fileName = 'Aufmassnachweis_' . preg_replace('/[^A-Za-z0-9_-]+/', '_', (string) $measurement['measurementNumber']) . '.pdf';
+        $document = $this->archive->fetchOrCreate('measurement', $id, $state, $fileName, fn (): string => $this->render($measurement, null, false), (string) $actor['id']);
+        return ['pdf' => $document['pdf'], 'fileName' => $document['fileName']];
+    }
+
+    /** @param array<string,mixed> $measurement @param bool $priced false: Aufmaßnachweis ohne Beträge */
+    public function render(array $measurement, ?string $watermark, bool $priced = true): string
     {
         $numbers = new PdfNumberFormatter();
         $context = $this->repository->documentContext((string) $measurement['id']);
         $pdf = new LetterheadPdf($this->settings->get(), $watermark);
         $pdf->begin(
-            $measurement['correctionOfId'] ? 'Korrekturaufmaß' : 'Aufmaß',
+            ($measurement['correctionOfId'] ? 'Korrekturaufmaß' : 'Aufmaß') . ($priced ? '' : 'nachweis'),
             (string) $measurement['title'],
             [
                 (string) $measurement['customerName'],
@@ -88,7 +108,7 @@ final readonly class MeasurementPdfService
             $pdf->table($columns, $rows);
         }
 
-        if ($measurement['totals'] !== []) {
+        if ($priced && $measurement['totals'] !== []) {
             $pdf->section('Summen', 60);
             $rows = array_map(static fn (array $total): array => ['cells' => [
                 (string) $total['label'], $numbers->money((string) $total['itemsTotal']),

@@ -13,7 +13,7 @@ $relatedSections = [
         'more' => '/mobile/daily-reports?order=' . rawurlencode((string) $order['id'])],
     ['key' => 'workReports', 'title' => 'Rapporte', 'empty' => 'Noch keine Rapporte.', 'items' => $detail['workReports'], 'total' => count($detail['workReports'] ?? []), 'more' => null],
     ['key' => 'materialRequests', 'title' => 'Offener Materialbedarf', 'empty' => 'Kein offener Materialbedarf.', 'items' => $detail['materialRequests'], 'total' => count($detail['materialRequests'] ?? []),
-        'more' => '/material-requests?order=' . rawurlencode((string) $order['id']) . '&status=all'],
+        'more' => '/mobile/material-requests?order=' . rawurlencode((string) $order['id']) . '&status=all'],
     ['key' => 'measurements', 'title' => 'Aufmaße', 'empty' => 'Noch keine Aufmaße.', 'items' => $detail['measurements'], 'total' => count($detail['measurements'] ?? []), 'more' => null],
 ];
 ?>

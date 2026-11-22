@@ -152,8 +152,8 @@
     root.querySelector("[data-number]").textContent = number;
     root.querySelector("[data-title]").textContent = measurement.title;
     root.querySelector("[data-current-crumb]").textContent = number;
-    root.querySelector("[data-order-crumb]").innerHTML = `<a href="/orders/${encodeURIComponent(measurement.orderId)}">${esc(measurement.orderNumber)}</a>`;
-    root.querySelector("[data-order]").innerHTML = `<a href="/orders/${encodeURIComponent(measurement.orderId)}">${esc(measurement.orderNumber)} · ${esc(measurement.orderTitle)}</a>`;
+    root.querySelector("[data-order-crumb]").innerHTML = `<a href="${Calight.paths.order(measurement.orderId)}">${esc(measurement.orderNumber)}</a>`;
+    root.querySelector("[data-order]").innerHTML = `<a href="${Calight.paths.order(measurement.orderId)}">${esc(measurement.orderNumber)} · ${esc(measurement.orderTitle)}</a>`;
     root.querySelector("[data-customer]").textContent = measurement.customerName;
     document.title = `Aufmaß ${number} · ${measurement.orderNumber}`;
     const details = [
@@ -169,7 +169,10 @@
     if (editable()) actions.push('<button class="button button-light" type="button" data-save data-shortcut-save data-icon="save" title="Entwurf speichern, weiter bearbeitbar (Strg+S)">Entwurf speichern</button>');
     if (measurement.canComplete) actions.push('<button class="button" type="button" data-complete data-icon="clipboard-check" title="Aufmaß verbindlich abschließen">Abschließen …</button>');
     // PDF: abgeschlossene Aufmaße archiviert, Entwürfe nur als Vorschau mit Wasserzeichen.
-    if (commercial()) actions.push(`<a class="button button-light" href="/api/measurements/${encodeURIComponent(measurement.id)}/pdf" data-icon="file-down">${measurement.status === "completed" ? "PDF" : "PDF-Vorschau"}</a>`);
+    // Aufmaßnachweis ohne Preise für alle; das bewertete Aufmaß nur mit kaufmännischer Berechtigung.
+    const preview = measurement.status === "completed" ? "" : " (Vorschau)";
+    actions.push(`<a class="button button-light" href="/api/measurements/${encodeURIComponent(measurement.id)}/proof-pdf" target="_blank" rel="noopener" data-icon="file-down">Aufmaßnachweis${preview}</a>`);
+    if (commercial()) actions.push(`<a class="button button-light" href="/api/measurements/${encodeURIComponent(measurement.id)}/pdf" target="_blank" rel="noopener" data-icon="file-down">Bewertetes Aufmaß${preview}</a>`);
     // Seltene und destruktive Aktionen wie beim Rapport unter „Weitere Aktionen“.
     if (measurement.canCorrect) more.push('<button type="button" data-correct data-icon="copy">Korrekturaufmaß anlegen</button>');
     if (measurement.canEdit) more.push('<button type="button" data-delete data-icon="trash">Entwurf löschen</button>');
@@ -364,12 +367,12 @@
         if (!confirmed) return;
         await api(`/api/measurements/${encodeURIComponent(measurement.id)}`, { method: "DELETE", body: { version: measurement.version } });
         setDirty(false);
-        location.assign(`/orders/${encodeURIComponent(measurement.orderId)}`);
+        location.assign(Calight.paths.order(measurement.orderId));
       });
     } else if (button.matches("[data-correct]")) {
       run(button, async () => {
         const created = await api("/api/measurements", { method: "POST", body: { correctionOf: measurement.id } });
-        location.assign(`/measurements/${encodeURIComponent(created.id)}`);
+        location.assign(Calight.paths.measurement(created.id));
       });
     }
   });

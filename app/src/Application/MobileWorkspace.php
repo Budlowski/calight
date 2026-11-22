@@ -95,8 +95,8 @@ final readonly class MobileWorkspace
         $add($timeEntry, 'Arbeitszeit', 'clock-3', '/mobile/times?form=entry', 'Zeit erfassen');
         $add($work && $this->can($actor, 'reports.write'), 'Tagesbericht', 'calendar-days', '/mobile/daily-reports', 'Berichte erfassen');
         $add($work && $this->can($actor, 'workreports.write'), 'Rapport', 'clipboard-check', '/mobile/rapports', 'Regieleistungen');
-        $add($procurement && $this->can($actor, 'reports.write'), 'Materialbedarf', 'package', '/material-requests', 'Material anfordern');
-        $add($this->can($actor, 'measurements.write'), 'Aufmaß', 'ruler', '/measurements', 'Mengen erfassen');
+        $add($procurement && $this->can($actor, 'reports.write'), 'Materialbedarf', 'package', '/mobile/material-requests', 'Material anfordern');
+        $add($this->can($actor, 'measurements.write'), 'Aufmaß', 'ruler', '/mobile/measurements', 'Mengen erfassen');
         $add($timeEntry, 'Abwesenheit', 'calendar-days', '/mobile/times?form=absence', 'Urlaub, Krankheit …');
         $add($timeEntry, 'Reisekosten', 'badge-euro', '/mobile/times?form=travel', 'Auswärtstätigkeit, Fahrten, Auslagen');
         return $actions;
@@ -214,7 +214,7 @@ final readonly class MobileWorkspace
                 if ($own($measurement, 'createdByUserId')) {
                     $items[] = ['type' => 'Aufmaß', 'label' => (string) $measurement['title'],
                         'detail' => self::join([$measurement['orderNumber'] ?? null, $measurement['customerName'] ?? null]),
-                        'status' => self::MEASUREMENT_STATUS['draft'], 'url' => '/measurements/' . rawurlencode((string) $measurement['id'])];
+                        'status' => self::MEASUREMENT_STATUS['draft'], 'url' => '/mobile/measurements/' . rawurlencode((string) $measurement['id'])];
                 }
             }
         }
@@ -223,7 +223,7 @@ final readonly class MobileWorkspace
                 if ($own($request, 'createdByUserId')) {
                     $items[] = ['type' => 'Materialbedarf', 'label' => self::shorten((string) $request['description']),
                         'detail' => self::join([$request['orderNumber'] ?? $request['costCenterNumber'] ?? null, $request['customerName'] ?? null]),
-                        'status' => self::MATERIAL_STATUS['open'], 'url' => '/material-requests' . ($request['orderId'] ? '?order=' . rawurlencode((string) $request['orderId']) : '')];
+                        'status' => self::MATERIAL_STATUS['open'], 'url' => '/mobile/material-requests' . ($request['orderId'] ? '?order=' . rawurlencode((string) $request['orderId']) : '')];
                 }
             }
         }
@@ -321,7 +321,7 @@ final readonly class MobileWorkspace
                 'date' => (string) ($request['neededBy'] ?? ''),
                 'detail' => self::join([$request['creatorName'] ?? null, ($request['neededBy'] ?? null) ? 'benötigt bis ' . self::germanDate((string) $request['neededBy']) : null]),
                 'status' => self::MATERIAL_STATUS[$request['status']] ?? (string) $request['status'],
-                'url' => '/material-requests?order=' . rawurlencode($id),
+                'url' => '/mobile/material-requests?order=' . rawurlencode($id),
             ], $this->materialRequests->openForOrder($id, $actor));
             if (!$procurementEnabled && $materialRequests === []) {
                 $materialRequests = null;
@@ -335,7 +335,7 @@ final readonly class MobileWorkspace
                 'date' => (string) $measurement['measurementDate'],
                 'detail' => (string) ($measurement['measurementNumber'] ?: 'Entwurf ohne Nummer'),
                 'status' => self::MEASUREMENT_STATUS[$measurement['status']] ?? (string) $measurement['status'],
-                'url' => '/measurements/' . rawurlencode((string) $measurement['id']),
+                'url' => '/mobile/measurements/' . rawurlencode((string) $measurement['id']),
             ], $overview['measurements']);
         }
         $documents = null;
@@ -399,10 +399,10 @@ final readonly class MobileWorkspace
             $actions[] = ['label' => 'Rapport anlegen', 'icon' => 'clipboard-check', 'url' => '/mobile/rapports?create_for=' . $encoded];
         }
         if ($procurement && $this->can($actor, 'reports.write')) {
-            $actions[] = ['label' => 'Material anfordern', 'icon' => 'package', 'url' => '/orders/' . $encoded . '#material'];
+            $actions[] = ['label' => 'Material anfordern', 'icon' => 'package', 'url' => '/mobile/material-requests?create_for=' . $encoded];
         }
         if ($measurable && $this->can($actor, 'measurements.write')) {
-            $actions[] = ['label' => 'Aufmaß anlegen', 'icon' => 'ruler', 'url' => '/measurements?create_for=' . $encoded];
+            $actions[] = ['label' => 'Aufmaß anlegen', 'icon' => 'ruler', 'url' => '/mobile/measurements?create_for=' . $encoded];
         }
         return $actions;
     }
@@ -583,6 +583,75 @@ final readonly class MobileWorkspace
             'status' => (string) $report['status'],
             'statusLabel' => self::WORK_REPORT_STATUS[$report['status']] ?? (string) $report['status'],
         ]);
+    }
+
+    /** Statusfilter der mobilen Aufmaß- und Materialbedarfslisten (Werte der bestehenden Listenfilter). */
+    public const MEASUREMENT_FILTERS = ['all' => 'Alle', 'draft' => 'Entwurf', 'completed' => 'Abgeschlossen'];
+    public const MATERIAL_FILTERS = ['open' => 'Offen', 'done' => 'Erledigt', 'all' => 'Alle'];
+
+    /**
+     * Aufmaße mit den Sichtbarkeitsregeln des Dienstes (OrderVisibility, eigene immer); ohne Beträge.
+     *
+     * @param array<string,mixed> $parameters q, status, order, page
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
+    public function measurementList(array $parameters, array $actor): array
+    {
+        $this->require($actor, 'measurements.read');
+        $filter = $this->listFilter($parameters, self::MEASUREMENT_FILTERS);
+        $query = $this->listQuery($parameters, 'updated');
+        if ($filter !== 'all') {
+            $query['status'] = $filter;
+        }
+        return $this->listResult($this->measurements->page($query, $actor), $query, $filter, static fn (array $measurement): array => [
+            'id' => $measurement['id'],
+            'url' => '/mobile/measurements/' . rawurlencode((string) $measurement['id']),
+            'date' => (string) $measurement['measurementDate'],
+            'title' => (string) $measurement['title'],
+            'customerName' => (string) $measurement['customerName'],
+            'target' => (string) $measurement['orderNumber'],
+            'targetLabel' => 'Auftrag',
+            'detail' => self::join([$measurement['measurementNumber'] ?: 'Entwurf ohne Nummer', $measurement['itemCount'] . ' Positionen',
+                $measurement['correctedNumber'] ? 'Korrektur zu ' . $measurement['correctedNumber'] : null]),
+            'status' => (string) $measurement['status'],
+            'statusLabel' => self::MEASUREMENT_STATUS[$measurement['status']] ?? (string) $measurement['status'],
+        ]);
+    }
+
+    /**
+     * Materialanforderungen (Sichtbarkeit wie im Dienst); Datensätze enthalten keine Preise.
+     *
+     * @param array<string,mixed> $parameters q, status, order, page
+     * @param array<string,mixed> $actor
+     * @return array<string,mixed>
+     */
+    public function materialRequestList(array $parameters, array $actor): array
+    {
+        $this->require($actor, 'reports.read');
+        $filter = (string) ($parameters['status'] ?? 'open');
+        $filter = isset(self::MATERIAL_FILTERS[$filter]) ? $filter : 'open';
+        $query = ['status' => $filter === 'open' ? '' : $filter] + $this->listQuery($parameters, 'created');
+        $page = $this->materialRequests?->page($query, $actor) ?? ['items' => [], 'total' => 0, 'page' => 1, 'pageCount' => 1];
+        return $this->listResult($page, $query, $filter, static fn (array $request): array => $request + [
+            'reportUrl' => $request['dailyReportId'] ? '/mobile/daily-reports/' . rawurlencode((string) $request['dailyReportId']) : null,
+        ]);
+    }
+
+    /**
+     * Auswahl „Auftrag“ für mobiles Anlegen: aktive, für den Benutzer sichtbare Aufträge
+     * (OrderVisibility über OrderService::page), nur Nummer und Bezeichnung.
+     *
+     * @param array<string,mixed> $actor
+     * @return list<array{id:string,label:string}>
+     */
+    public function selectableOrders(array $actor): array
+    {
+        if (!$this->can($actor, 'orders.read')) {
+            return [];
+        }
+        $page = $this->orders->page(['status' => 'active', 'sort' => 'number', 'per_page' => '100'], $actor);
+        return array_map(static fn (array $order): array => ['id' => (string) $order['id'], 'label' => $order['orderNumber'] . ' · ' . $order['title'] . ' · ' . $order['customerName']], $page['items']);
     }
 
     /** @param array<string,mixed> $parameters @param array<string,string> $filters */

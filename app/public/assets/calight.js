@@ -407,6 +407,9 @@
         workReport: (id) => `/mobile/rapports/${segment(id)}`,
         workReportSign: (id) => `/mobile/rapports/${segment(id)}/sign`,
         order: (id) => `/mobile/orders/${segment(id)}`,
+        measurements: () => "/mobile/measurements",
+        measurement: (id) => `/mobile/measurements/${segment(id)}`,
+        materialRequests: () => "/mobile/material-requests",
       }
     : {
         dailyReports: () => "/daily-reports",
@@ -415,6 +418,9 @@
         workReport: (id) => `/work-reports/${segment(id)}`,
         workReportSign: (id) => `/work-reports/${segment(id)}/sign`,
         order: (id) => `/orders/${segment(id)}`,
+        measurements: () => "/measurements",
+        measurement: (id) => `/measurements/${segment(id)}`,
+        materialRequests: () => "/material-requests",
       });
 
   globalThis.Calight = Object.freeze({ ui, paths, moduleReadOnly, readOnly, esc, api, format, exact, collator, normalize, matches, notify, bindProjectToCustomer, createDialog, suggest, searchableSelect, suggestPlacement,

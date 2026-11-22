@@ -1,9 +1,12 @@
 <?php
-// Mobile Übersicht für Tagesberichte bzw. Rapporte (gemeinsames Template, $kind = daily|work).
-// Liste serverseitig (Suche, Statusfilter, Seiten); Anlegen über den gemeinsamen Anlegedialog
-// der Fachmodule (CalightDailyReports.create bzw. CalightWorkReports.openCreateDialog).
+// Mobile Übersicht für Tagesberichte, Rapporte bzw. Aufmaße (gemeinsames Template,
+// $kind = daily|work|measurement). Liste serverseitig (Suche, Statusfilter, Seiten); Anlegen über
+// die gemeinsamen Anlegewege der Fachmodule (CalightDailyReports.create,
+// CalightWorkReports.openCreateDialog, CalightMeasurements.createForOrder).
 require __DIR__ . '/partials/helpers.php';
-$base = $kind === 'daily' ? '/mobile/daily-reports' : '/mobile/rapports';
+$base = ['daily' => '/mobile/daily-reports', 'work' => '/mobile/rapports', 'measurement' => '/mobile/measurements'][$kind];
+$moduleScript = ['daily' => 'daily-reports.js', 'work' => 'work-reports.js', 'measurement' => 'measurements.js'][$kind];
+$orderOptions ??= [];
 $listUrl = static function (array $changes) use ($list, $base): string {
     $query = array_filter(array_merge(['q' => $list['q'], 'status' => $list['status'], 'order' => $list['order'], 'page' => (string) $list['page']], $changes),
         static fn (string $value, string $key): bool => $value !== '' && !($key === 'status' && $value === 'all') && !($key === 'page' && $value === '1'), ARRAY_FILTER_USE_BOTH);
@@ -51,7 +54,7 @@ $asset = static fn (string $file): string => '/assets/' . $file . '?v=' . (strin
                     </span>
                     <span class="mobile-list-side">
                         <span class="status-badge mobile-doc-<?= $escape($item['status']) ?>"><?= $escape($item['statusLabel']) ?></span>
-                        <small class="mobile-entry-hours"><?= $escape(str_replace('.', ',', rtrim(rtrim($item['hours'], '0'), '.') ?: '0')) ?> h</small>
+                        <?php if (isset($item['hours'])): ?><small class="mobile-entry-hours"><?= $escape(str_replace('.', ',', rtrim(rtrim($item['hours'], '0'), '.') ?: '0')) ?> h</small><?php endif; ?>
                     </span>
                 </a></li>
             <?php endforeach; ?>
@@ -66,5 +69,6 @@ $asset = static fn (string $file): string => '/assets/' . $file . '?v=' . (strin
     </nav>
     <?php endif; ?>
 </div>
-<script src="<?= $escape($asset($kind === 'daily' ? 'daily-reports.js' : 'work-reports.js')) ?>" defer></script>
+<?php if ($orderOptions !== []): ?><script type="application/json" data-order-options><?= json_encode($orderOptions, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR) ?></script><?php endif; ?>
+<script src="<?= $escape($asset($moduleScript)) ?>" defer></script>
 <script src="<?= $escape($asset('mobile-reports.js')) ?>" defer></script>

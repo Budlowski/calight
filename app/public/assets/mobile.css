@@ -284,6 +284,12 @@ button.mobile-list-item:active { background: #f5f9fc; }
 .mobile-app .work-report-row-actions .icon-button, .mobile-app .report-time-row .icon-button { width: var(--mobile-touch); height: var(--mobile-touch); }
 .mobile-app .work-report-row + .work-report-row, .mobile-app .report-time-row + .report-time-row { margin-top: var(--space-3); }
 
+/* Materialbedarf: Karte mit Auftragskopf und gemeinsamer Darstellung (CalightMaterialRequests). */
+.mobile-material { display: grid; gap: var(--space-2); }
+.mobile-app .material-request-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
+.mobile-app .material-request-actions .icon-button { width: var(--mobile-touch); height: var(--mobile-touch); }
+.mobile-app .material-request-actions .button { min-height: var(--mobile-touch); }
+
 /* Navigation unten */
 .mobile-tabbar {
     position: fixed;

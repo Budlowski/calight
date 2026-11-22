@@ -28,7 +28,7 @@ Calight ist eine schlanke, selbst gehostete Anwendung für **Angebots- und Auftr
 | 3.4.1.1 | Bestellverwaltung als Vorgang: AB, Lieferungen, Belege, Zahlungen, Lieferantenanschrift | Implementiert (`0030`); Phase 3.4.1 damit abgeschlossen |
 | 3.4.2 | Zentrale Dokumentenübersicht und geschäftsbezogene Anhänge | Implementiert (`0031`) |
 | 3.4.3 | Zeiterfassung: Arbeits- und Reisezeiten, Einsatz, Kilometer und Auslagen | Abgeschlossen (`0032`, Korrekturen `0033`, `0034`); zentrale Stundenbasis `0037`, Bereinigung `0038` |
-| 3.4.4 | Monteurs-Interface (mobile Oberfläche für Zeiterfassung, Berichte, Rapporte) | Phase 1 implementiert (`0046`): mobiles Frontend unter `/mobile/`; Phase 2 implementiert (ohne Migration): vollständige persönliche Zeiterfassung mobil, Schutz verkaufsseitiger Werte für Monteure (`commercial.read`); Phase 3 implementiert (ohne Migration): Tagesberichte und Rapporte mobil inkl. Kundenunterschrift; mobile Material- und Aufmaßformulare folgen |
+| 3.4.4 | Monteurs-Interface (mobile Oberfläche für Zeiterfassung, Berichte, Rapporte) | Phase 1 implementiert (`0046`): mobiles Frontend unter `/mobile/`; Phase 2 implementiert (ohne Migration): vollständige persönliche Zeiterfassung mobil, Schutz verkaufsseitiger Werte für Monteure (`commercial.read`); Phase 3 implementiert (ohne Migration): Tagesberichte und Rapporte mobil inkl. Kundenunterschrift; Materialbedarf und Aufmaße mobil sowie preisfreier Aufmaßnachweis (ohne Migration) |
 | 3.5 | Nachkalkulation und Soll-Ist-Vergleich | Geplant |
 | 3.6 | Abrechnungstracking, ohne Rechnungsstellung | Geplant |
 | 3.7 | Lieferscheine mit PDF-Ausgabe (Liefernachweise) | Geplant |
@@ -490,7 +490,14 @@ Mobile, auf das Wesentliche reduzierte Oberfläche für Monteure: Zeiterfassung 
 - Kundenunterschrift `/mobile/rapports/{id}/sign`: bestehendes Template und Skript (ohne Navigation und Preise, an `submittedSha256` gebunden), Rückkehr in den mobilen Rapport. Bei deaktivierter Arbeitserfassung erscheint ein Hinweis, die Unterschrift ist gesperrt (zusätzlich lehnt der Server Schreibzugriffe ab).
 - Lebenszyklen, zentrale Stundenbuchungen, Sperren, automatische Regieauftragsanlage und Korrekturlogik bleiben unverändert in den Diensten.
 
-- **Bewusst noch nicht:** mobile Formulare für Material und Aufmaß (vorübergehend öffnen diese Einstiege die bestehenden responsiven Seiten), Offline-Erfassung/IndexedDB/Synchronisation, Push, native Apps, Mitarbeiterzuordnung zu Aufträgen und Einsatzplanung.
+### Materialbedarf und Aufmaße mobil (ohne Migration)
+
+- `/mobile/material-requests`: Übersicht (Suche, Status Offen/Erledigt/Alle, je Auftrag) als Karten mit Auftrag/Kunde und Herkunft aus dem Tagesbericht; Anlegen, Bearbeiten, Löschen und – mit `materials.manage` – Erledigen über die gemeinsamen Bausteine `CalightMaterialRequests` und die bestehende API. Erfasst wird wie bisher als Freitext (eine Position pro Zeile) mit Wunschtermin und Bemerkung; eine Artikelauswahl aus dem Artikelstamm oder getrennte Mengen-/Einheitenfelder gibt es im Materialbedarf nicht und wurden nicht neu eingeführt. Nur mit aktiver Beschaffung neue Anforderungen; Bestand bleibt lesbar.
+- `/mobile/measurements` und `/mobile/measurements/{id}`: Übersicht ohne Beträge und derselbe Aufmaß-Editor wie im Büro (Positionen aus Auftragsgrundlage und Nachträgen, Mengen als Karten); ohne `commercial.read` liefert die API keine Preise. Anlegen über `CalightMeasurements.createForOrder` mit Auftragswahl bzw. vorbelegtem Auftrag (`?create_for=`), Auftragsauswahl nur aus sichtbaren aktiven Aufträgen (`MobileWorkspace::selectableOrders`, OrderVisibility).
+- **Aufmaßnachweis ohne Preise** (`GET /api/measurements/{id}/proof-pdf`, `measurements.read`): gleiche Darstellung wie das Aufmaß-PDF ohne Summenteil; abgeschlossene Aufmaße werden je Stand archiviert (eigener Prüfwert). Das **bewertete Aufmaß** (`/pdf`) bleibt unverändert und erfordert `commercial.read`, auch bei direktem Aufruf.
+- Schnellzugriffe, „Mehr“, Auftragsaktionen und offene Vorgänge führen in die mobilen Ansichten.
+
+- **Bewusst noch nicht:** Offline-Erfassung/IndexedDB/Synchronisation, Push, native Apps und Einsatzplanung. Die Dokumentenübersicht öffnet mobil weiterhin die Standardansicht. (Mitarbeiterzuordnung zu Aufträgen siehe „Auftragssichtbarkeit für Monteure“.)
 
 ## Phase 3.5 – Nachkalkulation
 

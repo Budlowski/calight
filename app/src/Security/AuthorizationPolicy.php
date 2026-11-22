@@ -25,6 +25,8 @@ final class AuthorizationPolicy
         if ($path === '/mobile/times') return ['timesheet.own'];
         if ($path === '/mobile/daily-reports' || str_starts_with($path, '/mobile/daily-reports/')) return ['reports.read'];
         if ($path === '/mobile/rapports' || str_starts_with($path, '/mobile/rapports/')) return ['workreports.read'];
+        if ($path === '/mobile/measurements' || str_starts_with($path, '/mobile/measurements/')) return ['measurements.read'];
+        if ($path === '/mobile/material-requests') return ['reports.read'];
         if ($path === '/mobile' || str_starts_with($path, '/mobile/')) return ['dashboard.read'];
         if (str_starts_with($path, '/api/users')) return ['users.manage'];
         if ($path === '/settings/employees' || $path === '/master-data/employees' || str_starts_with($path, '/api/employees')) return ['employees.manage', 'costs.read'];

@@ -72,7 +72,7 @@ final class ModuleService
      */
     public const ROUTES = [
         'work_tracking' => ['/time-tracking', '/api/time-tracking', '/daily-reports', '/api/daily-reports', '/work-reports', '/api/work-reports', '/mobile/times', '/mobile/daily-reports', '/mobile/rapports'],
-        'procurement' => ['/purchase-orders', '/api/purchase-orders', '/material-requests', '/api/material-requests'],
+        'procurement' => ['/purchase-orders', '/api/purchase-orders', '/material-requests', '/api/material-requests', '/mobile/material-requests'],
     ];
 
     /** Kostenstellen sind gemeinsame Grundlage dieser Module (Verwaltung sichtbar, sobald eines aktiv ist). */

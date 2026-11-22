@@ -97,6 +97,28 @@ final readonly class MobileController
         ])));
         $router->add('GET', '/mobile/rapports/{id}/sign', fn (Request $request, array $parameters): Response => $this->page(fn (array $actor): Response => $this->signPage((string) $parameters['id'], $actor)));
 
+        // Aufmaße (Basissystem) und Materialbedarf (Beschaffung): mobile Übersichten; Bearbeitung mit
+        // denselben Editoren bzw. Dialogen wie im Büro, Preise nur mit commercial.read (API-Filter).
+        $router->add('GET', '/mobile/measurements', fn (Request $request): Response => $this->page(fn (array $actor): Response => $this->render('mobile/reports', [
+            'title' => 'Aufmaße', 'heading' => 'Aufmaße', 'navigation' => 'more', 'kind' => 'measurement',
+            'list' => $this->workspace->measurementList($request->query, $actor),
+            'filters' => MobileWorkspace::MEASUREMENT_FILTERS,
+            'canCreate' => Session::can('measurements.write'),
+            'createFor' => $this->createFor($request),
+            'orderOptions' => Session::can('measurements.write') ? $this->workspace->selectableOrders($actor) : [],
+        ])));
+        $router->add('GET', '/mobile/measurements/{id}', fn (Request $request, array $parameters): Response => $this->page(fn (): Response => $this->render('measurements/show', [
+            'navigation' => 'more', 'measurementId' => (string) $parameters['id'], 'mobile' => true,
+        ])));
+        $router->add('GET', '/mobile/material-requests', fn (Request $request): Response => $this->page(fn (array $actor): Response => $this->render('mobile/material-requests', [
+            'title' => 'Materialbedarf', 'navigation' => 'more',
+            'list' => $this->workspace->materialRequestList($request->query, $actor),
+            'filters' => MobileWorkspace::MATERIAL_FILTERS,
+            'canCreate' => ($this->modules === null || $this->modules->isEnabled('procurement')) && Session::can('reports.write'),
+            'createFor' => $this->createFor($request),
+            'orderOptions' => Session::can('reports.write') ? $this->workspace->selectableOrders($actor) : [],
+        ])));
+
         $router->add('GET', '/mobile/more', fn (): Response => $this->page(fn (array $actor): Response => $this->render('mobile/more', [
             'title' => 'Mehr',
             'navigation' => 'more',

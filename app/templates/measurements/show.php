@@ -1,5 +1,11 @@
-<?php $title = 'Aufmaß'; $contentClass = 'content-wide'; ?>
+<?php $title = 'Aufmaß'; $contentClass = 'content-wide';
+// Gleicher Editor in Büro- und mobiler Oberfläche ($mobile): mobil ohne Brotkrümel.
+$mobile = (bool) ($mobile ?? false); ?>
 <div id="measurement-detail" class="record-detail-page" data-id="<?= $escape($measurementId) ?>" data-csrf="<?= $escape($csrfToken) ?>">
+    <?php if ($mobile): ?>
+    <nav class="mobile-back" aria-label="Zurück"><a href="/mobile/measurements">‹ Aufmaße</a></nav>
+    <div hidden><span data-order-crumb></span><span data-current-crumb></span></div>
+    <?php else: ?>
     <nav class="breadcrumb" aria-label="Brotkrümelnavigation">
         <ol>
             <li><a href="/orders">Aufträge</a></li>
@@ -8,6 +14,7 @@
             <li aria-current="page" data-current-crumb>Aufmaß</li>
         </ol>
     </nav>
+    <?php endif; ?>
 
     <section class="card order-header-card">
         <div class="page-heading order-detail-heading">

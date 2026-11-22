@@ -4,7 +4,7 @@
 
   const { esc, api, format, notify } = Calight;
   const STATUS_LABELS = { draft: "Entwurf", completed: "Abgeschlossen" };
-  const href = (measurement) => `/measurements/${encodeURIComponent(measurement.id)}`;
+  const href = (measurement) => Calight.paths.measurement(measurement.id);
   const badge = (measurement) => `<span class="status-badge status-measurement-${esc(measurement.status)}">${STATUS_LABELS[measurement.status] || esc(measurement.status)}</span>`;
   const number = (measurement) => measurement.measurementNumber || "Entwurf";
   const total = (measurement) => (measurement.netTotal === null ? "–" : format.money(measurement.netTotal));
