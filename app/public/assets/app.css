@@ -1663,12 +1663,9 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 .operations-control select { width: 100%; max-width: 200px; }
 .operations-control input[type="checkbox"] { width: 18px; height: 18px; min-height: 0; }
 .operations-row.is-changed { background: linear-gradient(90deg, transparent, #f2f8fc); }
-.operations-savebar { position: sticky; z-index: 5; bottom: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-3); margin-top: var(--space-4); padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius); background: #fff; box-shadow: 0 -4px 14px rgb(16 36 54 / 8%); }
-.operations-savebar [data-dirty-state] { margin-right: auto; color: var(--muted); }
 @media (max-width: 640px) {
     .operations-row { grid-template-columns: 1fr; gap: var(--space-2); }
     .operations-control select { max-width: none; }
-    .operations-savebar .button { min-height: 44px; flex: 1 1 auto; }
 }
 
 /* Rollen & Rechte: einklappbare Gruppen, Desktop-Vergleich als Tabelle, mobil als Liste. */
@@ -1699,3 +1696,4 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 .admin-content .page-heading h1 { margin-bottom: var(--space-1); }
 .admin-content .page-heading p.muted { margin: 0; max-width: 75ch; }
 .admin-form input, .admin-form select, .admin-form textarea, .operations-control input, .operations-control select { font-weight: 400; }
+.operations-dirty { margin: 0 0 var(--space-3); font-size: var(--font-small); }

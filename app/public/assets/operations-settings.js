@@ -33,7 +33,6 @@
   const box = root.querySelector("[data-settings]");
   const message = root.querySelector("[data-message]");
   const saveButton = root.querySelector("[data-save]");
-  const discardButton = root.querySelector("[data-discard]");
   const dirtyState = root.querySelector("[data-dirty-state]");
   const descriptions = { time: "Gilt für Rapporte, Tagesberichte und die Zeiterfassung.", limits: "Prüfgrenzwerte für Hinweise bei Einreichung und Festschreibung.", travel: "Rechnerische Referenzwerte für Verpflegung und Privat-Pkw." };
   const changes = new Map();
@@ -82,9 +81,9 @@
 
   function updateState() {
     const pending = changes.size;
-    dirtyState.textContent = pending ? `${pending} ungespeicherte ${pending === 1 ? "Änderung" : "Änderungen"}` : "Keine ungespeicherten Änderungen.";
-    saveButton.disabled = saving || pending === 0;
-    discardButton.disabled = saving || pending === 0;
+    dirtyState.textContent = pending ? `${pending} ungespeicherte ${pending === 1 ? "Änderung" : "Änderungen"}` : "";
+    dirtyState.hidden = pending === 0;
+    saveButton.disabled = saving;
     box.querySelectorAll("[data-row]").forEach((element) => element.classList.toggle("is-changed", changes.has(element.dataset.row)));
   }
 
@@ -109,7 +108,11 @@
   box.addEventListener("change", track);
 
   saveButton.addEventListener("click", async () => {
-    if (saving || changes.size === 0) return;
+    if (saving) return;
+    if (changes.size === 0) {
+      notify(message, "Keine Änderungen zu speichern.", "success");
+      return;
+    }
     saving = true;
     updateState();
     try {
@@ -121,9 +124,6 @@
       saving = false;
       updateState();
     }
-  });
-  discardButton.addEventListener("click", () => {
-    if (current) render(current);
   });
   addEventListener("beforeunload", (event) => {
     if (!changes.size) return;
