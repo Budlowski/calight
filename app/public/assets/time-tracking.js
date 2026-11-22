@@ -507,9 +507,9 @@
         <label><span class="field-label">Davon Reisezeit (Min.)</span><input name="travelMinutes" type="number" min="0" step="5" inputmode="numeric" value="${esc(values.travelMinutes)}"></label>
         ${fixed === null && !timesRequired ? `<label data-duration-field><span class="field-label">Dauer ohne Uhrzeiten</span><input name="duration" inputmode="decimal" placeholder="z. B. 1:30 oder 1,5" value="${esc(values.duration)}"></label>` : ""}
       </div>
-      <p class="muted" data-net></p>
-      ${Calight.workLocationFields(values)}
+      <p class="muted time-net-preview" data-net></p>
       ${fixed === null ? `<label><span class="field-label">Auftrag / Kostenstelle (optional)</span><select name="costTarget"></select></label>` : ""}
+      ${Calight.workLocationFields(values)}
       <label><span class="field-label">Bemerkung (optional)</span><input name="notes" maxlength="500" value="${esc(values.notes)}" placeholder="${fixed === null ? "z. B. Angebotsbearbeitung, Werkstatt" : "Ergänzung zur Zeiterfassung"}"></label>
       </div>
       ${entry ? "" : `<div class="form-stack" data-kind="absence">

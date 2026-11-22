@@ -253,7 +253,8 @@ button.mobile-list-item:active { background: #f5f9fc; }
 }
 .mobile-field small { font-weight: 400; }
 .mobile-field-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: var(--space-4); }
-.mobile-preview { margin: 0 0 10px; font-weight: 700; }
+.mobile-preview { margin: calc(-1 * var(--space-3)) 0 0; color: var(--muted); font-weight: 600; }
+.mobile-preview:empty { display: none; }
 .mobile-check { display: flex; min-height: var(--mobile-touch); align-items: center; gap: var(--space-3); }
 .mobile-check input { width: 22px; height: 22px; flex: 0 0 22px; }
 .mobile-fieldset { display: grid; gap: var(--space-2); margin: 0; padding: var(--space-4); border: 1px solid var(--border); border-radius: 8px; background: white; }
@@ -366,5 +367,4 @@ button.mobile-list-item:active { background: #f5f9fc; }
 }
 
 /* Einsatzort im mobilen Erfassungsformular wie die übrigen Felder. */
-.mobile-app .work-location-field > label:first-child { display: grid; gap: var(--space-2); font-weight: 600; }
 .mobile-app .work-location-switch { min-height: var(--mobile-touch); }

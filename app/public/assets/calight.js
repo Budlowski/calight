@@ -428,9 +428,9 @@
    * bestehende Einsatzart (assignmentKind): an = external, aus = regular (Erste Tätigkeitsstätte),
    * sofern ein Ort angegeben ist oder die Buchung schon so eingeordnet war – sonst „keine Angabe“.
    */
-  function workLocationFields(values = {}, { labelClass = "field-label", optional = true } = {}) {
+  function workLocationFields(values = {}, { labelClass = "field-label", fieldClass = "", optional = true } = {}) {
     return `<div class="work-location-field">
-      <label><span class="${labelClass}">Einsatzort${optional ? " (optional)" : ""}</span><input name="workLocation" maxlength="200" autocomplete="off" value="${esc(values.workLocation || "")}" placeholder="z. B. Baustelle, Ort"></label>
+      <label${fieldClass ? ` class="${fieldClass}"` : ""}><span${labelClass ? ` class="${labelClass}"` : ""}>Einsatzort${optional ? " (optional)" : ""}</span><input name="workLocation" maxlength="200" autocomplete="off" value="${esc(values.workLocation || "")}" placeholder="z. B. Baustelle, Ort"></label>
       <label class="work-location-switch"><input type="checkbox" role="switch" name="external"${values.assignmentKind === "external" ? " checked" : ""}><span>Auswärtstätigkeit</span></label>
       <input type="hidden" name="previousAssignment" value="${esc(values.assignmentKind || "")}">
     </div>`;

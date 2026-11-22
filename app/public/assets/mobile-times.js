@@ -489,13 +489,13 @@
         ${field("Beginn", `<input type="time" name="start" value="${esc(entry?.start || "")}" step="60">`)}
         ${field("Ende", `<input type="time" name="end" value="${esc(entry?.end || "")}" step="60">`)}
       </div>
-      <div class="mobile-field-row" data-times-fields>
-        ${field("Pause (Min.)", `<input type="number" name="breakMinutes" inputmode="numeric" min="0" step="1" value="${esc(entry?.breakMinutes || "")}" placeholder="0">`)}
-        <p class="mobile-preview" data-net-preview aria-live="polite"></p>
+      <div class="mobile-field-row">
+        <div data-times-fields>${field("Pause (Min.)", `<input type="number" name="breakMinutes" inputmode="numeric" min="0" step="1" value="${esc(entry?.breakMinutes || "")}" placeholder="0">`)}</div>
+        ${field("Davon Reisezeit (Min.)", `<input type="number" name="travelMinutes" inputmode="numeric" min="0" step="1" value="${esc(entry?.travelMinutes || "")}" placeholder="0">`)}
       </div>
-      ${field("Davon Reisezeit (Min.)", `<input type="number" name="travelMinutes" inputmode="numeric" min="0" step="1" value="${esc(entry?.travelMinutes || "")}" placeholder="0">`, "Reisezeit ist Teil der Arbeitszeit")}
+      <p class="mobile-preview" data-net-preview aria-live="polite"></p>
       ${fixed ? "" : costTargetField()}
-      ${Calight.workLocationFields({ workLocation: entry?.workLocation || "", assignmentKind: entry?.assignmentKind || "" })}
+      ${Calight.workLocationFields({ workLocation: entry?.workLocation || "", assignmentKind: entry?.assignmentKind || "" }, { labelClass: "", fieldClass: "mobile-field" })}
       ${field("Bemerkung", `<textarea name="notes" rows="2" maxlength="500">${esc(entry?.notes || "")}</textarea>`)}
       <input type="hidden" name="version" value="${esc(entry?.version ?? "")}">`;
     openSheet({

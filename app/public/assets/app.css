@@ -1416,7 +1416,9 @@ input:disabled, select:disabled, textarea:disabled, input[readonly], textarea[re
 .time-block-actions .icon-button { width: 40px; height: 40px; }
 /* Tätigkeitsarten gut unterscheidbar (Text plus Farbe). */
 .time-activity { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: var(--font-small); font-weight: 650; background: var(--status-neutral-bg); color: var(--status-neutral-fg); }
-.time-entry-grid { display: grid; grid-template-columns: 1fr 1fr 110px; gap: var(--space-2); }
+.time-entry-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: end; gap: var(--space-3); }
+.time-net-preview { margin: calc(-1 * var(--space-1)) 0 0; font-size: var(--font-small); }
+.time-net-preview:empty { display: none; }
 .time-choice { display: grid; gap: 4px; margin: 0; padding: 0; border: 0; }
 .time-overnight { align-self: end; min-height: var(--control-height); }
 .time-expenses li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px var(--space-2); padding: 6px 0; border-bottom: 1px solid #e5eaed; }
